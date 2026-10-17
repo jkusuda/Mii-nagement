@@ -24,6 +24,8 @@ BACKEND := backend
 UV := uv
 GDTOOLKIT := uvx --from 'gdtoolkit>=4'
 PORT ?= 8000
+# Windows: --reload makes uvicorn use an event loop that can't start agent processes (tools/run.sh).
+UVICORN_LOOP := $(if $(filter Windows_NT,$(OS)),--loop asyncio:ProactorEventLoop)
 
 # Find Godot: $GODOT, then `godot` on PATH, then the macOS app bundle.
 GODOT ?= $(shell command -v godot 2>/dev/null || ([ -x /Applications/Godot.app/Contents/MacOS/Godot ] && echo /Applications/Godot.app/Contents/MacOS/Godot))
@@ -45,7 +47,7 @@ setup: check-tools
 	@echo "setup done"
 
 server: setup
-	cd $(BACKEND) && $(UV) run python -m uvicorn mii.asgi:application --reload --port $(PORT)
+	cd $(BACKEND) && $(UV) run python -m uvicorn mii.asgi:application --reload --port $(PORT) $(UVICORN_LOOP)
 
 sim:
 	cd $(BACKEND) && $(UV) run python manage.py seed --loop --url http://localhost:$(PORT)

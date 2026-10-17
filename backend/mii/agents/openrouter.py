@@ -114,7 +114,7 @@ class OpenRouterRunner:
                     await job.think("reply", str(reply["content"]))
                 calls = reply.get("tool_calls") or []
                 if not calls:
-                    return parse_verdict(reply.get("content") or "")
+                    return parse_verdict(reply.get("content") or "", job.summary_chars)
                 for call in calls:
                     name = call["function"]["name"]
                     try:

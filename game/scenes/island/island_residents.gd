@@ -5,7 +5,8 @@ extends Node3D
 ##
 ## - snapshot           -> everyone appears at their building, in their state
 ## - move (from -> to)  -> walk there, along the island's roads
-## - agent_state        -> working (hop, facing the building), idle, sleeping (z Z)
+## - agent_state        -> working (walk in through the door and vanish inside),
+##                         idle, sleeping (z Z); leaving work = out of the door again
 ## - bubble             -> an icon over their head until it's answered
 ##
 ## Where a resident stands: each building has a *stop* on the sand path, the
@@ -65,6 +66,11 @@ func plants() -> Node3D:
 ## Put everyone who isn't busy back at their slot (after an ambient action).
 func line_up() -> void:
 	_line_up(false)
+
+
+## Where a resident stands at their building (island_life: resting at home).
+func home_spot(resident: Dictionary) -> Vector3:
+	return _stop(str(resident.get("building", "")))
 
 
 ## A resident said something: a speech line over their head, and the listener turns.
@@ -128,6 +134,10 @@ func _line_up(snap: bool) -> void:
 		if walker.is_walking:
 			continue
 		var building := str(resident.get("building", ""))
+		if walker.inside and resident.get("state") != "working":
+			# Done working: out of the door and back along the path (arrived lines them up).
+			_walk(walker, IslandPaths.route(island.layout, walker.global_position, _stop(building)))
+			continue
 		if resident.get("state") == "walking" and walker.global_position.distance_to(_stop(building)) > 1.5:
 			# Walking, but no `move` came (e.g. they had no building before): go straight there.
 			_walk(walker, [_stop(building)])
@@ -141,9 +151,15 @@ func _line_up(snap: bool) -> void:
 		for i in group.size():
 			var walker: IslandResident = _walkers[str(group[i]["id"])]
 			var spot := _slot(building, i)
+			var state := str(group[i].get("state", "idle"))
+			var door := _door(building)
+			if state == "working" and door != Vector3.INF:
+				if snap:
+					walker.place(door)  # already at work: straight inside
+				walker.enter(_into(building, walker.global_position, door))
+				continue
 			if snap:
 				walker.place(spot)
-			var state := str(group[i].get("state", "idle"))
 			walker.settle(spot, "idle" if state == "walking" else state, _building_position(building))
 
 
@@ -244,6 +260,29 @@ func _slot(building_id: String, i: int) -> Vector3:
 		return _stop(building_id)
 	var line := _line(b)
 	return line[mini(i, line.size() - 1)]
+
+
+## The middle of a building's front door, on the ground (Vector3.INF for no building).
+## A lot is LOT tiles wide, so its door face is half that from the lot's centre; the
+## door looks +Z before the building is turned to its `facing`.
+func _door(building_id: String) -> Vector3:
+	var b := island.layout.building(str(Net.find_building(building_id).get("type", "")))
+	if b.is_empty():
+		return Vector3.INF
+	var out := Vector3(0, 0, IslandLayout.LOT * IslandLayout.TILE / 2.0 - 0.4)
+	var p := IslandLayout.lot_center(b) + out.rotated(Vector3.UP, IslandLayout.facing_angle(b))
+	return Vector3(p.x, IslandPaths.PATH_Y, p.z)
+
+
+## Points from `from` into a building: along the paths to the tile outside its door, then in.
+func _into(building_id: String, from: Vector3, door: Vector3) -> Array[Vector3]:
+	var b := island.layout.building(str(Net.find_building(building_id).get("type", "")))
+	var outside := IslandLayout.tile_center(IslandLayout.door_tile(b))
+	var points: Array[Vector3] = []
+	if from.distance_to(door) > 0.05:
+		points = IslandPaths.route(island.layout, from, outside)
+		points.append(door)
+	return points
 
 
 func _building_position(building_id: String) -> Vector3:

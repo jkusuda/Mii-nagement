@@ -378,8 +378,12 @@ async def spawn_agent(client: Client, command: list[str], *, cwd: Path, env: dic
     CLI. Killing only `npx` would leave the CLI holding the stdout pipe for minutes.
     """
     group = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {"start_new_session": True}
+    # The full path: on Windows `npx` is `npx.cmd`, which CreateProcess won't find by its bare name.
+    program = command[0]
+    if not os.path.dirname(program):  # a bare name like `npx` (tests pass a full path)
+        program = shutil.which(program, path=env.get("PATH")) or program
     proc = await asyncio.create_subprocess_exec(
-        *command, cwd=str(cwd), env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, **group
+        program, *command[1:], cwd=str(cwd), env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, **group
     )
     conn = connect_to_agent(client, proc.stdin, proc.stdout)
     try:
@@ -397,7 +401,7 @@ async def _end_process_tree(proc: asyncio.subprocess.Process, grace: float = 2.0
         if sig is not None:
             with suppress(ProcessLookupError, PermissionError):
                 if os.name == "nt":
-                    proc.kill()
+                    await _taskkill_tree(proc.pid)  # proc.kill() would only end `npx`, not the CLI under it
                 else:
                     os.killpg(proc.pid, sig)
         try:
@@ -406,6 +410,14 @@ async def _end_process_tree(proc: asyncio.subprocess.Process, grace: float = 2.0
         except TimeoutError:
             continue
     log.warning("agent process %s did not exit", proc.pid)
+
+
+async def _taskkill_tree(pid: int) -> None:
+    """Windows: end a process and everything it started (there are no process groups to signal)."""
+    killer = await asyncio.create_subprocess_exec(
+        "taskkill", "/PID", str(pid), "/T", "/F", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
+    await killer.wait()
 
 
 # ACP has no "ask the user" request, so agents ask by ending their turn with a
@@ -476,7 +488,9 @@ class AcpRunner:
                 session_id = session.session_id
                 await self._configure(conn, session, job)
 
-                prompt = f"{build_prompt(job, build_system_prompt(job.resident))}\n\n{QUESTION_RULE}"
+                prompt = build_prompt(job, build_system_prompt(job.resident))
+                if job.chat is None:  # a chat never raises bubbles
+                    prompt += f"\n\n{QUESTION_RULE}"
                 for asked in range(MAX_QUESTIONS + 1):
                     client.text.clear()  # each turn's reply on its own: the last one carries the verdict
                     response = await conn.prompt(
@@ -484,7 +498,7 @@ class AcpRunner:
                     )
                     if response.stop_reason != "end_turn":
                         return StepResult("fail", f"{self.brain} stopped early ({response.stop_reason}).")
-                    question = find_question("".join(client.text))
+                    question = None if job.chat is not None else find_question("".join(client.text))
                     if question is None or asked == MAX_QUESTIONS:
                         break
                     answer = await job.ask("confused", question)
@@ -494,7 +508,7 @@ class AcpRunner:
                         else "Nobody answered in time. Use your best judgement and carry on."
                     )
                     prompt += "\n\nWhen you're done, end with one line: `VERDICT: PASS` or `VERDICT: FAIL`."
-                return parse_verdict("".join(client.text))
+                return parse_verdict("".join(client.text), job.summary_chars)
         except asyncio.CancelledError:
             # The engine's step timeout. Ask the agent to stop before the process is killed.
             if conn is not None and session_id is not None:

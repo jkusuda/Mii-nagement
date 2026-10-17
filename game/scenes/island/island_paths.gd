@@ -32,6 +32,14 @@ static func route(layout: IslandLayout, from: Vector3, to: Vector3) -> Array[Vec
 	return points
 
 
+## A random point on the paths (the middle of a random path tile), for wandering.
+static func random_point(layout: IslandLayout, rng: RandomNumberGenerator) -> Vector3:
+	var tiles: Array = layout.path_tiles.keys()
+	if tiles.is_empty():
+		return Vector3(0, PATH_Y, 0)
+	return _center(tiles[rng.randi() % tiles.size()])
+
+
 static func _center(t: Vector2i) -> Vector3:
 	var p := IslandLayout.tile_center(t)
 	return Vector3(p.x, PATH_Y, p.z)

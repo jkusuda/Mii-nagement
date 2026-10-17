@@ -69,6 +69,17 @@ class AgentJob:
     notes: str = ""  # the resident's diary (Resident.notes), what they chose to remember from earlier tasks
     neighbours: list[str] = field(default_factory=list)  # "Jun (planner)", so SAY TO has names to use
     think: ThinkFn | None = None  # the resident's train of thought, for the game's "thinking" dropdown
+    # A `talk` from the island owner (talk.py), not a package step: what they just said.
+    # `instructions` then holds the building role + conversation, and there is no VERDICT rule.
+    chat: str | None = None
+
+    @property
+    def summary_chars(self) -> int:
+        """How much of the final reply StepResult.summary keeps: a chat reply is the whole point."""
+        return CHAT_REPLY_CHARS if self.chat is not None else 400
+
+
+CHAT_REPLY_CHARS = 4000
 
 
 class ThinkingStream:
@@ -163,13 +174,16 @@ def parse_verdict(text: str, summary_chars: int = 400) -> StepResult:
 
 
 def build_prompt(job: AgentJob, system_prompt: str) -> str:
-    """Personality + instructions + notes from earlier steps, as one text block."""
+    """Personality + instructions + notes from earlier steps, as one text block.
+    A chat (job.chat) is personality + diary + instructions, without the step rules."""
     parts = [system_prompt]
     if job.notes:
         parts += ["", "Things you remember from earlier tasks (your diary):"] + [
             f"- {line}" for line in job.notes.splitlines() if line.strip()
         ]
     parts += ["", job.instructions]
+    if job.chat is not None:
+        return "\n".join(parts).strip()
     if job.history:
         parts += ["", "Notes from earlier steps on this task:"] + [f"- {note}" for note in job.history]
     if job.messages:
