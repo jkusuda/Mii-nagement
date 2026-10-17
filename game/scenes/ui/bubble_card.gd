@@ -69,6 +69,9 @@ func setup(data: Dictionary, resident: Dictionary, place: String) -> void:
 	var kind := str(bubble["kind"])
 	var look := Protocol.bubble(kind)
 	resident_name = str(resident.get("name", bubble["agent"]))
+	# The Mii headshot covers the initial (which the editor preview still shows).
+	%Portrait.texture = Portraits.of(resident) if resident else null
+	%Initial.visible = resident.is_empty()
 	role = ResidentData.role_line(resident) if resident else ""
 	tag_text = look["tag"]
 	tag_icon = look["icon"]
@@ -100,7 +103,7 @@ func _apply() -> void:
 	if not is_node_ready():
 		return  # children don't exist yet; _ready() will call us again
 	%Name.text = resident_name
-	%Initial.text = resident_name.left(1)  # TODO(stretch): the resident's Mii headshot (Portraits) instead of an initial
+	%Initial.text = resident_name.left(1)
 	%Role.text = role
 	%TagLabel.text = tag_text
 	%TagLabel.add_theme_color_override("font_color", tag_color)

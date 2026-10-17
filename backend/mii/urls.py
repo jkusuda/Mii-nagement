@@ -8,6 +8,7 @@ urlpatterns = [
     path("settings", views.settings_view),
     path("brains", views.brains),
     path("brains/detail", views.brains_detail),
+    path("brains/<str:brain>/models", views.brain_models),
     path("gifts", views.gifts),
     path("models", views.models_list),
     path("islands", views.islands_view),

@@ -13,14 +13,18 @@ Python SDK: `agent-client-protocol` (https://agentclientprotocol.github.io/pytho
 """
 
 import asyncio
+import difflib
+import json
 import logging
 import os
 import re
 import shutil
 import signal
 import subprocess
+import tempfile
 import time
-from contextlib import asynccontextmanager, suppress
+from contextlib import AsyncExitStack, asynccontextmanager, suppress
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +36,7 @@ from acp.schema import (
     ClientCapabilities,
     DeniedOutcome,
     EnvVariable,
+    FileEditToolCallContent,
     FileSystemCapabilities,
     Implementation,
     McpServerStdio,
@@ -57,7 +62,8 @@ from mii.agents import (
     permission_for,
 )
 from mii.personality import build_system_prompt
-from mii.sandbox import SandboxError, inside, require_worktree
+from mii.sandbox import Sandbox, SandboxError, inside, require_worktree
+from mii.vocab import THINKING_DETAIL_MAX
 
 log = logging.getLogger(__name__)
 
@@ -167,6 +173,35 @@ KEY_FOR_KIND = {
 }
 REPORT_EVERY = 1.0  # seconds between `activity` events, so the game isn't flooded
 
+# Our names for an agent's permission options (agents name them "Yes", "Allow", ...).
+OPTION_LABELS = {
+    "allow_once": "Just this once",
+    "allow_always": "Always",
+    "reject_once": "Not now",
+    "reject_always": "Never",
+}
+# Fields where agents put their own reason for a tool call (Claude: description, Codex: reason).
+REASON_FIELDS = ("description", "justification", "reason")
+# What a command does, by its first word(s); checked in order, first match wins.
+COMMAND_WORDS = [
+    (re.compile(r"^(pytest|npm (run )?test|make (check|test)|uv run pytest|go test|cargo test)\b"), "run the tests"),
+    (re.compile(r"^(npm|pnpm|yarn|pip3?|uv|cargo|brew) (install|add|i)\b"), "install packages"),
+    (re.compile(r"^(python3?|node|ruby|perl|bash|sh|uv run python)\b"), "run a script"),
+    (re.compile(r"^git (commit|push|merge|rebase|reset|checkout|switch)\b"), "change the git history"),
+    (re.compile(r"^git\b"), "look at the git history"),
+    (re.compile(r"^gh\b"), "talk to GitHub"),
+    (re.compile(r"^(curl|wget)\b"), "download something from the internet"),
+    (re.compile(r"^(rm|rmdir)\b"), "delete files"),
+    (re.compile(r"^(mv|cp|mkdir|touch|chmod)\b"), "move or create files"),
+    (re.compile(r"^(sed -i|tee|patch)\b"), "change files"),
+    (re.compile(r"^(ls|cat|head|tail|grep|rg|find|sed|wc|tree)\b"), "look through files"),
+]
+FILE_PATTERN = re.compile(
+    r"[\w.-]*(?:/[\w.-]+)*\.(?:py|gd|tscn|js|jsx|ts|tsx|json|toml|ya?ml|md|txt|html|css|sh|go|rs|rb|java|c|h|cpp|lock|cfg|ini)\b"
+)
+# Wrappers in front of the real command: `bash -lc "..."`, `cd x &&`, `A=1`.
+COMMAND_PREFIX = re.compile(r"^(\s*((ba|z)?sh -l?c|cd \S+ *(&&|;)|\w+=\S+)\s*['\"]?)+")
+
 
 def available_brains(
     openrouter_api_key: str | None = None, saved_keys: dict[str, str] | None = None
@@ -242,16 +277,40 @@ def gift_servers(gifts: list[str]) -> tuple[list[McpServerStdio], list[str]]:
     return servers, skipped
 
 
+def tool_detail(update: ToolCallStart | ToolCallProgress) -> str:
+    """The technical side of a tool call, for the thinking dropdown's details: the diffs
+    it makes, else its command, else its input as JSON, else the files it touches."""
+    diffs = []
+    for item in update.content or []:
+        if isinstance(item, FileEditToolCallContent):
+            old, new = (item.old_text or "").splitlines(), (item.new_text or "").splitlines()
+            diffs.append("\n".join(difflib.unified_diff(old, new, item.path, item.path, lineterm="")))
+    if any(diffs):
+        detail = "\n".join(d for d in diffs if d)
+    elif isinstance(update.raw_input, dict) and isinstance(update.raw_input.get("command"), str):
+        detail = "$ " + update.raw_input["command"]
+    elif update.raw_input:
+        detail = json.dumps(update.raw_input, indent=1, default=str)
+    else:
+        detail = "\n".join(str(where.path) for where in update.locations or [])
+    return detail[:THINKING_DETAIL_MAX]
+
+
 class MiiClient(Client):
     """Our side of the ACP connection for one step: streams progress, answers permission
     requests through bubbles, and serves file reads/writes inside the worktree only."""
 
     def __init__(self, job: AgentJob, workdir: Path):
+        self.start(job, workdir)
+
+    def start(self, job: AgentJob, workdir: Path) -> None:
+        """Serve this step's job (a kept agent's client is handed each new step of its resident)."""
         self.job = job
         self.workdir = workdir
         self.text: list[str] = []  # the agent's reply, chunk by chunk
         self.thinking = ThinkingStream(job.think)  # thoughts + reply + tool calls, for the game
         self.pending: asyncio.Task | None = None  # a bubble we're waiting on
+        self._tools: dict[str, dict] = {}  # tool call id -> what the game was last told about it
         self._last_report = 0.0
         self._last_text = ""
 
@@ -265,12 +324,27 @@ class MiiClient(Client):
         elif isinstance(update, AgentThoughtChunk):
             if isinstance(update.content, TextContentBlock):
                 await self.thinking.add("thought", update.content.text)
-        elif isinstance(update, (ToolCallStart, ToolCallProgress)) and update.title:
-            if isinstance(update, ToolCallStart):
-                await self.thinking.add("tool", update.title)
-            await self._report(update.title)
+        elif isinstance(update, (ToolCallStart, ToolCallProgress)):
+            await self._tool_line(update)
+            if update.title:
+                await self._report(update.title)
         elif isinstance(update, UsageUpdate) and update.size > 0 and self.job.notebook:
             await self.job.notebook(update.used / update.size)  # the resident's notebook fills up
+
+    async def _tool_line(self, update: ToolCallStart | ToolCallProgress) -> None:
+        """A tool call for the thinking dropdown: one line, sent again (same `call`) when
+        its title or details fill in. Status-only progress updates send nothing."""
+        before = self._tools.get(update.tool_call_id, {"title": "", "tool": "", "detail": ""})
+        kind = getattr(update.kind, "value", update.kind)
+        now = {
+            "title": update.title or before["title"],
+            "tool": str(kind or before["tool"]),
+            "detail": tool_detail(update) or before["detail"],
+        }
+        if not now["title"] or now == before:
+            return
+        self._tools[update.tool_call_id] = now
+        await self.thinking.tool(now["title"], tool=now["tool"], call=update.tool_call_id, detail=now["detail"])
 
     async def _report(self, text: str) -> None:
         now = time.monotonic()
@@ -297,12 +371,13 @@ class MiiClient(Client):
             await self._report(f"Refused ({tool_call.title or tool_call.kind}): house key says no")
             return _allow(pick("reject_once") or pick("reject_always"))
 
-        # Show the agent's own option names as buttons, but decide by option_id (names can repeat).
+        # Our names for the options as buttons, but decide by option_id (names can repeat).
         labels: dict[str, str] = {}
         for o in options:
-            label = o.name if o.name not in labels else f"{o.name} [{o.option_id}]"
+            name = OPTION_LABELS.get(getattr(o.kind, "value", o.kind), o.name)
+            label = name if name not in labels else f"{name} [{o.option_id}]"
             labels[label] = o.option_id
-        text = tool_call.title or "May I do this?"
+        text = ask_reason(tool_call)
         self.pending = asyncio.create_task(self.job.ask("permission", text, list(labels), _detail(tool_call)))
         try:
             answer = await self.pending
@@ -363,6 +438,40 @@ def _detail(tool_call: ToolCallUpdate) -> str | None:
         if value:
             return str(value)[:500]
     return None
+
+
+def ask_reason(tool_call: ToolCallUpdate) -> str:
+    """Why the agent wants this key, in a short plain sentence: its own reason when it
+    gives one, else its title when that isn't just the command, else a guess from the command."""
+    raw = tool_call.raw_input if isinstance(tool_call.raw_input, dict) else {}
+    for field in REASON_FIELDS:
+        if isinstance(raw.get(field), str) and raw[field].strip():
+            return _sentence(raw[field])
+    command = _detail(tool_call) if (tool_call.kind or "") == "execute" else None
+    title = (tool_call.title or "").strip()
+    if title and "`" not in title and len(title) <= 80 and (not command or command not in title):
+        return _sentence(title)
+    if command:
+        return _sentence(describe_command(command))
+    return "May I do this?"
+
+
+def describe_command(command: str) -> str:
+    """A guess at what a shell command does, e.g. "run a script, touching backend/x.py"."""
+    words = COMMAND_PREFIX.sub("", command.strip())
+    what = next((text for pattern, text in COMMAND_WORDS if pattern.search(words)), None)
+    if what is None:
+        what = f"run `{words.split()[0]}`" if words.split() else "run a command"
+    files = list(dict.fromkeys(m for m in FILE_PATTERN.findall(command) if not m.startswith(".")))
+    if files and what not in ("install packages", "run the tests"):
+        shown = ", ".join(files[:2]) + (f" and {len(files) - 2} more" if len(files) > 2 else "")
+        what += f", touching {shown}"
+    return what
+
+
+def _sentence(text: str) -> str:
+    text = " ".join(text.split())[:160]
+    return text[:1].upper() + text[1:]
 
 
 def _allow(option_id: str) -> RequestPermissionResponse:
@@ -452,68 +561,188 @@ def pick_model(offered: list[str], wanted: str) -> str | None:
     return close[0] if len(close) == 1 else None
 
 
+def agent_env(spec: dict) -> dict[str, str]:
+    """The agent's environment: the user's (PATH, HOME, keychain) plus the vendor keys saved in
+    Settings, minus our own keys (prefs.PRIVATE_ENV) and minus blank keys (a set-but-empty
+    ANTHROPIC_API_KEY makes some CLIs skip the subscription login)."""
+    env = {k: v for k, v in os.environ.items() if k not in prefs.PRIVATE_ENV and not (_is_key(k) and not v.strip())}
+    return prefs.secrets_env() | env | spec["env"]
+
+
+def offered_models(config_options: list | None) -> tuple[list[dict], str | None]:
+    """The models a session offers (its config option of category "model"): [{id, name,
+    description}] and the current one. Grouped options are flattened."""
+    for option in config_options or []:
+        if getattr(option, "category", None) != "model":
+            continue
+        models = []
+        for item in getattr(option, "options", []):
+            for choice in getattr(item, "options", None) or [item]:  # a group holds options
+                models.append(
+                    {"id": choice.value, "name": choice.name or choice.value, "description": choice.description}
+                )
+        return models, getattr(option, "current_value", None)
+    return [], None
+
+
+class BrainError(Exception):
+    """An agent couldn't be asked (not installed, not logged in, too slow). Shown to the user."""
+
+
+class _ListingClient(Client):
+    """Our side of the connection while we only ask which models an agent offers. We never
+    send a prompt, so the agent has no reason to call us: refuse anything it asks."""
+
+    async def request_permission(self, session_id: str, tool_call: Any, options: list, **kwargs: Any) -> Any:
+        return RequestPermissionResponse(outcome=DeniedOutcome(outcome="cancelled"))
+
+    async def session_update(self, session_id: str, update: Any, **kwargs: Any) -> None:
+        return None
+
+    async def read_text_file(self, session_id: str, path: str, **kwargs: Any) -> Any:
+        raise RequestError.invalid_request("no files while listing models")
+
+    async def write_text_file(self, session_id: str, path: str, content: str, **kwargs: Any) -> Any:
+        raise RequestError.invalid_request("no files while listing models")
+
+
+def _scratch_worktree(root: Path) -> Path:
+    """An empty git repo with one empty commit and a worktree of it, under `root`: somewhere
+    the sandbox lets an agent start (check_workdir) that holds none of the user's files."""
+    repo = root / "repo"
+    repo.mkdir()
+    git = ["git", "-C", str(repo), "-c", "user.name=mii", "-c", "user.email=mii@localhost"]
+    subprocess.run([*git, "init", "-q"], check=True, capture_output=True)
+    subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "scratch"], check=True, capture_output=True)
+    sandbox = Sandbox(repo, root / "worktrees")
+    workdir = sandbox.create_worktree("models")
+    sandbox.check_workdir(workdir)
+    return workdir
+
+
+MODELS_TIMEOUT = 90.0  # seconds: the first `npx -y` download can be slow
+MODELS_CACHE_SECONDS = 600.0
+_models_cache: dict[str, tuple[float, dict]] = {}  # brain -> (when, {"models", "current"})
+
+
+async def list_brain_models(brain: str, command: list[str] | None = None, refresh: bool = False) -> dict:
+    """The models an ACP brain offers on this machine: {"models": [{id, name, description}],
+    "current": its default}. Starts the agent in a scratch worktree, opens a session (no
+    prompt, so nothing is spent), reads the session's model option and closes it. Cached for
+    10 minutes per brain. Raises BrainError."""
+    cached = _models_cache.get(brain)
+    if cached and not refresh and command is None and time.monotonic() - cached[0] < MODELS_CACHE_SECONDS:
+        return cached[1]
+    spec = BRAINS[brain]
+    try:
+        with tempfile.TemporaryDirectory(prefix="mii-models-") as tmp:
+            workdir = await asyncio.to_thread(_scratch_worktree, Path(tmp))
+            async with asyncio.timeout(MODELS_TIMEOUT):
+                async with spawn_agent(
+                    _ListingClient(), command or spec["command"], cwd=workdir, env=agent_env(spec)
+                ) as conn:
+                    await conn.initialize(
+                        protocol_version=PROTOCOL_VERSION,
+                        client_capabilities=ClientCapabilities(
+                            fs=FileSystemCapabilities(read_text_file=False, write_text_file=False), terminal=False
+                        ),
+                        client_info=Implementation(name="mii-nagement", title="Mii-nagement", version="0.2.0"),
+                    )
+                    session = await conn.new_session(cwd=str(workdir), mcp_servers=[])
+                    models, current = offered_models(session.config_options)
+    except RequestError as e:
+        if e.code == AUTH_REQUIRED:
+            raise BrainError(f"{brain} isn't logged in: {spec['login_hint']}")
+        raise BrainError(f"{brain} refused: {e}")
+    except TimeoutError:
+        raise BrainError(f"{brain} took longer than {MODELS_TIMEOUT:.0f}s to start")
+    except (OSError, ConnectionError, subprocess.CalledProcessError, SandboxError) as e:
+        raise BrainError(f"couldn't start {brain}: {e}")
+    result = {"models": models, "current": current}
+    if command is None:
+        _models_cache[brain] = (time.monotonic(), result)
+    return result
+
+
+# The first prompt of a kept session already held the personality and the diary; later visits say this instead.
+RESUMED = (
+    "You are {name} again, back at the {building} for this task (visit {attempt}). This is the same "
+    "session as before: you already know the repository and what you did, so only re-read files that changed."
+)
+
+
+@dataclass
+class LiveAgent:
+    """One resident's agent process and session, kept between their visits on one task:
+    each Mii is one agent, so a retry skips the start-up, the repo re-read and the context rebuild."""
+
+    stack: AsyncExitStack  # owns the process (spawn_agent): closing it ends the whole process tree
+    conn: Any
+    client: MiiClient
+    session: Any  # the session/new response
+    workdir: Path
+    model: str | None
+    gifts: tuple[str, ...]
+    read_only: bool
+
+    def fits(self, job: AgentJob) -> bool:
+        """Can this job use the kept session? Not if the worktree, model or gifts changed."""
+        return (self.workdir, self.model, self.gifts) == (job.workdir, job.resident.model, _gifts(job))
+
+    async def close(self) -> None:
+        with suppress(Exception):
+            await self.stack.aclose()
+
+
+def _gifts(job: AgentJob) -> tuple[str, ...]:
+    return tuple(job.resident.gifts or [])
+
+
 class AcpRunner:
-    """One brain's runner. A fresh agent process per step, so nothing leaks between steps."""
+    """One brain's runner. Each resident gets one agent process per task: started on their first
+    visit, prompted again on later visits (same session), closed by end_task() when the task is
+    over, or right away when a step times out, is cancelled or the agent breaks."""
 
     def __init__(self, brain: str, command: list[str] | None = None):
         self.brain = brain
         self.spec = BRAINS[brain]
         self.command = command or self.spec["command"]  # tests pass a fake agent here
+        self.live: dict[tuple[str, str], LiveAgent] = {}  # (task id, resident id) -> their kept agent
+
+    async def end_task(self, task_id: str) -> None:
+        """The task is over: close every agent kept for it."""
+        for key in [key for key in self.live if key[0] == task_id]:
+            await self.live.pop(key).close()
 
     async def run(self, job: AgentJob) -> StepResult:
         if problem := require_worktree(job):
             return StepResult("fail", problem)
 
-        # The agent gets the user's full environment (PATH, HOME, keychain) plus the vendor keys
-        # saved in Settings, minus our own keys (prefs.PRIVATE_ENV) and minus blank keys (a
-        # set-but-empty ANTHROPIC_API_KEY makes some CLIs skip the subscription login).
-        env = {k: v for k, v in os.environ.items() if k not in prefs.PRIVATE_ENV and not (_is_key(k) and not v.strip())}
-        env = prefs.secrets_env() | env | self.spec["env"]
-        client = MiiClient(job, job.workdir)
-        session_id: str | None = None
-        conn = None
+        key = (job.task.id, job.resident.id)
+        agent = self.live.pop(key, None)  # out of the table while it works: nothing else may use it
+        if agent is not None and not agent.fits(job):
+            await agent.close()
+            agent = None
+        resumed = agent is not None
+        client = agent.client if agent else MiiClient(job, job.workdir)
+        client.start(job, job.workdir)
+        keep = False
         try:
-            async with spawn_agent(client, self.command, cwd=job.workdir, env=env) as conn:
-                await conn.initialize(
-                    protocol_version=PROTOCOL_VERSION,
-                    client_capabilities=ClientCapabilities(
-                        fs=FileSystemCapabilities(read_text_file=True, write_text_file=True), terminal=False
-                    ),
-                    client_info=Implementation(name="mii-nagement", title="Mii-nagement", version="0.2.0"),
-                )
-                servers, skipped = await asyncio.to_thread(gift_servers, list(job.resident.gifts or []))
-                for note in skipped:
-                    await job.report(note)
-                session = await conn.new_session(cwd=str(job.workdir), mcp_servers=servers)
-                session_id = session.session_id
-                await self._configure(conn, session, job)
-
-                prompt = build_prompt(job, build_system_prompt(job.resident))
-                if job.chat is None:  # a chat never raises bubbles
-                    prompt += f"\n\n{QUESTION_RULE}"
-                for asked in range(MAX_QUESTIONS + 1):
-                    client.text.clear()  # each turn's reply on its own: the last one carries the verdict
-                    response = await conn.prompt(
-                        session_id=session_id, prompt=[TextContentBlock(type="text", text=prompt)]
-                    )
-                    if response.stop_reason != "end_turn":
-                        return StepResult("fail", f"{self.brain} stopped early ({response.stop_reason}).")
-                    question = None if job.chat is not None else find_question("".join(client.text))
-                    if question is None or asked == MAX_QUESTIONS:
-                        break
-                    answer = await job.ask("confused", question)
-                    prompt = (
-                        f"The island owner answered: {answer}"
-                        if answer
-                        else "Nobody answered in time. Use your best judgement and carry on."
-                    )
-                    prompt += "\n\nWhen you're done, end with one line: `VERDICT: PASS` or `VERDICT: FAIL`."
-                return parse_verdict("".join(client.text), job.summary_chars)
+            if agent is None:
+                agent = await self._start(job, client)
+            else:
+                await job.report("Picking up where I left off")
+                if agent.read_only != job.read_only:
+                    await self._set_mode(agent.conn, agent.session, job.read_only)
+                    agent.read_only = job.read_only
+            result, keep = await self._prompt(agent, job, resumed)
+            return result
         except asyncio.CancelledError:
-            # The engine's step timeout. Ask the agent to stop before the process is killed.
-            if conn is not None and session_id is not None:
+            # The engine's step timeout, or the task was cancelled. Ask the agent to stop; the
+            # finally below ends the process.
+            if agent is not None:
                 with suppress(Exception):
-                    await asyncio.wait_for(conn.cancel(session_id=session_id), timeout=1)
+                    await asyncio.wait_for(agent.conn.cancel(session_id=agent.session.session_id), timeout=1)
             raise
         except RequestError as e:
             if e.code != AUTH_REQUIRED:
@@ -523,6 +752,11 @@ class AcpRunner:
             await job.ask("tired", f"My {self.brain} brain isn't logged in: {self.spec['login_hint']}.")
             return StepResult("fail", f"{self.brain} needs a login ({self.spec['login_hint']}).")
         except (OSError, ConnectionError) as e:
+            if resumed:  # the kept agent died between visits: start a fresh one
+                log.info("%s: kept agent for %s is gone (%s), starting a new one", self.brain, job.resident.id, e)
+                await agent.close()
+                agent = None
+                return await self.run(job)
             log.warning("%s brain failed: %s", self.brain, e)
             return StepResult("fail", f"The {self.brain} brain crashed: {e}")
         finally:
@@ -530,21 +764,83 @@ class AcpRunner:
                 client.pending.cancel()
             with suppress(Exception):
                 await client.thinking.flush()  # the last few words
+            if agent is not None:
+                if keep:
+                    self.live[key] = agent
+                else:
+                    await agent.close()
 
-    async def _configure(self, conn, session, job: AgentJob) -> None:
-        """Switch on the agent's edit / read-only mode and the resident's model, when offered."""
-        wanted_mode = self.spec["readonly_mode"] if job.read_only else self.spec["edit_mode"]
+    async def _start(self, job: AgentJob, client: MiiClient) -> LiveAgent:
+        """Start the agent in the worktree, open a session and configure it."""
+        stack = AsyncExitStack()
+        try:
+            conn = await stack.enter_async_context(
+                spawn_agent(client, self.command, cwd=job.workdir, env=agent_env(self.spec))
+            )
+            await conn.initialize(
+                protocol_version=PROTOCOL_VERSION,
+                client_capabilities=ClientCapabilities(
+                    fs=FileSystemCapabilities(read_text_file=True, write_text_file=True), terminal=False
+                ),
+                client_info=Implementation(name="mii-nagement", title="Mii-nagement", version="0.2.0"),
+            )
+            servers, skipped = await asyncio.to_thread(gift_servers, list(_gifts(job)))
+            for note in skipped:
+                await job.report(note)
+            session = await conn.new_session(cwd=str(job.workdir), mcp_servers=servers)
+            await self._set_mode(conn, session, job.read_only)
+            await self._set_model(conn, session, job)
+        except BaseException:
+            await stack.aclose()  # ends the process, also on a timeout or cancel
+            raise
+        return LiveAgent(stack, conn, client, session, job.workdir, job.resident.model, _gifts(job), job.read_only)
+
+    async def _prompt(self, agent: LiveAgent, job: AgentJob, resumed: bool) -> tuple[StepResult, bool]:
+        """Prompt the session (answering QUESTION lines with ❓ bubbles). Returns the result and
+        whether the session is still fit to keep for this resident's next visit. A chat (talk.py)
+        asks no questions, keeps its whole reply, and is never kept: its worktree goes right after."""
+        conn, client, session_id = agent.conn, agent.client, agent.session.session_id
+        chat = job.chat is not None
+        if resumed:
+            intro = RESUMED.format(name=job.resident.name, building=job.building.name, attempt=job.attempt)
+            prompt = build_prompt(job, intro, diary=False)
+        else:
+            prompt = build_prompt(job, build_system_prompt(job.resident))
+        if not chat:
+            prompt = f"{prompt}\n\n{QUESTION_RULE}"
+        for asked in range(MAX_QUESTIONS + 1):
+            client.text.clear()  # each turn's reply on its own: the last one carries the verdict
+            response = await conn.prompt(session_id=session_id, prompt=[TextContentBlock(type="text", text=prompt)])
+            if response.stop_reason != "end_turn":
+                return StepResult("fail", f"{self.brain} stopped early ({response.stop_reason})."), False
+            question = None if chat else find_question("".join(client.text))
+            if question is None or asked == MAX_QUESTIONS:
+                break
+            answer = await job.ask("confused", question)
+            prompt = (
+                f"The island owner answered: {answer}"
+                if answer
+                else "Nobody answered in time. Use your best judgement and carry on."
+            )
+            prompt += "\n\nWhen you're done, end with one line: `VERDICT: PASS` or `VERDICT: FAIL`."
+        return parse_verdict("".join(client.text), job.summary_chars), not chat
+
+    async def _set_mode(self, conn, session, read_only: bool) -> None:
+        """Switch on the agent's edit / read-only mode, when it offers it."""
+        wanted_mode = self.spec["readonly_mode"] if read_only else self.spec["edit_mode"]
         modes = session.modes.available_modes if session.modes else []
         if wanted_mode and any(m.id == wanted_mode for m in modes):
             await conn.set_session_mode(session_id=session.session_id, mode_id=wanted_mode)
 
+    async def _set_model(self, conn, session, job: AgentJob) -> None:
+        """Pick the resident's model, when the agent offers it."""
         model = job.resident.model
         if not model:
             return
         for option in session.config_options or []:
             if getattr(option, "category", None) != "model":
                 continue
-            values = [o.value for o in getattr(option, "options", [])]
+            values = [m["id"] for m in offered_models([option])[0]]  # flattens grouped options
             chosen = pick_model(values, model)
             if chosen:
                 await conn.set_config_option(config_id=option.id, session_id=session.session_id, value=chosen)

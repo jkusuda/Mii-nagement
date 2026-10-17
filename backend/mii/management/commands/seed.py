@@ -1,4 +1,4 @@
-"""`manage.py seed`: create the seed island; `--reset` wipes first; `--loop` runs the simulator."""
+"""`manage.py seed`: seed an empty database; `--reset` wipes first; `--loop` runs the simulator."""
 
 import asyncio
 

@@ -46,7 +46,7 @@ class Runtime:
         self.worker: asyncio.Task | None = None
 
     async def start(self) -> None:
-        """Create/upgrade the tables, seed the island if missing, apply settings, resume the queue, start the worker."""
+        """Create/upgrade the tables, seed an empty database, apply settings, resume the queue, start the worker."""
         await sync_to_async(call_command)("migrate", interactive=False, verbosity=0)
         await sync_to_async(seed.seed)()
         await self.reload()

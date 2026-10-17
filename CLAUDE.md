@@ -63,7 +63,7 @@ binary exists: a missing Godot is skipped, and that looks like a pass.
   keychain go through `asyncio.to_thread` (or `sync_to_async` for ORM code).
 - **Brains:** each ACP brain is one entry in `BRAINS` (`agents/acp.py`); brain-specific
   details stay in the runners, never in the engine, protocol or game.
-- **Mock mode is the default** (`MOCK_AGENTS=1`) and every feature must work in it.
+- **Mock mode is the backend's default** (`MOCK_AGENTS=1`; `make dev` forces it on, `make` forces it off) and every feature must work in it.
 - **No `.env` required.** Settings go through `PUT /settings` (`prefs.py`); secrets go to
   the OS keychain, never the database or the snapshot. No machine-specific paths in code.
 - **Migrations are Django's:** change `models.py`, run `makemigrations mii`, check it in.

@@ -14,8 +14,9 @@ The WebSocket messages are in [protocol.md](protocol.md); how the pieces fit is 
 | `GET /meta` | the vocabulary the game shows pickers for: jobs, traits, brains, gifts, keys, building types, job buildings, road conditions, town plans, island shapes, house rules, bubble kinds, moods, states, task statuses, weather kinds (all from `backend/mii/vocab.py`) |
 | `GET /brains` | `{brain: true/false}`: which brains can run here (the creator greys out the rest) |
 | `GET /brains/detail` | per brain: `ok`, `installed`, `logged_in` (best effort), `api_key`, `hint` |
+| `GET /brains/{brain}/models?refresh=1` | the models a brain offers here: `{"models": [{"id", "name", "description"}], "current": its default}`. `claude-code`, `codex`, `gemini`: the backend starts the CLI in a throwaway git worktree, opens a session (no prompt, nothing spent), reads its `model` config option and closes it; can take a few seconds, cached 10 minutes (`refresh=1` asks again); 503 `{"error"}` when the CLI is missing, not logged in or too slow. `openrouter`: the catalogue (as `GET /models`). `mock` or unknown: 404 |
 | `GET /gifts` | per gift (MCP server): `ok`, `label`, `hint` (the creator greys out the rest) |
-| `GET /models` | the OpenRouter catalogue (needs `OPENROUTER_API_KEY`) |
+| `GET /models` | the OpenRouter catalogue `{"models": [{id, name, context_length}]}` (needs `OPENROUTER_API_KEY`; 503 without): the resident creator's model picker and Settings' default-model dropdown |
 | `GET /islands` | every island (id, name, repo, created_at, ...: the Archipelago screen), plus `default_folder` for new repositories |
 | `POST /islands` | found an island: `{"name", "repo"?, "branch"?, "shape"?, "steps"? \| "plan"?: "classic" \| "quick_fixes", "season"?, "rules"?, "folder"?, "existing_repo"?}` → its snapshot (400 `{"error"}` with a readable reason). The repository comes one of three ways: no `repo` → a new repo with a README in `<folder>/<id>`; `repo` → `gh repo clone owner/name <folder>/<id>` (needs `gh` installed and logged in; the folder must be empty or missing; checks out `branch`, default the repo's default branch; an empty GitHub repo gets a first README commit); `existing_repo` → that git folder as is (needs a commit; `repo` is read from its GitHub `origin` when not given, `branch` defaults to its checked-out branch). Then it lays out the shape's lots and the roads for the steps. Cloning runs in a worker thread and can take a while |
 | `GET /github/repos?q=` | the user's repos, through their logged-in `gh` (island creator) |
@@ -26,7 +27,7 @@ The WebSocket messages are in [protocol.md](protocol.md); how the pieces fit is 
 | `DELETE /islands/{id}` | abandon the island (rows go, the git repository stays on disk). 409 while a task runs there or if it is the last island |
 | `DELETE /islands/{id}/residents/{resident_id}` | the resident moves away (409 if a building still counts on them) |
 | `GET /islands/{id}/tasks` | the island's tasks, newest first, each with its `steps` (`?status=done,failed&limit=50`) |
-| `POST /islands/{id}/tasks` | `{"title": ..., "description": ...}` or `{"issue": 42}` → the queued task. The engine runs it through the island's residents' brains |
+| `POST /islands/{id}/tasks` | `{"title": ..., "description": ...}` or `{"issue": 42}`, optionally with `"attachments": [{"name": "spec.md", "content": "<base64>"}]` → the queued task. The engine runs it through the island's residents' brains. See "Attachments" below |
 | `GET /islands/{id}/tasks/{task_id}` | one task: `steps` (building, resident, brain, outcome, `summary` = what the resident reported) + `events` (the stored events while it ran) |
 | `POST /islands/{id}/tasks/{task_id}/cancel` | cancel a queued task or stop the running one (409 if it already finished) |
 | `GET /islands/{id}/insights?range=week` | stats for the Insights screen and News' "This week" (`today` / `week` / `month`) |
@@ -35,6 +36,17 @@ The WebSocket messages are in [protocol.md](protocol.md); how the pieces fit is 
 | `GET /settings` | effective settings (incl. `judge`, `godot_path`), what `.env` locks, which API keys are set (incl. `typesafe_api_key`) |
 | `PUT /settings` | `{"settings": {...}, "secrets": {"openrouter_api_key": "sk-..." \| null}}`; keys go to the keychain and are never echoed |
 | `POST /replay/{task_id}?speed=4` | replay a recorded task (demo safety net) |
+
+## Attachments
+
+A task can carry files (the Mailbox form's "Attach files…"): up to 10, at most
+2 MB each and 8 MB together, sent base64-encoded. Names are cut to a plain file
+name (`../../x/notes.md` → `notes.md`, odd characters → `_`, repeats → `notes-2.md`);
+a bad list, bad base64 or too much data is a 400 (a body over 12 MB is a 413).
+They're stored with the task (`Attachment` table). When the task starts, real mode
+writes them to `.mii-attachments/` in its worktree, with a `.gitignore` of `*` so
+they're never committed, and every resident's prompt lists them. Mock mode keeps
+them and lists them too; the mock planner "reads" each one in the thinking dropdown.
 
 ## Tasks over HTTP
 

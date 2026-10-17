@@ -218,18 +218,7 @@ func _story_row(story: Dictionary) -> Control:
 	var time := UI.label(NewsStories.clock(story["when"]), 11, false)
 	time.custom_minimum_size.x = 38
 	var resident := Net.find_resident(story["agent"])
-	var color := Color(str(resident.get("color", "#8A8FA8")))
-	var avatar := PanelContainer.new()
-	avatar.custom_minimum_size = Vector2(26, 26)
-	avatar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	var circle: StyleBoxFlat = get_theme_stylebox("panel", "AvatarCircle").duplicate()
-	circle.bg_color = color.lerp(Color.WHITE, 0.75)
-	circle.set_corner_radius_all(13)
-	avatar.add_theme_stylebox_override("panel", circle)
-	var initial := UI.label(str(resident.get("name", "•")).left(1), 13, true)
-	initial.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	initial.add_theme_color_override("font_color", color.darkened(0.2))
-	avatar.add_child(initial)
+	var avatar := UI.avatar(resident, 26, 0.75)
 
 	var text := UI.label(story["text"], 13, true)
 	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL

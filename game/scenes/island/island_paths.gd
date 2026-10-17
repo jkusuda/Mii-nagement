@@ -25,9 +25,13 @@ static func route(layout: IslandLayout, from: Vector3, to: Vector3) -> Array[Vec
 		if i > 0 and i < tiles.size() - 1 and (tiles[i] - tiles[i - 1]) == (tiles[i + 1] - tiles[i]):
 			continue
 		points.append(_center(tiles[i]))
+	# Already partway along the first stretch (stopped mid-walk)? Don't step back
+	# to the first tile's middle, just carry on.
+	if points.size() > 1 and _between(from, points[0], points[1]):
+		points.remove_at(0)
 	if points.is_empty():
 		points.append(Vector3(to.x, PATH_Y, to.z))
-	elif Vector2(to.x, to.z).distance_to(Vector2(points[-1].x, points[-1].z)) < IslandLayout.TILE:
+	elif IslandLayout.world_to_tile(to) == tiles[-1]:
 		points[-1] = Vector3(to.x, PATH_Y, to.z)  # a stop slightly off the tile's middle
 	return points
 
@@ -38,6 +42,15 @@ static func random_point(layout: IslandLayout, rng: RandomNumberGenerator) -> Ve
 	if tiles.is_empty():
 		return Vector3(0, PATH_Y, 0)
 	return _center(tiles[rng.randi() % tiles.size()])
+
+
+## Is `p` on the straight bit of path from `a` to `b` (give or take a little)?
+static func _between(p: Vector3, a: Vector3, b: Vector3) -> bool:
+	var p2 := Vector2(p.x, p.z)
+	var a2 := Vector2(a.x, a.z)
+	var b2 := Vector2(b.x, b.z)
+	var closest := Geometry2D.get_closest_point_to_segment(p2, a2, b2)
+	return closest != a2 and p2.distance_to(closest) < 0.1
 
 
 static func _center(t: Vector2i) -> Vector3:

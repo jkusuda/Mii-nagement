@@ -33,6 +33,12 @@ ROAD_CONDITIONS = ("always", "pass", "fail")
 STATES = ("idle", "walking", "working", "sleeping")
 MOODS = ("happy", "focused", "confused", "frustrated", "tired", "proud")
 BUBBLE_KINDS = ("confused", "struggling", "permission", "ready", "tired")
+# Tool sorts on `thinking` events (ACP's ToolKind); the game words its summary by them.
+TOOL_SORTS = ("read", "edit", "delete", "move", "search", "execute", "fetch", "think", "other")
+# Where a task's attached files go in its worktree. A `.gitignore` of `*` inside keeps
+# git from ever committing them (not even with `git add -A`).
+ATTACHMENTS_DIR = ".mii-attachments"
+THINKING_DETAIL_MAX = 2000  # characters of a tool's `detail` on a `thinking` event
 TASK_STATUSES = ("queued", "in_progress", "done", "failed", "cancelled")
 # A `ready` bubble's "send it back" option. The answer may carry a note: "Send back: also test IPv6".
 SEND_BACK = "Send back"

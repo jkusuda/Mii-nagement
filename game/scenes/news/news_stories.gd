@@ -110,11 +110,7 @@ func _story_for(e: Dictionary) -> Dictionary:
 					return _make(who, "%s is stuck%s." % [_name(who), place], "Stuck", Color("E36F1E"), "residents")
 				"permission":
 					return _make(
-						who,
-						"%s needs a key: %s" % [_name(who), e.get("text", "")],
-						"Permission",
-						Color("D6457A"),
-						"residents"
+						who, "%s needs a key%s." % [_name(who), place], "Permission", Color("D6457A"), "residents"
 					)
 				"ready":
 					return _make(
@@ -166,6 +162,8 @@ func _story_for(e: Dictionary) -> Dictionary:
 
 
 func _make(agent: String, text: String, tag: String, color: Color, section: String) -> Dictionary:
+	# One line per story: the feed row trims what doesn't fit with "…".
+	text = " ".join(text.split("\n", false))
 	return {"agent": agent, "text": text, "tag": tag, "color": color, "section": section}
 
 

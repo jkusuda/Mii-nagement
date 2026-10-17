@@ -6,7 +6,9 @@ A resident's `brain` decides which runner does the work:
 - "openrouter"                       -> OpenRouterRunner (any OpenRouter model, no CLI needed)
 
 Every runner has the same method, `async run(job) -> StepResult`, so the
-engine never needs to know which brain it's talking to.
+engine never needs to know which brain it's talking to. A runner that keeps
+agents alive between steps also has `async end_task(task_id)`, which the engine
+calls (through `end_task` below) when the task is over.
 """
 
 import re
@@ -17,7 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
 from mii.models import Building, Island, Resident, Task
-from mii.vocab import DEFAULT_MODEL
+from mii.vocab import ATTACHMENTS_DIR, DEFAULT_MODEL
 
 if TYPE_CHECKING:
     from mii.sandbox import Sandbox
@@ -32,6 +34,7 @@ class StepResult:
     help_request: str | None = None  # a `HELP: ...` line: what the resident is stuck on
     says: list[tuple[str, str]] = field(default_factory=list)  # `SAY TO <Name>: ...` lines: (name, message)
     remember: list[str] = field(default_factory=list)  # `REMEMBER: ...` lines for the resident's diary
+    test_output: str | None = None  # failing TEST_COMMAND output the engine saw itself (Lab, Workshop pre-check)
 
 
 # ask(kind, text, options, detail) shows a bubble and waits. `detail` is extra context the
@@ -42,9 +45,10 @@ AskFn = Callable[..., Awaitable[str | None]]
 ReportFn = Callable[[str], Awaitable[None]]
 # notebook(fraction) says how full the agent's context window is (0.0-1.0).
 NotebookFn = Callable[[float], Awaitable[None]]
-# think(kind, text) streams the resident's train of thought (`thinking` events):
-# kind is "thought", "reply" or "tool". Runners send it through a ThinkingStream.
-ThinkFn = Callable[[str, str], Awaitable[None]]
+# think(kind, text, **tool_info) streams the resident's train of thought (`thinking` events):
+# kind is "thought", "reply" or "tool". A tool may add `tool` (its sort: read, edit, execute...),
+# `call` (the tool call's id) and `detail` (a diff, the command...). Runners use a ThinkingStream.
+ThinkFn = Callable[..., Awaitable[None]]
 
 
 @dataclass
@@ -69,6 +73,7 @@ class AgentJob:
     notes: str = ""  # the resident's diary (Resident.notes), what they chose to remember from earlier tasks
     neighbours: list[str] = field(default_factory=list)  # "Jun (planner)", so SAY TO has names to use
     think: ThinkFn | None = None  # the resident's train of thought, for the game's "thinking" dropdown
+    attachments: list[str] = field(default_factory=list)  # files sent with the task, in <workdir>/.mii-attachments/
     # A `talk` from the island owner (talk.py), not a package step: what they just said.
     # `instructions` then holds the building role + conversation, and there is no VERDICT rule.
     chat: str | None = None
@@ -107,6 +112,15 @@ class ThinkingStream:
         self.size += len(text)
         if kind == "tool" or self.size >= self.MAX_CHARS or time.monotonic() - self.last >= self.EVERY:
             await self.flush()
+
+    async def tool(self, title: str, tool: str = "", call: str = "", detail: str = "") -> None:
+        """One tool call, sent right away. The same `call` again updates its line in the game."""
+        if self.think is None or not title:
+            return
+        await self.flush()
+        self.kind = "tool"
+        info = {key: value for key, value in (("tool", tool), ("call", call), ("detail", detail)) if value}
+        await self.think("tool", title, **info)
 
     async def flush(self) -> None:
         if self.think is not None and self.parts:
@@ -173,17 +187,24 @@ def parse_verdict(text: str, summary_chars: int = 400) -> StepResult:
     )
 
 
-def build_prompt(job: AgentJob, system_prompt: str) -> str:
+def build_prompt(job: AgentJob, system_prompt: str, diary: bool = True) -> str:
     """Personality + instructions + notes from earlier steps, as one text block.
+    `diary=False` leaves the diary out (an agent that already read it in this session).
     A chat (job.chat) is personality + diary + instructions, without the step rules."""
     parts = [system_prompt]
-    if job.notes:
+    if job.notes and diary:
         parts += ["", "Things you remember from earlier tasks (your diary):"] + [
             f"- {line}" for line in job.notes.splitlines() if line.strip()
         ]
     parts += ["", job.instructions]
     if job.chat is not None:
         return "\n".join(parts).strip()
+    if job.attachments:
+        parts += [
+            "",
+            f"The owner attached {len(job.attachments)} file(s) to this request, in the `{ATTACHMENTS_DIR}/` "
+            "folder of your working copy. Read them as needed; they are never committed.",
+        ] + [f"- {ATTACHMENTS_DIR}/{name}" for name in job.attachments]
     if job.history:
         parts += ["", "Notes from earlier steps on this task:"] + [f"- {note}" for note in job.history]
     if job.messages:
@@ -206,6 +227,13 @@ class AgentRunner(Protocol):
     async def run(self, job: AgentJob) -> StepResult: ...
 
 
+async def end_task(runner: AgentRunner, task_id: str) -> None:
+    """The task is over (done, failed, cancelled): close any agent the runner kept for it."""
+    close = getattr(runner, "end_task", None)  # optional: only runners that keep agents alive have it
+    if close is not None:
+        await close(task_id)
+
+
 class BrainRunner:
     """Sends each job to the runner for its resident's brain."""
 
@@ -217,6 +245,10 @@ class BrainRunner:
         if runner is None:
             return StepResult("fail", f"Unknown brain {job.resident.brain!r}.")
         return await runner.run(job)
+
+    async def end_task(self, task_id: str) -> None:
+        for runner in self.runners.values():
+            await end_task(runner, task_id)
 
 
 def make_runner(

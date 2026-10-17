@@ -4,7 +4,7 @@ import asyncio
 import random
 
 from mii.agents import AgentJob, StepResult
-from mii.vocab import SEND_BACK
+from mii.vocab import ATTACHMENTS_DIR, SEND_BACK
 
 
 class MockRunner:
@@ -38,7 +38,7 @@ class MockRunner:
         "Okay to delete the old helper file?": "rm src/old_helpers.js",
     }
     # Options per bubble kind. A "ready" answer may carry a note: "Send back: also test IPv6".
-    OPTIONS = {"permission": ["Allow once", "Always allow", "Reject"], "ready": ["Approve", SEND_BACK]}
+    OPTIONS = {"permission": ["Just this once", "Always", "Not now"], "ready": ["Approve", SEND_BACK]}
 
     # Island life, for free: what a mock resident asks of, says to, or remembers about the others.
     HELP_LINES = ["I can't get these tests green. Can someone look?", "This plan doesn't match the code I see. Help?"]
@@ -71,6 +71,25 @@ class MockRunner:
         "post_office": ["Short PR, clear title, happy reviewers.", "I'd write {topic} up in two lines and ship it."],
     }
 
+    # Fake tool calls (title, sort, detail), so the dropdown's summary and details have something to show.
+    TOOLS = {
+        "mailbox": [
+            ("Read README.md", "read", "README.md"),
+            ('Search for "login"', "search", '{\n "pattern": "login",\n "path": "src"\n}'),
+        ],
+        "workshop": [
+            ("Read src/app.py", "read", "src/app.py"),
+            (
+                "Edit src/app.py",
+                "edit",
+                "--- src/app.py\n+++ src/app.py\n@@ -1,2 +1,2 @@\n-print('helo')\n+print('hello')",
+            ),
+        ],
+        "lab": [("Run the tests", "execute", "$ pytest -q")],
+        "courthouse": [("Read the diff", "execute", "$ git diff --stat main")],
+        "post_office": [("Read the diff", "execute", "$ git log --oneline -5")],
+    }
+
     def __init__(
         self,
         work_seconds: tuple[float, float] = (1.5, 4.0),
@@ -87,7 +106,13 @@ class MockRunner:
         await job.report(self.ACTIVITY.get(job.building.type, "Working"))
         if job.think:
             await job.think("thought", self.THOUGHTS.get(job.building.type, "Thinking it over. "))
-            await job.think("tool", self.ACTIVITY.get(job.building.type, "Working"))
+            if job.building.type == "mailbox":  # the planner looks at what the owner attached
+                for name in job.attachments:
+                    path = f"{ATTACHMENTS_DIR}/{name}"
+                    await job.think("tool", f"Read {path}", tool="read", detail=path)
+            fallback = [(self.ACTIVITY.get(job.building.type, "Working"), "other", "")]
+            for title, sort, detail in self.TOOLS.get(job.building.type, fallback):
+                await job.think("tool", title, tool=sort, detail=detail)
         await asyncio.sleep(self.rng.uniform(*self.work_seconds))
         if job.think:
             await job.think("reply", "(mock) All done here. ")

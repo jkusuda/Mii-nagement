@@ -4,7 +4,7 @@ extends PopupPanel
 ## asking, their question, what it's about, and how to answer.
 ##
 ##   ready       the task package (+ PR link), a note, Send back / Approve
-##   permission  the exact command or file in a dark box, "how long can they
+##   permission  the exact command or file in a dark box, what it's for, "how long can they
 ##               keep this key?" (the allow options as cards), Not now / Lend the key
 ##   other kinds a text box, Not now / Send
 ##
@@ -23,7 +23,6 @@ const KEY_ICON := preload("res://assets/icons/key-round.svg")
 const PR_ICON := preload("res://assets/icons/git-pull-request.svg")
 
 const INK := Color("292E50")
-const MUTED := Color("68738B")
 ## Text longer than this is cut off with a "Show more" link (_collapsible).
 const LONG_CODE := 160
 const LONG_QUOTE := 260
@@ -31,7 +30,7 @@ const COLLAPSED_HEIGHT := 62  # about three lines
 const EXPANDED_HEIGHT := 220  # then it scrolls
 
 ## Words that mark an option as a "no" (shown as the Not now button, not a card).
-const DECLINE_WORDS := ["reject", "deny", "don't", "cancel", "no"]
+const DECLINE_WORDS := ["reject", "deny", "don't", "cancel", "no", "not", "never"]
 
 var bubble_id := ""
 var _kind := ""
@@ -77,7 +76,8 @@ func open(bubble: Dictionary) -> void:
 	var body := VBoxContainer.new()
 	body.add_theme_constant_override("separation", 14)
 	_content.add_child(_padded(body, 22, 18))
-	body.add_child(_quote(str(bubble["text"])))
+	if _kind != "permission":  # a key request says its text as "For:" in the key card
+		body.add_child(_quote(str(bubble["text"])))
 
 	var options: Array = bubble.get("options") if bubble.get("options") else []
 	match _kind:
@@ -129,18 +129,7 @@ func _header(bubble: Dictionary, resident: Dictionary) -> Control:
 	var look := Protocol.bubble(_kind)
 	var tag_color: Color = look["color"]
 	var who := str(resident.get("name", bubble["agent"]))
-	var avatar := PanelContainer.new()
-	avatar.custom_minimum_size = Vector2(56, 56)
-	avatar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	var avatar_style: StyleBoxFlat = THEME.get_stylebox("panel", "AvatarCircle").duplicate()
-	avatar_style.bg_color = Color(str(resident.get("color", "#FFFFFF"))).lerp(Color.WHITE, 0.55)
-	avatar.add_theme_stylebox_override("panel", avatar_style)
-	# TODO(stretch): the resident's Mii headshot (Portraits) instead of an initial
-	var initial := _label(who.left(1), &"CardName")
-	initial.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	initial.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	avatar.add_child(initial)
-	row.add_child(avatar)
+	row.add_child(UI.avatar(resident, 56, 0.55))
 
 	var text := VBoxContainer.new()
 	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -212,7 +201,8 @@ func _task_card(task: Dictionary) -> Control:
 	return _panel(box, _context_style())
 
 
-## Permission: key icon, what it's for, and the exact command in a dark box.
+## Permission: key icon, the exact command in a dark box, what it's for (the
+## bubble's text) and the task it's part of.
 func _key_card(bubble: Dictionary, task: Dictionary) -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 14)
@@ -230,8 +220,11 @@ func _key_card(bubble: Dictionary, task: Dictionary) -> Control:
 	var detail := Net.text_or_empty(bubble.get("detail"))
 	if detail:
 		text.add_child(_code(detail))
+	var why := _label("For: %s" % str(bubble["text"]), &"BodyText")
+	why.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	text.add_child(why)
 	if not task.is_empty():
-		var about := _label("For: %s" % str(task.get("title", "")), &"LabelMuted")
+		var about := _label("Part of “%s”" % str(task.get("title", "")), &"LabelMuted")
 		about.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		text.add_child(about)
 	row.add_child(text)
@@ -315,13 +308,6 @@ func _text_answer(body: VBoxContainer, options: Array, who: String) -> void:
 	_reply = TextEdit.new()
 	_reply.custom_minimum_size = Vector2(0, 76)
 	_reply.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
-	for state in ["normal", "focus", "read_only"]:
-		_reply.add_theme_stylebox_override(
-			state, THEME.get_stylebox(state if state != "read_only" else "normal", "LineEdit")
-		)
-	_reply.add_theme_color_override("font_color", INK)
-	_reply.add_theme_color_override("caret_color", INK)
-	_reply.add_theme_color_override("font_placeholder_color", MUTED)
 	_reply.placeholder_text = (
 		{
 			"tired": "e.g. “Keep going, you're close.” or “Stop here for today.”",

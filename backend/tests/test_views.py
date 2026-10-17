@@ -1,10 +1,11 @@
+import base64
 import json
 
 from conftest import db_test
 from django.test import AsyncClient
 
 from mii import residents
-from mii.models import Island
+from mii.models import Attachment, Island
 
 pytestmark = db_test
 
@@ -39,6 +40,27 @@ async def test_create_task_validates_and_queues(island, fake_runtime):
     ok = await client.post("/islands/sunny/tasks", data=json.dumps({"title": "Hi"}), content_type="application/json")
     assert ok.status_code == 200 and ok.json()["status"] == "queued"
     assert fake_runtime.workflow.queue.qsize() == 1
+
+
+async def test_create_task_with_attachments(island, fake_runtime):
+    client = AsyncClient()
+
+    async def post(attachments):
+        body = {"title": "With files", "attachments": attachments}
+        return await client.post("/islands/sunny/tasks", data=json.dumps(body), content_type="application/json")
+
+    hi = base64.b64encode(b"hi").decode()
+    ok = await post([{"name": "../../etc/notes.md", "content": hi}, {"name": "notes.md", "content": hi}])
+    assert ok.status_code == 200
+    rows = [(a.name, bytes(a.data)) async for a in Attachment.objects.filter(task_id=ok.json()["id"]).order_by("id")]
+    assert rows == [("notes.md", b"hi"), ("notes-2.md", b"hi")]  # folders dropped, names kept apart
+
+    assert (await post([{"name": "a.txt", "content": "not base64!"}])).status_code == 400
+    assert (await post([{"name": "..", "content": hi}])).status_code == 400
+    assert (await post("a.txt")).status_code == 400
+    assert (await post([{"name": f"{i}.txt", "content": hi} for i in range(11)])).status_code == 400
+    big = base64.b64encode(b"x" * (2 * 1024 * 1024 + 1)).decode()
+    assert "too big" in (await post([{"name": "big.bin", "content": big}])).json()["error"]
 
 
 async def test_list_and_get_tasks_with_steps_and_events(island, fake_runtime):
@@ -305,3 +327,21 @@ async def test_island_issues_endpoint(island, fake_runtime, monkeypatch):
 
     monkeypatch.setattr(github, "list_issues", boom)
     assert (await client.get("/islands/sunny/issues")).status_code == 503
+
+
+async def test_brain_models(fake_runtime, monkeypatch):
+    from mii import views
+    from mii.agents.acp import BrainError
+
+    async def fake_list(brain, refresh=False):
+        if brain == "gemini":
+            raise BrainError("gemini isn't logged in: run `gemini`")
+        return {"models": [{"id": "opus", "name": "Opus", "description": None}], "current": "default"}
+
+    monkeypatch.setattr(views, "list_brain_models", fake_list)
+    client = AsyncClient()
+    ok = await client.get("/brains/claude-code/models")
+    assert ok.status_code == 200 and ok.json()["models"][0]["id"] == "opus" and ok.json()["current"] == "default"
+    assert (await client.get("/brains/gemini/models")).status_code == 503
+    assert (await client.get("/brains/mock/models")).status_code == 404
+    assert (await client.get("/brains/nope/models")).status_code == 404

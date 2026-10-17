@@ -11,8 +11,10 @@ the engine runs inside the ASGI server's event loop.
 
 import asyncio
 import logging
+import re
 import time
 import uuid
+from contextlib import suppress
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
@@ -20,20 +22,23 @@ from pathlib import Path
 from django.db.models import Q
 
 from mii import events, github, weather
-from mii.agents import AgentJob, AgentRunner, StepResult
+from mii.agents import AgentJob, AgentRunner, StepResult, end_task
 from mii.judge import HelpRequest, RuleJudge
-from mii.models import Building, Event, Friendship, Island, Resident, Road, Step, Task, utcnow
+from mii.models import Attachment, Building, Event, Friendship, Island, Resident, Road, Step, Task, utcnow
 from mii.sandbox import Sandbox, SandboxError, Sandboxes, run_shell
 from mii.vocab import CHECK_STEPS, DEFAULT_GIT_AUTHOR, SEND_BACK
 
 log = logging.getLogger(__name__)
 
 MAX_STEPS = 20  # safety net against packages bouncing forever
+MAX_VISITS = 3  # visits to one building per task; one more and the task fails ("gave up at the Workshop: ...")
 FLAKY_RERUN_AT = 0.7  # the judge's "this failure looks flaky" probability that earns the tests one more run
 MAX_HELPS = 2  # help visits per task (a stuck resident gets a neighbour's hand this many times)
 RERUN_MIN_LEFT = 10.0  # seconds of step budget a flaky re-run needs before it is worth starting
 NOTES_CHARS = 1500  # a resident's diary (Resident.notes) keeps about this much; the oldest lines go first
 CHAT_CHARS = 200  # how much of a helper's report is said out loud (the `chat` back)
+PRETEST_RETRIES = 2  # the Workshop's own test run may send the work back to the coder this many times per visit
+TEST_TAIL_LINES = 20  # how much of the test output goes into reports and prompts
 
 # Mood a resident shows while a bubble of this kind is waiting.
 BUBBLE_MOODS = {
@@ -110,7 +115,13 @@ class Mailbox(BuildingHandler):
 
 
 class Workshop(BuildingHandler):
-    """The coder implements the plan in the task's worktree, then the engine commits it."""
+    """The coder implements the plan in the task's worktree, then the engine commits it.
+
+    With TEST_COMMAND set, the engine then runs the tests itself before the handoff. A
+    failure goes straight back to the coder in this same step (PRETEST_RETRIES times at
+    most), so a red test doesn't cost a whole Workshop -> Lab -> Workshop trip. The last
+    attempt is left for the Lab to test.
+    """
 
     role = "This is where the code gets written. You implement plans and fix what was sent back."
 
@@ -122,6 +133,29 @@ class Workshop(BuildingHandler):
         )
 
     async def run(self, job: AgentJob, runner: AgentRunner, engine: "WorkflowEngine") -> StepResult:
+        result = await self._code(job, runner, engine)
+        asked, failing = job.instructions, None
+        for retry in range(1, PRETEST_RETRIES + 1):
+            if result.outcome != "pass" or not (engine.test_command and job.workdir):
+                break
+            await job.report(f"Checking before the handoff: {engine.test_command}")
+            code, output = await run_shell(engine.test_command, job.workdir, timeout=engine.step_timeout)
+            if code == 0:
+                result.summary += " The tests pass."
+                break
+            failing = _tail(output) or f"exit {code}"
+            await job.report(f"The tests fail (exit {code}); back to the code ({retry}/{PRETEST_RETRIES})")
+            job.instructions = (
+                f"Your change is committed, but the tests fail (exit {code}). Fix that before you hand it on:\n"
+                f"{failing}\n\n{asked}"
+            )
+            result = await self._code(job, runner, engine)
+        job.instructions = asked
+        result.test_output = failing  # the last failure seen here: the engine compares it with the Lab's
+        return result
+
+    async def _code(self, job: AgentJob, runner: AgentRunner, engine: "WorkflowEngine") -> StepResult:
+        """One turn of the coder, then commit what changed."""
         result = await runner.run(job)
         if job.sandbox and job.workdir:
             message = f"{job.task.title}\n\nStep by {job.resident.name} (attempt {job.attempt})."
@@ -151,7 +185,7 @@ class Lab(BuildingHandler):
         await job.report(f"Running: {engine.test_command}")
         started = time.monotonic()
         code, output = await run_shell(engine.test_command, job.workdir, timeout=engine.step_timeout)
-        tail = "\n".join(output.splitlines()[-20:])
+        tail = _tail(output)
         if code == 0:
             return StepResult("pass", f"Tests passed.\n{tail}".strip())
         # A failure that looks flaky (timeouts, ports, ordering...) gets one more run before it
@@ -163,12 +197,12 @@ class Lab(BuildingHandler):
             if await engine.judge.flaky(output, stat) >= FLAKY_RERUN_AT:
                 await job.report("That failure looks flaky; running the tests once more")
                 code, output = await run_shell(engine.test_command, job.workdir, timeout=left - 1.0)
-                tail = "\n".join(output.splitlines()[-20:])
+                tail = _tail(output)
                 if code == 0:
                     return StepResult(
                         "pass", f"Tests passed on the second run (the first looked flaky).\n{tail}".strip(), flaky=True
                     )
-        return StepResult("fail", f"Tests failed (exit {code}).\n{tail}".strip())
+        return StepResult("fail", f"Tests failed (exit {code}).\n{tail}".strip(), test_output=tail or f"exit {code}")
 
 
 class Courthouse(BuildingHandler):
@@ -263,6 +297,40 @@ HANDLERS: dict[str, BuildingHandler] = {
 }
 
 
+@dataclass
+class Note:
+    """One step's note in the package history."""
+
+    line: str  # "Carlos at the Workshop: FAIL", for the recap
+    text: str  # the line plus the step's report
+    outcome: str
+    building_type: str
+
+
+def notes_for_prompt(history: list[Note]) -> list[str]:
+    """What the next resident reads about earlier steps: a one-line recap of every step, then
+    in full only the plan, the latest failure report and the step just before this one. The
+    Step rows and events keep everything; this only keeps prompts short on long trips."""
+    if not history:
+        return []
+    plan = next((n for n in history if n.building_type == "mailbox" and n.outcome == "pass"), None)
+    failure = next((n for n in reversed(history) if n.outcome == "fail"), None)
+    full = [n for n in history if n is plan or n is failure or n is history[-1]]
+    recap = [f"So far: {' -> '.join(n.line for n in history)}."] if len(full) < len(history) else []
+    return recap + [n.text for n in full]
+
+
+def _tail(output: str) -> str:
+    """The last TEST_TAIL_LINES lines of a command's output."""
+    return "\n".join(output.splitlines()[-TEST_TAIL_LINES:])
+
+
+def _normal(report: str) -> str:
+    """A failure report for comparing: lower case, numbers (timings, line numbers, ids) and
+    extra whitespace dropped, so "failed in 0.31s" and "failed in 0.29s" match."""
+    return " ".join(re.sub(r"\d+(\.\d+)?", "#", report.lower()).split())
+
+
 def _first_words(text: str, chars: int) -> str:
     """The start of `text` on one line, cut at a word boundary."""
     text = " ".join(text.split())
@@ -347,8 +415,16 @@ class WorkflowEngine:
 
     # --- Public API -----------------------------------------------------------
 
-    async def submit(self, island_id: str, title: str, description: str = "", issue_number: int | None = None) -> Task:
-        """Add a task to the queue. It starts at the island's mailbox."""
+    async def submit(
+        self,
+        island_id: str,
+        title: str,
+        description: str = "",
+        issue_number: int | None = None,
+        attachments: list[tuple[str, bytes]] = (),
+    ) -> Task:
+        """Add a task to the queue. It starts at the island's mailbox. `attachments` are
+        (safe file name, bytes), already checked by tasks.parse_attachments."""
         task = await Task.objects.acreate(
             id="t_" + uuid.uuid4().hex[:6],
             island_id=island_id,
@@ -356,6 +432,8 @@ class WorkflowEngine:
             description=description,
             issue_number=issue_number,
         )
+        for name, data in attachments:
+            await Attachment.objects.acreate(task=task, name=name, data=data)
         await self._emit(task, events.task(task))
         await self.queue.put(task.id)
         return task
@@ -454,13 +532,17 @@ class WorkflowEngine:
         task = await self._update(Task, task_id, status="in_progress")
         await self._emit(task, events.task(task))
         sandbox = await self._sandbox_for(task)
+        runner = self.runner  # one runner for the whole task, even if settings swap self.runner meanwhile
         try:
-            return await self._run_task(task, sandbox)
+            return await self._run_task(task, sandbox, runner)
         except asyncio.CancelledError:
             if task_id not in self._cancelling:
                 raise  # the server is shutting down, not a cancel request
             return await self._drop_package(task_id)
         finally:
+            # Agents kept alive between visits go now. Shielded: a second cancel can't leave one running.
+            with suppress(Exception):
+                await asyncio.shield(end_task(runner, task.id))
             if sandbox and not self.keep_worktrees:
                 try:
                     await asyncio.to_thread(sandbox.remove_worktree, task.id)
@@ -484,44 +566,67 @@ class WorkflowEngine:
         island = await Island.objects.aget(pk=task.island_id)
         return self.sandboxes.for_island(island)  # raises SandboxError -> run_forever marks the task failed
 
-    async def _run_task(self, task: Task, sandbox: Sandbox | None) -> Task:
+    async def _run_task(self, task: Task, sandbox: Sandbox | None, runner: AgentRunner) -> Task:
         island = await Island.objects.aget(pk=task.island_id)
         graph = await IslandGraph.load(task.island_id)
         # The task branch starts from the island's branch (`main` unless the creator chose another).
         workdir = await asyncio.to_thread(sandbox.create_worktree, task.id, island.branch) if sandbox else None
         if workdir:
             task = await self._update(Task, task.id, branch=f"mii/{task.id}")
+            files = [(a.name, bytes(a.data)) async for a in Attachment.objects.filter(task_id=task.id).order_by("id")]
+            if files:
+                await asyncio.to_thread(sandbox.add_attachments, task.id, files)
 
-        history: list[str] = []  # notes passed along with the package
+        history: list[Note] = []  # one note per step, passed along with the package (trimmed for prompts)
         visits: dict[str, int] = {}
+        last_failure = ""  # the latest failed step's report (its test output, else its summary)
+        seen_failure: dict[str, str] = {}  # building id -> the last failure it had to fix (_normal), for "stuck"
+        gave_up: str | None = None  # why the task stopped early (MAX_STEPS / MAX_VISITS)
+        coder: str | None = None  # the Workshop the package last came through (the Lab's fast path back)
+        feedback: str | None = None  # the Lab's test output, on top of the coder's next instructions
         helps = 0  # help visits so far (MAX_HELPS)
         takeover: tuple[Resident, str] | None = None  # (helper, request): a neighbour does the next visit
         previous: Resident | None = None
         outcome = "pass"
         building_id: str | None = graph.start()
 
-        while building_id is not None and len(history) < MAX_STEPS:
+        while building_id is not None:
             building = graph.buildings[building_id]
+            if len(history) >= MAX_STEPS:
+                gave_up = f"Gave up after {MAX_STEPS} steps"
+            elif visits.get(building_id, 0) >= MAX_VISITS:
+                gave_up = f"Gave up at the {building.name}"
+            if gave_up:
+                gave_up += f": {_first_words(last_failure, CHAT_CHARS)}" if last_failure else "."
+                break
             owner = await self._get(Resident, building.resident_id)
             visits[building_id] = visits.get(building_id, 0) + 1
             attempt = visits[building_id]
 
-            # 0. Back here again after a failed check? The owner gets one retry of their own; after
-            #    that the judge may send a free neighbour to take this turn (never at a check building:
-            #    the Lab's tests and the Courthouse's review are the owner's call).
+            # "Stuck": sent back with the same failure this building already had to fix last time.
+            incoming = _normal(last_failure) if outcome == "fail" else ""
+            stuck = bool(incoming) and attempt >= 2 and seen_failure.get(building_id) == incoming
+            if incoming:
+                seen_failure[building_id] = incoming
+
+            # 0. Back here again after a failed check? A stuck package gets a neighbour right away;
+            #    otherwise the owner gets one retry of their own and then the judge may send a free
+            #    neighbour to take this turn (never at a check building: the Lab's tests and the
+            #    Courthouse's review are the owner's call).
             if (
                 takeover is None
                 and attempt >= 2
                 and building.type not in CHECK_STEPS
                 and helps < MAX_HELPS
-                and await self.judge.needs_help(building, attempt, history[-1] if history else "")
+                and (stuck or await self.judge.needs_help(building, attempt, history[-1].text if history else ""))
             ):
                 helper = await self._find_helper(task, building, owner, None)
                 if helper is not None:
+                    again = "again with the same problem" if stuck else "again"
                     takeover = (
                         helper,
-                        f"The package came back to the {building.name} again. "
-                        f"{_first_words(history[-1], CHAT_CHARS)} Can you take this one?",
+                        f"The package came back to the {building.name} {again}. "
+                        f"{_first_words(history[-1].text, CHAT_CHARS)} Can you take this one?",
                     )
             resident, request, helped = owner, None, None
             if takeover is not None:
@@ -544,10 +649,25 @@ class WorkflowEngine:
             await self._emit(task, events.task(task))
 
             result, step = await self._run_step(
-                task, island, building, resident, attempt, history, workdir, sandbox, request=request, helped=helped
+                runner,
+                task,
+                island,
+                building,
+                resident,
+                attempt,
+                history,
+                workdir,
+                sandbox,
+                request=request,
+                helped=helped,
+                feedback=feedback,
             )
+            feedback = None
+            if building.type == "workshop":
+                coder = building_id
             did = f"helped {owner.name} at" if helped else "at"
-            history.append(f"{resident.name} {did} the {building.name}: {result.outcome.upper()}. {result.summary}")
+            line = f"{resident.name} {did} the {building.name}: {result.outcome.upper()}"
+            history.append(Note(line, f"{line}. {result.summary}", result.outcome, building.type))
             task = await self._get(Task, task.id)  # a handler may have set pr_url
             await self._update_weather(task.island_id)
             if helped:  # the helper reports back (the handoff to them already grew the friendship)
@@ -561,6 +681,10 @@ class WorkflowEngine:
                 await self.judge.mood(resident, building, result, attempt, step.timed_out, step.bubbles_raised),
             )
             previous, outcome = resident, result.outcome
+            if outcome == "fail":
+                last_failure = result.test_output or result.summary
+            if result.test_output and outcome == "pass":  # the Workshop's own pre-check failed on the way
+                seen_failure[building_id] = _normal(result.test_output)
 
             # 5. "HELP: ..." in a failed reply: a free neighbour redoes this building (MAX_HELPS per task).
             if result.outcome == "fail" and result.help_request and not helped and helps < MAX_HELPS:
@@ -569,10 +693,19 @@ class WorkflowEngine:
                     takeover = (helper, result.help_request)
                     continue  # same building, next visit
 
-            # 6. Follow the road that matches the outcome.
+            # 6. Follow the road that matches the outcome. Fast path: red tests at the Lab go straight
+            #    back to the Workshop that made the change (skipping anything in between), with the
+            #    test output on top of the coder's instructions.
+            if building.type == "lab" and outcome == "fail" and result.test_output and coder:
+                building_id = coder
+                feedback = f"The Lab's tests fail. Fix this first:\n{result.test_output}"
+                continue
             building_id = graph.next_building(building_id, outcome)
 
-        gave_up = building_id is not None  # hit MAX_STEPS
+        if gave_up:
+            log.info("task %s: %s", task.id, gave_up)
+            if previous:  # said by whoever carried the package last, so the game shows why it stopped
+                await self._report(task, previous, gave_up)
         task = await self._update(
             Task, task.id, status="failed" if gave_up or outcome == "fail" else "done", finished_at=utcnow()
         )
@@ -586,22 +719,25 @@ class WorkflowEngine:
 
     async def _run_step(
         self,
+        runner: AgentRunner,
         task: Task,
         island: Island,
         building: Building,
         resident: Resident,
         attempt: int,
-        history: list[str],
+        history: list[Note],
         workdir: Path | None,
         sandbox: Sandbox | None,
         *,
         request: str | None = None,
         helped: str | None = None,
+        feedback: str | None = None,
     ) -> tuple[StepResult, Step]:
         """Run one building visit with a timeout, and record it as a Step row.
 
         `request` + `helped`: this is a help visit; `resident` is the helper, `helped` the
         building's owner, and `request` what was asked (it goes on top of the instructions).
+        `feedback`: a failed check's report (the Lab's test output), also put on top.
         """
         step = await Step.objects.acreate(
             island_id=task.island_id,
@@ -632,6 +768,8 @@ class WorkflowEngine:
 
         handler = HANDLERS[building.type]
         instructions = handler.instructions(task)
+        if feedback:
+            instructions = f"{feedback}\n\n{instructions}"
         if request:
             instructions = f"{names.get(helped, 'A neighbour')} asked for your help: {request}\n\n{instructions}"
         job = AgentJob(
@@ -643,7 +781,7 @@ class WorkflowEngine:
             ask=ask,
             report=partial(self._report, task, resident),
             attempt=attempt,
-            history=list(history),
+            history=notes_for_prompt(history),
             workdir=workdir,
             sandbox=sandbox,
             read_only=handler.read_only,
@@ -653,10 +791,11 @@ class WorkflowEngine:
             notes=resident.notes,
             neighbours=neighbours,
             think=partial(self._think, task, resident),
+            attachments=[a async for a in Attachment.objects.filter(task_id=task.id).values_list("name", flat=True)],
         )
         timed_out = False
         try:
-            result = await asyncio.wait_for(handler.run(job, self.runner, self), timeout=self.step_timeout)
+            result = await asyncio.wait_for(handler.run(job, runner, self), timeout=self.step_timeout)
         except TimeoutError:
             timed_out = True
             result = StepResult("fail", f"{resident.name} ran out of time.")
@@ -756,8 +895,8 @@ class WorkflowEngine:
         await friendship.asave(update_fields=["handoffs", "updated_at"])
         await self.bus.emit(island_id, events.friendship(friendship))
 
-    async def _think(self, task: Task, resident: Resident, kind: str, text: str) -> None:
-        await self._emit(task, events.thinking(resident.id, task.id, kind, text))
+    async def _think(self, task: Task, resident: Resident, kind: str, text: str, **tool_info: str) -> None:
+        await self._emit(task, events.thinking(resident.id, task.id, kind, text, **tool_info))
 
     async def _report(self, task: Task, resident: Resident, text: str) -> None:
         if self._activity.get(resident.id) != text:  # kept on the row so late joiners see it; one write per change

@@ -1,6 +1,6 @@
 """Seed data + simulator (used by `manage.py seed`).
 
-    uv run python manage.py seed            # create the seed island (if missing)
+    uv run python manage.py seed            # create the seed island (only when there is no island yet)
     uv run python manage.py seed --reset    # wipe the database and re-seed (stop the server first)
     uv run python manage.py seed --loop     # simulator: keep sending fake tasks to the running server
 
@@ -99,12 +99,17 @@ def roads() -> list[Road]:
 
 
 def seed(reset: bool = False) -> str:
-    """Create the seed island if it doesn't exist. Returns the island id. (Sync: wrap with sync_to_async.)"""
+    """First run only: create the seed island when the database has no island at all.
+
+    Abandoning Sunny Isle sticks: once the user has founded their own islands it is not
+    re-created at the next start. Returns the id of the seed island, or of the first
+    island when the seed one is gone (for the simulator). (Sync: wrap with sync_to_async.)
+    """
     with transaction.atomic():
         if reset:
             for model in (Event, Step, Task, Road, Building, Resident, Island):
                 model.objects.all().delete()
-        if not Island.objects.filter(pk=ISLAND_ID).exists():
+        if not Island.objects.exists():
             Island.objects.create(id=ISLAND_ID, name="Sunny Isle", repo=None, map=default_map("classic"))
             # Residents point at buildings and buildings at residents: SQLite checks
             # foreign keys when the transaction commits, so the order doesn't matter.
@@ -112,7 +117,9 @@ def seed(reset: bool = False) -> str:
             Building.objects.bulk_create(buildings())
             Road.objects.bulk_create(roads())
             print(f"seeded island {ISLAND_ID!r}")
-    return ISLAND_ID
+    if Island.objects.filter(pk=ISLAND_ID).exists():
+        return ISLAND_ID
+    return Island.objects.order_by("created_at").values_list("id", flat=True).first()
 
 
 # --- Simulator ------------------------------------------------------------------

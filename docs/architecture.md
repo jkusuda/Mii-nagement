@@ -83,7 +83,7 @@ Grouped by layer; a module only imports from its own layer or the ones below it.
 | engine | `judge.py` | small typed decisions: `RuleJudge` (offline) or `JevJudge` (TypeSafe Jev) | `test_judge.py` |
 | engine | `events.py` | event builders (one per protocol event), `EventBus` (store + broadcast), `Bubbles` (ask and wait) | `test_engine.py` |
 | agents | `agents/__init__.py` | `AgentJob`, `StepResult`, `build_prompt`, `parse_verdict`, `permission_for`, `make_runner` | `test_acp.py` |
-| agents | `agents/acp.py` | `AcpRunner` (Claude Code, Codex, Gemini over ACP), `BRAINS`, `GIFTS` | `test_acp.py` (with `fake_acp_agent.py`) |
+| agents | `agents/acp.py` | `AcpRunner` (Claude Code, Codex, Gemini over ACP; one kept agent per resident per task), `BRAINS`, `GIFTS` | `test_acp.py` (with `fake_acp_agent.py`) |
 | agents | `agents/openrouter.py` | `OpenRouterRunner`: a small tool loop over OpenRouter's chat API | `test_openrouter.py` |
 | agents | `agents/mock.py` | `MockRunner`: fake work, random bubbles and outcomes | |
 | domain | `islands.py` | found / change / abandon islands, build mode's `set_map` | `test_islands.py`, `test_island_map.py` |
@@ -111,7 +111,7 @@ two management commands.
 | `Net` | `net.gd` | the WebSocket, `Net.island` (the live snapshot), one signal per event, `send_*` commands, `request_json` for HTTP |
 | `Islands` | `islands.gd` | every island (`GET /islands` + their snapshots) and their 3D thumbnails, for the home screen |
 | `Clock` | `clock.gd` | time of day (+ the dev slider), "Day N", a fallback weather roll |
-| `Portraits` | `portraits.gd` | Mii headshots, rendered once per look |
+| `Portraits` | `portraits.gd` | Mii headshots, rendered once per look (`UI.avatar(resident, px)` makes the round one every list uses) |
 
 **Scenes**: `scenes/game.tscn` (`game.gd`, class `Game`) is the main scene: top bar, the
 3D island inside a SubViewport (`scenes/island/island_3d.tscn`), the bottom nav, the
@@ -120,7 +120,7 @@ Bubbles sidebar, and every screen (`show_screen()` shows one).
 | Folder | What lives there |
 |---|---|
 | `scenes/` | `game.gd` / `game.tscn` (main screen), `protocol.gd` (`Protocol`: the shared vocabulary and bubble looks) |
-| `scenes/island/` | the 3D island: `island_3d.tscn`, `island_layout.gd` (data + rules + paths), `island_terrain.gd`, `island_builder.gd`, `seasons.gd`, `day_night.gd`, `camera_rig.gd`; residents: `island_residents.gd` (follows Net), `island_resident.gd` (one walker), `island_paths.gd`, `island_life.gd` + `life_lines.gd` (ambient life) |
+| `scenes/island/` | the 3D island: `island_3d.tscn`, `island_layout.gd` (data + rules + paths), `island_terrain.gd`, `island_builder.gd`, `seasons.gd`, `day_night.gd`, `camera_rig.gd`; residents: `island_residents.gd` (follows Net), `island_resident.gd` (one walker), `speech_bubble.gd` (its speech bubble), `island_paths.gd`, `island_life.gd` + `life_lines.gd` (ambient life) |
 | `scenes/buildings/` | one scene per building type, `building.gd`, `building_data.gd` (names, icons, colours), `building_picker.gd` (what's under the mouse) |
 | `scenes/plants/` | `apple_tree.tscn`, `bush.tscn`, `swaying_plant.gd` |
 | `scenes/build/` | `build_mode.gd`: the Build tool (land, lots, plants, steps, pond, season) |
@@ -159,13 +159,14 @@ Bubbles sidebar, and every screen (`show_screen()` shows one).
 | `GET /islands/{id}/events`, `GET .../insights?range=week`, `POST /replay/{task}` | `news/news_screen.gd` |
 | `GET /islands/{id}/insights` | `insights/insights_screen.gd` |
 | `PUT /islands/{id}/layout` | `build/build_mode.gd` |
-| `GET/PUT /settings`, `GET /health`, `GET /brains/detail` | `ui/settings_popup.gd` |
-| `GET /brains/detail`, `GET /gifts`, `GET /models` | `residents/resident_creator.gd` |
+| `GET/PUT /settings`, `GET /health`, `GET /brains/detail`, `GET /models` | `ui/settings_popup.gd` |
+| `GET /brains/detail`, `GET /gifts`, `GET /brains/{brain}/models` | `residents/resident_creator.gd` |
 
 ## One task, end to end
 
 1. **In.** `POST /islands/{id}/tasks` (`views.tasks_view` → `tasks.submit_task`) or the
-   `create_task` command → `WorkflowEngine.submit` stores a `Task` and emits `task: queued`.
+   `create_task` command → `WorkflowEngine.submit` stores a `Task` (and its `Attachment`s)
+   and emits `task: queued`.
 2. **Queue.** `run_forever` hands it to the island's `Lane`; `run_task` cuts a worktree
    (`sandbox.Sandbox.create_worktree`, real mode only) and walks the `IslandGraph` from the mailbox.
 3. **Each building** (`_run_task` → `_run_step`): handoff, walk, work. The building's
@@ -186,23 +187,37 @@ Bubbles sidebar, and every screen (`show_screen()` shows one).
 2. It builds an `AgentJob`: the resident, the building's instructions, the
    package history, the task's worktree, `read_only` for plan/review/PR steps,
    plus `ask()` (show a bubble, wait for the answer) and `report()` (send an
-   `activity` event).
+   `activity` event). The history in the prompt is trimmed (`notes_for_prompt`):
+   a one-line recap of every step, then in full only the plan, the latest
+   failure report and the step just before. Step rows and events keep it all.
 3. The building handler runs. Most hand the job to the resident's brain:
-   - **AcpRunner**: start the agent in the worktree, `initialize`, `session/new`
+   - **AcpRunner**: each Mii is one agent per task. On a resident's first visit:
+     start the agent in the worktree, `initialize`, `session/new`
      (a missing login becomes a 💤 bubble), switch on the agent's edit or
      read-only mode, pick the resident's model if offered, send personality +
-     instructions + history as one prompt. While it runs: tool calls become
+     instructions + history as one prompt. The process and session are then
+     kept (`AcpRunner.live`, by task + resident): their next visit (a retry, a
+     help visit, a Workshop pre-check retry) prompts the same session with a
+     short "same session as before" header and no diary, so the agent skips
+     start-up and re-reading the repo. A changed worktree, model or gifts, or a
+     dead process, starts a fresh one. While it runs: tool calls become
      `activity` events; permission requests are decided by the resident's house
      keys (`yes` = allow, `no` = reject, `ask` = a ✋ bubble whose buttons are
      the agent's own options; no answer = reject); file reads/writes are served only inside the worktree.
      ACP has no "ask the user" request, so the prompt tells the agent it may
      end a turn with `QUESTION: ...`: the runner shows a ❓ bubble and prompts
      the same session again with your answer (up to 3 per step). The final
-     turn's `VERDICT: PASS/FAIL` line decides. The process is always closed.
+     turn's `VERDICT: PASS/FAIL` line decides. The process is closed right away
+     when a step times out, is cancelled or the agent errors, and otherwise when
+     the task ends (`run_task` calls `agents.end_task`, which runs the runner's
+     `end_task`). One runner serves the whole task, even if settings change.
    - **OpenRouterRunner**: the same contract over OpenRouter's chat API with
      built-in tools.
    Some handlers do more: the **Workshop** commits the worktree after the
-   coder, the **Lab** runs `TEST_COMMAND` itself and uses the exit code, the
+   coder and, with `TEST_COMMAND` set, runs the tests itself before the
+   handoff: a failure goes back to the coder in the same step with the output
+   on top (`PRETEST_RETRIES`, 2, at most; the last attempt is left to the Lab),
+   the **Lab** runs `TEST_COMMAND` itself and uses the exit code, the
    **Courthouse** prepends `git diff --stat` and, once the reviewer passes it on
    an island with a GitHub repo, asks you with a ✅ `ready` bubble ("Approve &
    merge" / "Send back"; skipped when the `merge_pr` house rule is off, which
@@ -210,7 +225,11 @@ Bubbles sidebar, and every screen (`show_screen()` shows one).
    turns the reply into a PR title/body, opens the PR, and merges it with
    `gh pr merge` if you approved (squash, else merge, else rebase). Unanswered:
    the PR stays open.
-4. The outcome picks the next road. A `Step` row is saved for insights (`Step.helped` marks a help visit). When
+4. The outcome picks the next road, except that red tests at the Lab go straight
+   back to the Workshop the package last came through, with the test output on top
+   of the coder's instructions. A task stops (`failed`, with a "Gave up at the
+   <building>: <last failure>" `activity`) before a fourth visit to one building
+   (`MAX_VISITS`) or a 21st step (`MAX_STEPS`). A `Step` row is saved for insights (`Step.helped` marks a help visit). When
    the task ends the worktree is removed (unless `KEEP_WORKTREES=1`).
 
 The task's worktree branches off the island's `branch` (a local branch, else
@@ -244,7 +263,9 @@ the mock brain.
 ACP's `model` config option when available, otherwise the agent's default).
 Claude Code offers `sonnet`, `opus`, `haiku`, `fable` and dated ids such as
 `claude-sonnet-5`. For `openrouter`, an OpenRouter model id such as
-`anthropic/claude-sonnet-4.5`.
+`anthropic/claude-sonnet-4.5`. The resident creator's picker lists them from
+`GET /brains/{brain}/models` (`agents/acp.py` `list_brain_models`: a short session in a
+scratch worktree, never in the island's repo); a short name is matched by `pick_model`.
 
 ## The judge, help visits, chat and the diary
 
@@ -262,13 +283,16 @@ any error. Mock mode included: the calls cost a fraction of a cent and are the d
 | verdict | the reply had no `VERDICT` line | "did the agent finish?" < 0.4 → fail | pass (as before) |
 | flaky | the Lab's `TEST_COMMAND` failed | "flaky or environmental?" ≥ 0.7 → run once more (`Step.flaky`) | never re-run |
 | tip | `GET .../insights` | picks among the tips whose rule applies | the first rule that applies |
-| needs help | a package is back at a work building (never the Lab or Courthouse) | "would a different teammate taking this turn unblock it?" ≥ 0.6 | from the third visit (the owner retries once first) |
+| needs help | a package is back at a work building (never the Lab or Courthouse) and not stuck | "would a different teammate taking this turn unblock it?" ≥ 0.6 | from the third visit (the owner retries once first) |
 | helper | help is needed | picks among the free neighbours (or nobody) | same job as the building, else the best friend |
 
 **Help visits.** Two ways a neighbour takes a turn. When a package keeps coming back to a
 work building (Mailbox, Workshop, Post Office) after a failed check, the owner gets one
 retry of their own, then the judge may hand the next visit to a free neighbour (idle or
-asleep): same building, same worktree, the check's report on top of the instructions, their
+asleep). A package that is **stuck** (sent back with the same failure, compared without
+case, numbers or extra spaces, as the one this building had to fix last time, including
+the Workshop's own pre-check) gets the neighbour without asking the judge, so a red test
+that survived the coder's in-step retries is helped on the second visit: same building, same worktree, the check's report on top of the instructions, their
 outcome picks the road and the Workshop commits their work as usual. The Lab and the
 Courthouse are never taken over: their tests and review are the owner's call. The other
 way is explicit: a resident writes `HELP: <what I'm stuck on>` in a failing reply and a
@@ -291,9 +315,11 @@ strips them from the summary.
   text) edit permissions are refused and file writes are rejected by our side
   of the ACP connection. Claude Code's `plan` mode isn't used: refusing its
   "Approve plan" ends the turn as cancelled and loses the plan.
+- Attached files are written only inside the task's worktree (`.mii-attachments/`,
+  plain names, path-checked, git-ignored), never anywhere else on disk.
 - Permission requests become bubbles; file requests are path-checked. Shell
   commands are gated by a bubble, not path-restricted.
-- Every step has a timeout, and a package can visit at most 20 buildings.
+- Every step has a timeout, and a package can visit at most 20 buildings (3 visits to one building).
 - The OpenRouter key is never passed to agent processes. API keys live in the OS
   keychain (or an owner-only file where there is none), never in the database.
 
@@ -306,6 +332,7 @@ strips them from the summary.
 | `Building` | type, name, lot (`x`, `y`, `facing`), resident |
 | `Road` | from, to, condition |
 | `Task` | title, status, where the package is, who carries it, `issue_number`, `branch`, `pr_url`, `merged_at`, `created_at` / `finished_at` |
+| `Attachment` | a file sent with a task: name (made safe) and bytes; written to `.mii-attachments/` in the task's worktree when it starts |
 | `Step` | one building visit: task, building, resident, brain, outcome, timed out?, bubbles raised, `flaky` (tests passed on the re-run), `helped` (a help visit: who asked), start/finish time |
 | `Event` | every event sent to the game (history + replay) |
 | `Friendship` | the friendship meter: one row per pair of residents (`a` < `b`), `handoffs`, `score` |

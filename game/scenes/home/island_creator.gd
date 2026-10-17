@@ -559,17 +559,8 @@ func _resident_tile(resident: Dictionary, index: int) -> Control:
 	rows.alignment = BoxContainer.ALIGNMENT_CENTER
 	rows.add_theme_constant_override("separation", 4)
 	rows.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var avatar := PanelContainer.new()
-	avatar.custom_minimum_size = Vector2(44, 44)
+	var avatar := UI.avatar(resident, 44)
 	avatar.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	avatar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var circle: StyleBoxFlat = get_theme_stylebox("panel", "AvatarCircle").duplicate()
-	circle.bg_color = color.lerp(Color.WHITE, 0.7)
-	avatar.add_theme_stylebox_override("panel", circle)
-	var initial := UI.label(str(resident.get("name", "?")).left(1), 22, true)
-	initial.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	initial.add_theme_color_override("font_color", color.darkened(0.2))
-	avatar.add_child(initial)
 	var name_label := UI.label(str(resident.get("name", "")), 16, true)
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var job := UI.label(str(resident.get("job", "")).capitalize(), 12, true)

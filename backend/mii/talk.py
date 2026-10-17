@@ -116,7 +116,7 @@ async def _answer(runtime, island_id: str, message: dict, talk_id: str, agent: s
     handler = HANDLERS.get(building.type)
     role = handler.role if handler else "You work here."
 
-    async def think(kind: str, chunk: str) -> None:
+    async def think(kind: str, chunk: str, **_details) -> None:  # tool details (sort, call, diff) aren't shown
         if kind == "tool":  # one line per tool: "Reading src/auth.py"
             await send(talk_thinking(talk_id, agent, chunk.strip()[:200]))
 

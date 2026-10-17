@@ -2,7 +2,8 @@ class_name SettingsPopup
 extends PopupPanel
 ## Settings (the Archipelago's Settings button): the backend's saved settings
 ## and API keys (GET / PUT /settings), the mode it is running in (GET /health),
-## and which brains can run on this computer (GET /brains/detail).
+## which brains can run on this computer (GET /brains/detail), and OpenRouter's
+## catalogue (GET /models) for the default model's dropdown.
 ##
 ## API keys go to the OS keychain and are never sent back, only "saved" or not.
 ## Anything set in the backend's .env wins over what's saved here, so those
@@ -12,13 +13,20 @@ extends PopupPanel
 
 const THEME := preload("res://ui/theme.tres")
 const FORGET_ICON := preload("res://assets/icons/x.svg")
+const ARROW := preload("res://assets/ui/dropdown_arrow.svg")
+const MODEL_MATCHES := 40  # rows in the model dropdown
 
-## [setting, label, help, "bool" | "text"]. Must match SETTINGS in backend/mii/prefs.py.
+## [setting, label, help, "bool" | "text" | "model"]. Must match SETTINGS in backend/mii/prefs.py.
 const SETTINGS := [
 	["mock_agents", "Mock agents", "Fake work, no cost. Turn off to let real coding agents work.", "bool"],
 	["test_command", "Test command", "What the Lab runs, e.g. uv run pytest. Empty: the reviewer decides.", "text"],
 	["islands_root", "Folder for new islands", "Where new island repositories go.", "text"],
-	["openrouter_model", "Default OpenRouter model", "For OpenRouter residents without a model of their own.", "text"],
+	[
+		"openrouter_model",
+		"Default OpenRouter model",
+		"For OpenRouter residents without a model of their own. Pick one, or type any model id.",
+		"model"
+	],
 	["keep_worktrees", "Keep worktrees", "Leave each task's git worktree behind afterwards, for debugging.", "bool"],
 	[
 		"judge",
@@ -43,6 +51,8 @@ var _keys := {}  # secret -> LineEdit
 var _forget := {}  # secret -> true: delete it on Save
 var _loaded := {}  # GET /settings `settings`, to send only what changed
 var _brains := VBoxContainer.new()
+var _models: Array = []  # GET /models: [{id, name}], OpenRouter's catalogue
+var _models_error := ""  # why the catalogue didn't load (no key, offline...)
 var _message := Label.new()
 var _save := Button.new()
 
@@ -75,7 +85,8 @@ func _init() -> void:
 			input = LineEdit.new()
 		input.tooltip_text = s[2]
 		_inputs[s[0]] = input
-		box.add_child(_field("" if s[3] == "bool" else s[1], s[2], input))
+		var shown: Control = _model_combo(input) if s[3] == "model" else input
+		box.add_child(_field("" if s[3] == "bool" else s[1], s[2], shown))
 
 	box.add_child(_section("API keys"))
 	box.add_child(
@@ -159,6 +170,73 @@ func _load() -> void:
 			_say("")
 	)
 	_load_brains()
+	Net.request_json(
+		"/models",
+		func(ok: bool, data: Dictionary):
+			_models = data.get("models", []) if ok else []
+			_models_error = "" if ok else str(data.get("error", "unavailable"))
+	)
+
+
+## A combo box: the text field (free typing) plus a ▾ button that lists the catalogue's
+## models matching what's typed. Godot has no combo box, so it's a LineEdit and a
+## MenuButton (a button that opens its own PopupMenu) side by side.
+func _model_combo(edit: LineEdit) -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	edit.placeholder_text = "e.g. anthropic/claude-sonnet-4.5"
+	var pick := MenuButton.new()
+	pick.icon = ARROW
+	pick.theme_type_variation = &"OutlineButton"
+	pick.tooltip_text = "Pick from OpenRouter's models (the text filters the list)"
+	pick.flat = false
+	var menu := pick.get_popup()
+	# Godot concept: `about_to_popup` fires just before the menu opens, so it's
+	# filled with what's typed at that moment.
+	menu.about_to_popup.connect(func(): _fill_model_menu(menu, edit.text.strip_edges()))
+	menu.index_pressed.connect(
+		func(index: int):
+			var id = menu.get_item_metadata(index)
+			if id != null:
+				edit.text = str(id)
+	)
+	row.add_child(edit)
+	row.add_child(pick)
+	return row
+
+
+## The catalogue's models whose id or name contains `typed` (all of them when
+## nothing, or an exact id, is typed), at most MODEL_MATCHES rows.
+func _fill_model_menu(menu: PopupMenu, typed: String) -> void:
+	menu.clear()
+	if _models.is_empty():
+		var why := _models_error if _models_error else "loading…"
+		menu.add_item("No model list (%s). Type an id instead." % why)
+		menu.set_item_disabled(0, true)
+		return
+	var needle := typed.to_lower()
+	if _models.any(func(m): return str(m["id"]) == typed):
+		needle = ""
+	var shown := 0
+	for model in _models:
+		var id := str(model["id"])
+		var name := str(model.get("name", id))
+		if needle and needle not in id.to_lower() and needle not in name.to_lower():
+			continue
+		if shown == MODEL_MATCHES:
+			menu.add_item("… type more to narrow it down")
+			menu.set_item_disabled(menu.item_count - 1, true)
+			break
+		menu.add_item("%s  (%s)" % [name, id] if name != id else id)
+		menu.set_item_metadata(menu.item_count - 1, id)
+		if id == typed:
+			menu.set_item_as_checkable(menu.item_count - 1, true)
+			menu.set_item_checked(menu.item_count - 1, true)
+		shown += 1
+	if shown == 0:
+		menu.add_item("No model matches “%s”: it'll be saved as typed." % typed)
+		menu.set_item_disabled(0, true)
 
 
 func _load_brains() -> void:

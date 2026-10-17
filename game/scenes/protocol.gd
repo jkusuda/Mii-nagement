@@ -14,6 +14,19 @@ const STEP_NAMES := {
 const SEASONS := ["spring", "summer", "autumn", "winter"]
 const STATES := ["idle", "walking", "working", "sleeping"]
 const MOODS := ["happy", "focused", "confused", "frustrated", "tired", "proud"]
+## A `thinking` event's tool sorts (vocab.TOOL_SORTS), worded for the dropdown's summary:
+## [verb, noun]: "read 3 files", "ran 2 commands".
+const TOOL_WORDS := {
+	"read": ["read", "file"],
+	"edit": ["edited", "file"],
+	"delete": ["deleted", "file"],
+	"move": ["moved", "file"],
+	"search": ["searched", "time"],
+	"execute": ["ran", "command"],
+	"fetch": ["fetched", "page"],
+	"think": ["thought", "time"],
+	"other": ["used", "tool"],
+}
 ## The snapshot's `tasks` only holds packages with one of these statuses.
 const OPEN_TASK_STATUSES := ["queued", "in_progress"]
 
