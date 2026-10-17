@@ -214,7 +214,8 @@ func _send_text(text: String) -> void:
 	_you_said.text = "You: " + text
 	_you_said.visible = true
 	_dots = 0.0
-	_typed_text = ""  # the reply starts fresh, whatever the greeting said
+	_typed = 0.0  # the reply types in from zero, whatever the greeting did
+	_typed_text = ""
 	_set_status("%s is thinking..." % _name())
 	_update_inputs()
 	_layout.call_deferred()
