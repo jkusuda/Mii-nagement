@@ -11,6 +11,8 @@
     GET  /islands/{id}                 the island snapshot
     POST /islands/{id}/tasks           {"title": "...", "description": "..."} or {"issue": 42}
     GET  /islands/{id}/insights        stats for the Insights screen
+    GET  /settings                     settings + which API keys are set (never the keys themselves)
+    PUT  /settings                     {"settings": {...}, "secrets": {"openrouter_api_key": "sk-..."|null}}
     POST /replay/{task_id}?speed=4     replay a recorded task into the game
 """
 
@@ -21,10 +23,9 @@ from django.http import HttpRequest, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
-from mii import github, islands
+from mii import github, islands, prefs
 from mii.agents.acp import available_brains
 from mii.agents.openrouter import list_models
-from mii.config import config
 from mii.insights import island_insights
 from mii.models import Island, island_snapshot, task_to_dict
 from mii.replay import ReplayError, replay_task
@@ -41,25 +42,26 @@ async def _island_or_none(island_id: str) -> Island | None:
 
 @require_GET
 async def health(request: HttpRequest) -> JsonResponse:
-    return JsonResponse({"ok": True, "mock_agents": config.mock_agents})
+    return JsonResponse({"ok": True, "mock_agents": get_runtime().mock_agents})
 
 
 @require_GET
 async def brains(request: HttpRequest) -> JsonResponse:
-    return JsonResponse({brain: info["ok"] for brain, info in available_brains(config.openrouter_api_key).items()})
+    return JsonResponse({brain: info["ok"] for brain, info in available_brains(prefs.secret("openrouter_api_key")).items()})
 
 
 @require_GET
 async def brains_detail(request: HttpRequest) -> JsonResponse:
-    return JsonResponse(available_brains(config.openrouter_api_key))
+    return JsonResponse(available_brains(prefs.secret("openrouter_api_key")))
 
 
 @require_GET
 async def models_list(request: HttpRequest) -> JsonResponse:
-    if not config.openrouter_api_key:
-        return _error("OPENROUTER_API_KEY is not set", 503)
+    api_key = prefs.secret("openrouter_api_key")
+    if not api_key:
+        return _error("no OpenRouter API key: save one with PUT /settings or set OPENROUTER_API_KEY", 503)
     try:
-        models = await list_models(config.openrouter_api_key)
+        models = await list_models(api_key)
     except Exception as e:
         return _error(f"could not fetch the OpenRouter catalogue: {e}", 502)
     return JsonResponse({"models": models})
@@ -73,7 +75,7 @@ async def islands_view(request: HttpRequest) -> JsonResponse:
             {"id": i.id, "name": i.name, "repo": i.repo, "path": i.repo_path, "branch": i.branch, "plan": i.plan}
             async for i in Island.objects.order_by("name")
         ]
-        return JsonResponse({"islands": rows, "default_folder": str(islands.default_folder())})
+        return JsonResponse({"islands": rows, "default_folder": str(await asyncio.to_thread(islands.default_folder))})
     if request.method != "POST":
         return _error("GET or POST", 405)
     try:
@@ -164,3 +166,35 @@ async def replay(request: HttpRequest, task_id: str) -> JsonResponse:
     except ReplayError as e:
         return _error(str(e), 404)
     return JsonResponse({"replayed_events": sent})
+
+
+@csrf_exempt
+async def settings_view(request: HttpRequest) -> JsonResponse:
+    """GET: effective settings and which secrets are set. PUT: save settings and/or secrets.
+
+    Secret values are written to the OS keychain and never returned. A value set
+    in the environment (.env) wins and is listed in `from_env`.
+    """
+    if request.method == "PUT":
+        try:
+            body = json.loads(request.body or b"{}")
+        except json.JSONDecodeError:
+            return _error("body is not valid JSON", 400)
+        if not isinstance(body, dict):
+            return _error("body must be a JSON object", 400)
+        settings = body.get("settings") or {}
+        secrets = body.get("secrets") or {}
+        if not isinstance(settings, dict) or not isinstance(secrets, dict):
+            return _error("`settings` and `secrets` must be objects", 400)
+        try:
+            await asyncio.to_thread(prefs.set_many, settings)
+            for name, value in secrets.items():
+                if value is not None and not isinstance(value, str):
+                    return _error(f"{name} must be text or null", 400)
+                await asyncio.to_thread(prefs.set_secret, name, value)
+        except prefs.PrefsError as e:
+            return _error(str(e), 400)
+        return JsonResponse(await get_runtime().reload())
+    if request.method != "GET":
+        return _error("GET or PUT", 405)
+    return JsonResponse(await asyncio.to_thread(prefs.snapshot))

@@ -1,6 +1,8 @@
-"""App settings, loaded once from the .env file at the repo root.
+"""Developer config, loaded once from the optional .env file at the repo root.
 
-This is *our* config (mock switch, repo path, keys, pacing). Django's own
+Nothing here is required: every value has a default, and users change the
+important ones at runtime through PUT /settings (prefs.py: database + OS
+keychain). Values set in the environment win over saved settings. Django's own
 settings live in settings.py and read from here.
 """
 

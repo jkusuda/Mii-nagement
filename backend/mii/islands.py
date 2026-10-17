@@ -17,7 +17,7 @@ from pathlib import Path
 
 from django.db import transaction
 
-from mii.config import config
+from mii import prefs
 from mii.models import Building, Island, Road
 
 # plan -> (buildings [(type, name, x, y)], roads [(from type, to type, condition)])
@@ -45,9 +45,11 @@ class IslandError(ValueError):
 
 
 def default_folder() -> Path:
-    """ISLANDS_ROOT, else Documents/Mii-nagement if there is a Documents folder, else ~/Mii-nagement."""
-    if config.islands_root:
-        return config.islands_root
+    """The islands_root setting (or ISLANDS_ROOT), else Documents/Mii-nagement if there is a
+    Documents folder, else ~/Mii-nagement. Sync (reads the database)."""
+    root = prefs.get("islands_root")
+    if root:
+        return Path(root).resolve()
     documents = Path.home() / "Documents"
     return (documents if documents.is_dir() else Path.home()) / "Mii-nagement"
 

@@ -1,7 +1,7 @@
 # Mii-nagement: one command to run everything.
 #
 #   make           same as `make up`: backend + simulator + the game, Ctrl+C stops all three
-#   make setup     install deps and create .env (first time; also run by `make up`)
+#   make setup     install deps (first time; also run by `make up`). No .env needed.
 #   make up        backend + simulator + game
 #   make server    just the backend (http://localhost:8000)
 #   make sim       just the simulator (fake tasks; needs the backend)
@@ -29,7 +29,6 @@ check-tools:
 	@[ -n "$(GODOT)" ] || echo "Godot not found: install Godot 4 and run 'make GODOT=/path/to/godot ...' (backend still works)"
 
 setup: check-tools
-	@[ -f .env ] || { cp .env.example .env && echo "created .env (mock mode)"; }
 	@cd $(BACKEND) && $(UV) sync
 	@[ -z "$(GODOT)" ] || [ -d game/.godot ] || "$(GODOT)" --headless --path game --import >/dev/null 2>&1 || true
 	@echo "setup done"

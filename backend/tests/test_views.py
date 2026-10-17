@@ -13,12 +13,15 @@ pytestmark = db_test
 @pytest.fixture
 def fake_runtime(monkeypatch):
     workflow, _ = make_workflow(ScriptedRunner())
-    runtime = SimpleNamespace(workflow=workflow, bubbles=workflow.bubbles, bus=workflow.bus)
+    async def reload():
+        return {"reloaded": True}
+
+    runtime = SimpleNamespace(workflow=workflow, bubbles=workflow.bubbles, bus=workflow.bus, mock_agents=True, reload=reload)
     monkeypatch.setattr(views, "get_runtime", lambda: runtime)
     return runtime
 
 
-async def test_health():
+async def test_health(fake_runtime):
     response = await AsyncClient().get("/health")
     assert response.status_code == 200 and response.json()["ok"] is True
 
@@ -56,12 +59,7 @@ async def test_insights_and_replay_endpoints(island, fake_runtime):
 
 
 async def test_list_and_found_islands(island, fake_runtime, tmp_path, monkeypatch):
-    import dataclasses
-
-    from mii import islands
-    from mii.config import config
-
-    monkeypatch.setattr(islands, "config", dataclasses.replace(config, islands_root=tmp_path / "root"))
+    monkeypatch.setenv("ISLANDS_ROOT", str(tmp_path / "root"))
     client = AsyncClient()
     listing = (await client.get("/islands")).json()
     assert [i["id"] for i in listing["islands"]] == ["sunny"] and listing["default_folder"].endswith("root")
@@ -90,3 +88,33 @@ async def test_github_endpoints_report_gh_problems(monkeypatch):
     assert (await client.get("/github/repos?q=x")).status_code == 503
     assert (await client.get("/github/branches?repo=me/x")).status_code == 503
     assert (await client.get("/github/branches?repo=nope")).status_code == 400
+
+
+async def test_settings_endpoint_saves_and_hides_secrets(fake_runtime, monkeypatch):
+    import keyring
+
+    from mii import prefs
+
+    store: dict = {}
+    monkeypatch.setattr(keyring, "get_password", lambda service, name: store.get(name))
+    monkeypatch.setattr(keyring, "set_password", lambda service, name, value: store.__setitem__(name, value))
+    monkeypatch.setattr(keyring, "delete_password", lambda service, name: store.pop(name))
+    for env_name in prefs.SECRETS.values():
+        monkeypatch.delenv(env_name, raising=False)
+    monkeypatch.delenv("TEST_COMMAND", raising=False)
+    client = AsyncClient()
+
+    before = (await client.get("/settings")).json()
+    assert before["secrets"]["openrouter_api_key"] is False
+
+    saved = await client.put("/settings", data=json.dumps({"settings": {"test_command": "make test"},
+                                                            "secrets": {"openrouter_api_key": "sk-or-1"}}),
+                             content_type="application/json")
+    assert saved.status_code == 200 and saved.json() == {"reloaded": True}  # the runtime re-read its settings
+    after = (await client.get("/settings")).json()
+    assert after["settings"]["test_command"] == "make test" and after["secrets"]["openrouter_api_key"] is True
+    assert "sk-or-1" not in json.dumps(after)
+
+    bad = await client.put("/settings", data=json.dumps({"settings": {"mock_agents": "no"}}), content_type="application/json")
+    assert bad.status_code == 400
+    assert (await client.post("/settings")).status_code == 405

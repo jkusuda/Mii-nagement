@@ -48,7 +48,8 @@ Django project and app are the same package, so one `mii/` holds everything.
 backend/manage.py      Django's CLI: migrate, makemigrations mii, seed, watch
 backend/mii/
   settings.py      Django settings (reads config.py)
-  config.py        settings from .env (mock switch, repo path, keys, timeouts)
+  config.py        developer overrides from the optional .env (+ defaults)
+  prefs.py         user settings (Setting table) + API keys (OS keychain); env > saved > default
   asgi.py          ASGI entry: HTTP (views) + WebSocket (consumer) + lifespan (starts the engine)
   urls.py          HTTP routes
   views.py         async JSON views
@@ -87,6 +88,7 @@ backend/mii/
 | `Task` | title, status, where the package is, who carries it, `issue_number`, `branch`, `pr_url` |
 | `Step` | one building visit: task, building, resident, brain, outcome, timed out?, bubbles raised, start/finish time |
 | `Event` | every event sent to the game (history + replay) |
+| `Setting` | user settings saved from the game (never secrets: those live in the OS keychain) |
 
 After changing a model: `uv run python manage.py makemigrations mii`, then
 `migrate` (the server also migrates at startup).
@@ -125,7 +127,8 @@ After changing a model: `uv run python manage.py makemigrations mii`, then
 - Permission requests become bubbles; file requests are path-checked. Shell
   commands are gated by a bubble, not path-restricted.
 - Every step has a timeout, and a package can visit at most 20 buildings.
-- The OpenRouter key is never passed to agent processes.
+- The OpenRouter key is never passed to agent processes. API keys live in the OS
+  keychain (or an owner-only file where there is none), never in the database.
 
 ## Endpoints
 
@@ -143,6 +146,8 @@ After changing a model: `uv run python manage.py makemigrations mii`, then
 | `GET /islands/{id}` | the island snapshot |
 | `POST /islands/{id}/tasks` | `{"title": ...}` or `{"issue": 42}` |
 | `GET /islands/{id}/insights` | stats for the Insights screen |
+| `GET /settings` | effective settings, what `.env` locks, which API keys are set |
+| `PUT /settings` | `{"settings": {...}, "secrets": {"openrouter_api_key": "sk-..." \| null}}`; keys go to the keychain and are never echoed |
 | `GET /islands/{id}/events` | stored events for the News tab (planned, see below) |
 | `POST /replay/{task_id}?speed=4` | replay a recorded task (demo safety net) |
 
