@@ -10,7 +10,7 @@ from urllib.parse import parse_qs
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 
-from mii import events, layout, residents
+from mii import events, layout, residents, tasks
 from mii.models import Island, island_layout, island_snapshot
 from mii.runtime import get_runtime
 
@@ -40,6 +40,27 @@ async def handle_message(runtime, island_id: str, message) -> dict | None:
         await runtime.bus.emit(island_id, events.resident(resident))  # every client, including the sender
         if "buildings" in data:  # who works where changed too
             await runtime.bus.emit(island_id, events.layout(**await island_layout(island_id)))
+    elif kind == "delete_resident":
+        resident_id = str(message.get("id", ""))
+        try:
+            await residents.delete_resident(island_id, resident_id)
+        except residents.ResidentError as e:
+            return events.error(str(e))
+        await runtime.bus.emit(island_id, events.resident_removed(resident_id))
+    elif kind == "create_task":
+        island = await Island.objects.aget(pk=island_id)
+        try:
+            await tasks.submit_task(runtime.workflow, island, message.get("task"))  # emits the `task` event
+        except tasks.TaskError as e:
+            return events.error(str(e))
+    elif kind == "cancel_task":
+        task_id = str(message.get("id", ""))
+        try:
+            await runtime.workflow.cancel(task_id)  # emits `task` with status cancelled
+        except KeyError:
+            return events.error(f"unknown task id: {task_id}")
+        except ValueError as e:
+            return events.error(str(e))
     elif kind == "set_layout":
         try:
             buildings, roads = layout.clean_layout(island_id, message)

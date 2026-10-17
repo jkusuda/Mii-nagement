@@ -35,6 +35,7 @@ backend/mii/      one package = Django project + app
   prefs.py        user settings (Setting table) + API keys (OS keychain via `keyring`); env > saved > default
   asgi.py         ASGI entry: HTTP + WebSocket + lifespan (starts the engine worker)
   urls.py / views.py   async JSON endpoints: /health, /brains, /models, /islands/{id}, tasks, insights, replay
+  tasks.py        submit_task: a request ({"title"} or {"issue"}) -> a queued task (HTTP POST + `create_task`)
   consumers.py    the /ws WebSocket consumer (Channels, no channel layer)
   runtime.py      one sandbox / event bus / bubbles / engine per process (get_runtime())
   models.py       tables (Island, Resident, Building, Road, Task, Step, Event) + snapshot
@@ -43,7 +44,7 @@ backend/mii/      one package = Django project + app
   personality.py  Resident -> prompt preamble
   events.py       event bus (persist to SQLite + broadcast) + bubbles
   engine.py       island graph + building handlers (commit, test run, PR) + task loop
-  residents.py    create_resident / update_resident (the resident creator; `buildings` = works at)
+  residents.py    create_resident / update_resident / delete_resident (the resident creator; `buildings` = works at)
   layout.py       build mode: validate + save buildings/roads (set_layout, PUT /islands/{id}/layout)
   islands.py      found an island: town plan + a git repo per island (POST /islands)
   sandbox.py      Sandboxes (one per island repo) + worktree per task + commit_all/diff_stat + is_inside()

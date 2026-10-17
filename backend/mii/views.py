@@ -30,7 +30,7 @@ from django.views.decorators.http import require_GET, require_POST
 
 from asgiref.sync import sync_to_async
 
-from mii import events, github, islands, layout, prefs
+from mii import events, github, islands, layout, prefs, residents, tasks
 from mii.agents.acp import available_brains, available_gifts
 from mii.agents.openrouter import list_models
 from mii.insights import RANGES, island_insights
@@ -123,13 +123,38 @@ async def github_branches(request: HttpRequest) -> JsonResponse:
         return _error(str(e), 503)
 
 
-@require_GET
-async def get_island(request: HttpRequest, island_id: str) -> JsonResponse:
+@csrf_exempt
+async def island_view(request: HttpRequest, island_id: str) -> JsonResponse:
+    """GET: the island snapshot. DELETE: abandon the island (its git repository stays on disk)."""
+    if request.method == "DELETE":
+        try:
+            kept = await islands.delete_island(island_id)
+        except Island.DoesNotExist:
+            return _error(f"no island {island_id!r}", 404)
+        except islands.IslandError as e:
+            return _error(str(e), 409)
+        return JsonResponse({"deleted": island_id, "repo_kept": kept})
+    if request.method != "GET":
+        return _error("GET or DELETE", 405)
     try:
         snapshot = await island_snapshot(island_id, get_runtime().bubbles.for_island(island_id))
     except Island.DoesNotExist:
         return _error(f"no island {island_id!r}", 404)
     return JsonResponse(snapshot)
+
+
+@csrf_exempt
+async def resident_view(request: HttpRequest, island_id: str, resident_id: str) -> JsonResponse:
+    """DELETE: the resident moves away (same as the `delete_resident` message)."""
+    if request.method != "DELETE":
+        return _error("DELETE", 405)
+    runtime = get_runtime()
+    try:
+        await residents.delete_resident(island_id, resident_id)
+    except residents.ResidentError as e:
+        return _error(str(e), 404 if "no resident" in str(e) else 409)
+    await runtime.bus.emit(island_id, events.resident_removed(resident_id))
+    return JsonResponse({"deleted": resident_id})
 
 
 @csrf_exempt
@@ -152,21 +177,10 @@ async def tasks_view(request: HttpRequest, island_id: str) -> JsonResponse:
         body = json.loads(request.body or b"{}")
     except json.JSONDecodeError:
         return _error("body is not valid JSON", 400)
-    title = str(body.get("title") or "")
-    description = str(body.get("description") or "")
-    issue = body.get("issue")
-    if issue is not None:
-        if not island.repo:
-            return _error("this island has no GitHub repo", 400)
-        try:
-            title, description = await asyncio.to_thread(github.fetch_issue, island.repo, int(issue))
-        except (ValueError, TypeError):
-            return _error("issue must be a number", 400)
-        except github.GitHubError as e:
-            return _error(str(e), 502)
-    if not title:
-        return _error("give a title or an issue number", 400)
-    task = await get_runtime().workflow.submit(island_id, title, description, issue_number=issue)
+    try:
+        task = await tasks.submit_task(get_runtime().workflow, island, body)
+    except tasks.TaskError as e:
+        return _error(str(e), e.status)
     return JsonResponse(task_to_dict(task))
 
 
@@ -191,6 +205,19 @@ async def get_task(request: HttpRequest, island_id: str, task_id: str) -> JsonRe
         return _error(f"no task {task_id!r} on island {island_id!r}", 404)
     steps = await _steps_by_task([task.id])
     return JsonResponse({**task_detail_dict(task, steps.get(task.id, [])), "events": await _task_events(task)})
+
+
+@csrf_exempt
+@require_POST
+async def cancel_task(request: HttpRequest, island_id: str, task_id: str) -> JsonResponse:
+    """Cancel a queued task, or stop the running one. Replies with the task (now `cancelled`)."""
+    if await Task.objects.filter(pk=task_id, island_id=island_id).afirst() is None:
+        return _error(f"no task {task_id!r} on island {island_id!r}", 404)
+    try:
+        task = await get_runtime().workflow.cancel(task_id)
+    except ValueError as e:
+        return _error(str(e), 409)
+    return JsonResponse(task_to_dict(task))
 
 
 async def _steps_by_task(task_ids: list[str]) -> dict[str, list[Step]]:

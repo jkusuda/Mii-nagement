@@ -95,7 +95,7 @@ class Task(models.Model):
     island = models.ForeignKey(Island, on_delete=models.CASCADE, related_name="tasks")
     title = models.CharField(max_length=500)
     description = models.TextField(blank=True, default="")
-    status = models.CharField(max_length=20, default="queued")  # queued | in_progress | done | failed
+    status = models.CharField(max_length=20, default="queued")  # queued | in_progress | done | failed | cancelled
     building = models.ForeignKey(Building, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")  # where the package is now
     agent = models.ForeignKey(Resident, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")  # who is carrying it
     issue_number = models.IntegerField(null=True, blank=True)  # the GitHub issue it came from
@@ -131,6 +131,28 @@ class Step(models.Model):
         if self.finished_at is None:
             return None
         return (self.finished_at - self.started_at).total_seconds()
+
+
+class Friendship(models.Model):
+    """The friendship meter: how often two residents hand packages to each other.
+
+    One row per pair, with the two ids sorted so (a, b) and (b, a) are the same
+    row. Plain strings, like Step, so history survives a resident leaving.
+    """
+
+    island = models.ForeignKey(Island, on_delete=models.CASCADE, related_name="friendships")
+    a = models.CharField(max_length=64)
+    b = models.CharField(max_length=64)
+    handoffs = models.IntegerField(default=0)
+    updated_at = models.DateTimeField(default=utcnow)
+
+    class Meta:
+        unique_together = [("island", "a", "b")]
+
+    @property
+    def score(self) -> float:
+        """0.0-1.0: grows with every handoff, fast at first (5 → 0.56, 10 → 0.80, 20 → 0.96)."""
+        return round(1 - 0.85**self.handoffs, 3)
 
 
 class Setting(models.Model):
@@ -172,6 +194,10 @@ def resident_to_dict(r: Resident) -> dict:
         "mood": r.mood,
         "notebook": r.notebook,
     }
+
+
+def friendship_to_dict(f: Friendship) -> dict:
+    return {"a": f.a, "b": f.b, "handoffs": f.handoffs, "score": f.score}
 
 
 def task_to_dict(t: Task) -> dict:
@@ -248,5 +274,8 @@ async def island_snapshot(island_id: str, open_bubbles: list[dict]) -> dict:
         "tasks": [
             task_to_dict(t)
             async for t in Task.objects.filter(island_id=island_id, status__in=["queued", "in_progress"]).order_by("created_at")
+        ],
+        "friendships": [
+            friendship_to_dict(f) async for f in Friendship.objects.filter(island_id=island_id).order_by("a", "b")
         ],
     }

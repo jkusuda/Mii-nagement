@@ -64,6 +64,9 @@ The client should rebuild its view from scratch when it gets one.
     ],
     "tasks": [
       {"id": "t_12", "title": "Fix login typo", "status": "in_progress", "building": "lab", "agent": "carlos", "pr_url": null}
+    ],
+    "friendships": [
+      {"a": "carlos", "b": "jun", "handoffs": 7, "score": 0.679}
     ]
   }
 }
@@ -100,7 +103,10 @@ The client should rebuild its view from scratch when it gets one.
 - `residents[].notebook`: how full the agent's context window is, 0.0-1.0, or
   `null` until the agent reports it (see the `notebook` event).
 - `bubbles`: bubbles still waiting for an answer.
-- `tasks[].status`: `queued`, `in_progress`, `done`, or `failed`.
+- `tasks[].status`: `queued`, `in_progress`, `done`, `failed`, or `cancelled`.
+- `friendships`: the friendship meter, one entry per pair of residents who have
+  handed packages to each other (`a` < `b` by id). `handoffs` counts them,
+  `score` is 0.0-1.0 and grows with every handoff (5 → 0.56, 10 → 0.80).
 
 ### `agent_state`
 A resident's activity changed.
@@ -195,6 +201,19 @@ resident with the same `id`. Same shape as `snapshot.island.residents[]`.
 {"type": "resident", "resident": {"id": "mo_3f2a", "name": "Mo", "job": "coder", "...": "..."}}
 ```
 
+### `resident_removed`
+A resident moved away (any client asked). Remove them from the island.
+```json
+{"type": "resident_removed", "id": "mo_3f2a"}
+```
+
+### `friendship`
+Two residents handed a package between them; their friendship grew. Same
+shape as `snapshot.island.friendships[]`: replace the entry for that pair.
+```json
+{"type": "friendship", "a": "carlos", "b": "jun", "handoffs": 8, "score": 0.728}
+```
+
 ### `notebook`
 How full a resident's context window is (their notebook), from the agent's
 usage updates. `value` is 0.0-1.0.
@@ -262,6 +281,33 @@ Edit a resident (the creator's "Save"). Same fields as `create_resident` plus
 event to every client, or `error` if the id is unknown.
 ```json
 {"type": "update_resident", "resident": {"id": "mo_3f2a", "caution": 0.9, "gifts": [], "buildings": ["lab"]}}
+```
+
+### `delete_resident`
+The resident moves away. The server replies with `resident_removed` to every
+client, or `error` if the id is unknown, if they are carrying a package, or if a
+building still counts on them (send `update_resident` with `buildings` for
+someone else first).
+```json
+{"type": "delete_resident", "id": "mo_3f2a"}
+```
+
+### `create_task`
+Drop a package in the mailbox (same as `POST /islands/{id}/tasks`). Either a
+`title` (with an optional `description`) or an `issue` number of the island's
+GitHub repo. The server replies with a `task` event (status `queued`) to every
+client, or `error`.
+```json
+{"type": "create_task", "task": {"title": "Fix login typo", "description": "The button says 'Log im'."}}
+```
+
+### `cancel_task`
+Take a package back. A queued task is cancelled on the spot; a running one is
+stopped mid-step (its agent process is ended and the resident puts the package
+down). Every client gets a `task` event with status `cancelled`; a finished or
+unknown task answers `error`.
+```json
+{"type": "cancel_task", "id": "t_12"}
 ```
 
 ### `set_layout`

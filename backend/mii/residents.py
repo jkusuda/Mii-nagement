@@ -14,7 +14,9 @@ from asgiref.sync import sync_to_async
 
 from mii.agents.acp import BRAINS, GIFTS
 from mii.layout import LayoutError, assign_buildings
-from mii.models import DEFAULT_KEYS, Building, Resident
+from django.db.models import Q
+
+from mii.models import DEFAULT_KEYS, Building, Friendship, Resident
 from mii.personality import JOBS
 
 # The building types each job works in (as in the seed island), first = home.
@@ -117,4 +119,19 @@ async def update_resident(island_id: str, data: dict) -> Resident:
     if changes:
         await resident.asave(update_fields=list(changes))
     await _work_at(island_id, resident, data)
+    return resident
+
+
+async def delete_resident(island_id: str, resident_id: str) -> Resident:
+    """The resident moves away. Raises ResidentError if unknown, or if a building still counts on them."""
+    resident = await Resident.objects.filter(pk=resident_id, island_id=island_id).afirst()
+    if resident is None:
+        raise ResidentError(f"no resident {resident_id!r} on this island")
+    if resident.state in ("working", "walking"):
+        raise ResidentError(f"{resident.name} is carrying a package; wait or cancel the task first")
+    where = [b.name async for b in Building.objects.filter(island_id=island_id, resident_id=resident_id)]
+    if where:
+        raise ResidentError(f"{resident.name} works at the {where[0]}; move someone else in first (update_resident with `buildings`)")
+    await Friendship.objects.filter(island_id=island_id).filter(Q(a=resident_id) | Q(b=resident_id)).adelete()
+    await resident.adelete()  # tasks they carried keep their history (agent becomes null), Step rows stay
     return resident

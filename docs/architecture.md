@@ -148,7 +148,7 @@ the same keys and rules to its `run_command` tool.
 
 | Endpoint | Purpose |
 |---|---|
-| `WS /ws?island=<id>` | snapshot + live events; the game sends `answer_bubble`, `create_resident`, `update_resident` |
+| `WS /ws?island=<id>` | snapshot + live events; the game sends `answer_bubble`, `create_resident`, `update_resident`, `delete_resident`, `create_task`, `cancel_task`, `set_layout` |
 | `GET /health` | is the server up, which mode |
 | `GET /brains` | `{brain: true/false}`: which brains can run here (the creator greys out the rest) |
 | `GET /brains/detail` | per brain: `ok`, `installed`, `logged_in` (best effort), `api_key`, `hint` |
@@ -159,9 +159,12 @@ the same keys and rules to its `run_command` tool.
 | `GET /github/repos?q=` | the user's repos, through their logged-in `gh` (island creator) |
 | `GET /github/branches?repo=` | a repo's branches, through `gh` |
 | `GET /islands/{id}` | the island snapshot |
+| `DELETE /islands/{id}` | abandon the island (rows go, the git repository stays on disk). 409 while a task runs there or if it is the last island |
+| `DELETE /islands/{id}/residents/{resident_id}` | the resident moves away (409 if a building still counts on them) |
 | `GET /islands/{id}/tasks` | the island's tasks, newest first, each with its `steps` (`?status=done,failed&limit=50`) |
 | `POST /islands/{id}/tasks` | `{"title": ..., "description": ...}` or `{"issue": 42}` → the queued task. The engine runs it through the island's residents' brains |
 | `GET /islands/{id}/tasks/{task_id}` | one task: `steps` (building, resident, brain, outcome, `summary` = what the resident reported) + `events` (the stored events while it ran) |
+| `POST /islands/{id}/tasks/{task_id}/cancel` | cancel a queued task or stop the running one (409 if it already finished) |
 | `GET /islands/{id}/insights?range=week` | stats for the Insights screen and News' "This week" (`today` / `week` / `month`) |
 | `GET /islands/{id}/events?limit=200` | stored events, oldest first, for the News tab (see "Events history") |
 | `PUT /islands/{id}/layout` | build mode over HTTP: `{"buildings", "roads"}` → the saved layout (same rules as `set_layout` in protocol.md) |

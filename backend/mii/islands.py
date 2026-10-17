@@ -18,7 +18,7 @@ from pathlib import Path
 from django.db import transaction
 
 from mii import prefs
-from mii.models import Building, Island, Road
+from mii.models import Building, Island, Road, Task
 
 # plan -> (buildings [(type, name, x, y)], roads [(from type, to type, condition)])
 TOWN_PLANS = {
@@ -152,3 +152,18 @@ def _git(cwd: Path, *args: str) -> None:
         raise IslandError("git is not installed")
     if result.returncode != 0:
         raise IslandError(f"git {args[0]} failed: {result.stderr.strip()}")
+
+
+async def delete_island(island_id: str) -> str | None:
+    """Abandon an island: its rows go, its git repository stays on disk (returned, for the message).
+
+    Raises Island.DoesNotExist, or IslandError while a task is running there or
+    when it is the last island (the game needs one to connect to).
+    """
+    island = await Island.objects.aget(pk=island_id)
+    if await Task.objects.filter(island_id=island_id, status="in_progress").aexists():
+        raise IslandError("a task is running on this island; cancel it first")
+    if await Island.objects.acount() == 1:
+        raise IslandError("this is the last island; found another one first")
+    await island.adelete()  # residents, buildings, roads, tasks, friendships cascade; Step/Event rows stay
+    return island.repo_path

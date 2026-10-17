@@ -11,7 +11,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from mii.models import Event, Task, resident_to_dict, task_to_dict
+from mii.models import Event, Friendship, Task, friendship_to_dict, resident_to_dict, task_to_dict
 
 log = logging.getLogger(__name__)
 
@@ -57,6 +57,14 @@ def task(t: Task) -> dict:
 
 def resident(r) -> dict:
     return {"type": "resident", "resident": resident_to_dict(r)}
+
+
+def resident_removed(resident_id: str) -> dict:
+    return {"type": "resident_removed", "id": resident_id}
+
+
+def friendship(f: Friendship) -> dict:
+    return {"type": "friendship", **friendship_to_dict(f)}
 
 
 def notebook(agent: str, value: float) -> dict:

@@ -5,7 +5,8 @@ import pytest
 from conftest import ScriptedRunner, db_test, make_workflow
 from django.test import AsyncClient
 
-from mii import views
+from mii import residents, views
+from mii.models import Island
 
 pytestmark = db_test
 
@@ -73,6 +74,25 @@ async def test_list_and_get_tasks_with_steps_and_events(island, fake_runtime):
     assert (await client.get("/islands/sunny/tasks?limit=x")).status_code == 400
     assert (await client.get("/islands/sunny/tasks/t_nope")).status_code == 404
     assert (await client.get("/islands/nowhere/tasks")).status_code == 404
+
+
+async def test_cancel_and_delete_endpoints(island, fake_runtime):
+    client = AsyncClient()
+    task = await fake_runtime.workflow.submit("sunny", "Hi")
+    assert (await client.post(f"/islands/sunny/tasks/{task.id}/cancel")).json()["status"] == "cancelled"
+    assert (await client.post(f"/islands/sunny/tasks/{task.id}/cancel")).status_code == 409
+    assert (await client.post("/islands/sunny/tasks/t_nope/cancel")).status_code == 404
+
+    assert (await client.delete("/islands/sunny/residents/carlos")).status_code == 409  # works at the workshop
+    mo = await residents.create_resident("sunny", {"name": "Mo", "job": "coder"})
+    assert (await client.delete(f"/islands/sunny/residents/{mo.id}")).json() == {"deleted": mo.id}
+    assert (await client.delete(f"/islands/sunny/residents/{mo.id}")).status_code == 404
+
+    assert (await client.delete("/islands/sunny")).status_code == 409  # the last island stays
+    await Island.objects.acreate(id="rock", name="Rocky Cove")
+    assert (await client.delete("/islands/rock")).json() == {"deleted": "rock", "repo_kept": None}
+    assert (await client.get("/islands/rock")).status_code == 404
+    assert (await client.delete("/islands/rock")).status_code == 404
 
 
 async def test_insights_and_replay_endpoints(island, fake_runtime):

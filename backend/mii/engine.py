@@ -17,7 +17,7 @@ from pathlib import Path
 
 from mii import events, github
 from mii.agents import AgentJob, StepResult
-from mii.models import Building, Island, Resident, Road, Step, Task, utcnow
+from mii.models import Building, Friendship, Island, Resident, Road, Step, Task, utcnow
 from mii.sandbox import Sandbox, SandboxError, Sandboxes
 
 log = logging.getLogger(__name__)
@@ -253,6 +253,9 @@ class WorkflowEngine:
         self.keep_worktrees = keep_worktrees
         self.git_author = git_author
         self.queue: asyncio.Queue[str] = asyncio.Queue()
+        self.current: asyncio.Task | None = None  # the task run in progress (run_forever)
+        self.current_id: str | None = None
+        self._cancel_requested: str | None = None  # task id that cancel() is stopping
 
     # --- Public API -----------------------------------------------------------
 
@@ -266,6 +269,25 @@ class WorkflowEngine:
         await self.queue.put(task.id)
         return task
 
+    async def cancel(self, task_id: str) -> Task:
+        """Cancel a queued task, or stop the one running (its resident drops the package).
+
+        Raises KeyError for an unknown task and ValueError for one that already finished.
+        A running task is stopped through asyncio cancellation, which also ends the
+        agent process (see agents/acp.py); run_task then marks it `cancelled`.
+        """
+        task = await self._get(Task, task_id)
+        if task.status == "queued":
+            task = await self._update(Task, task_id, status="cancelled", finished_at=utcnow())
+            await self._emit(task, events.task(task))  # run_forever skips it when it comes off the queue
+            return task
+        if task.status == "in_progress" and self.current and self.current_id == task_id and not self.current.done():
+            self._cancel_requested = task_id
+            self.current.cancel()
+            await asyncio.wait([self.current])
+            return await self._get(Task, task_id)
+        raise ValueError(f"task {task_id} is already {task.status}")
+
     async def run_forever(self) -> None:
         """Worker loop: take tasks off the queue and run them."""
         while True:
@@ -274,12 +296,21 @@ class WorkflowEngine:
             except TimeoutError:
                 await self._put_idle_residents_to_sleep()
                 continue
+            if not await Task.objects.filter(pk=task_id, status="queued").aexists():
+                continue  # cancelled while waiting, or its island was deleted
+            self.current_id = task_id
+            self.current = asyncio.create_task(self.run_task(task_id))
             try:
-                await self.run_task(task_id)
+                await self.current
+            except asyncio.CancelledError:
+                if self._cancel_requested != task_id:
+                    raise  # the server is shutting down
             except Exception:
                 log.exception("task %s crashed", task_id)
                 task = await self._update(Task, task_id, status="failed", finished_at=utcnow())
                 await self._emit(task, events.task(task))
+            finally:
+                self.current = self.current_id = self._cancel_requested = None
 
     async def recover(self) -> None:
         """After a restart: re-queue waiting tasks, fail half-done ones, wake everyone."""
@@ -302,12 +333,26 @@ class WorkflowEngine:
         sandbox = await self._sandbox_for(task)
         try:
             return await self._run_task(task, sandbox)
+        except asyncio.CancelledError:
+            if self._cancel_requested != task_id:
+                raise  # the server is shutting down, not a cancel request
+            return await self._drop_package(task_id)
         finally:
             if sandbox and not self.keep_worktrees:
                 try:
                     await asyncio.to_thread(sandbox.remove_worktree, task.id)
                 except SandboxError as e:
                     log.warning("could not remove worktree for %s: %s", task.id, e)
+
+    async def _drop_package(self, task_id: str) -> Task:
+        """cancel() stopped this task mid-step: the resident puts the package down."""
+        task = await self._update(Task, task_id, status="cancelled", finished_at=utcnow())
+        if task.agent_id:
+            resident = await self._get(Resident, task.agent_id)
+            await self._set_mood(resident, "confused")
+            await self._set_state(resident, "idle")
+        await self._emit(task, events.task(task))
+        return task
 
     async def _sandbox_for(self, task: Task) -> Sandbox | None:
         """The island's repository sandbox (real mode only). A missing repo fails the task loudly."""
@@ -339,6 +384,7 @@ class WorkflowEngine:
                 await self._set_state(previous, "idle")
                 result_word = "success" if outcome == "pass" else "fail"
                 await self._emit(task, events.handoff(previous.id, resident.id, task.id, result_word))
+                await self._befriend(task.island_id, previous.id, resident.id)
 
             # 2. Walk over, then 3. work.
             resident = await self._walk(resident, building_id)
@@ -411,6 +457,15 @@ class WorkflowEngine:
 
     async def _emit(self, task: Task, event: dict) -> None:
         await self.bus.emit(task.island_id, event)
+
+    async def _befriend(self, island_id: str, one: str, other: str) -> None:
+        """Every handoff brings the two residents a little closer (the friendship meter)."""
+        a, b = sorted((one, other))
+        friendship, _ = await Friendship.objects.aget_or_create(island_id=island_id, a=a, b=b)
+        friendship.handoffs += 1
+        friendship.updated_at = utcnow()
+        await friendship.asave(update_fields=["handoffs", "updated_at"])
+        await self.bus.emit(island_id, events.friendship(friendship))
 
     async def _report(self, task: Task, resident: Resident, text: str) -> None:
         await self._emit(task, events.activity(resident.id, text))

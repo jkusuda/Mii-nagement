@@ -73,7 +73,10 @@ Backend design: [docs/architecture.md](docs/architecture.md).
 - [x] ACP runner honours island `branch` (worktrees + PRs) and house `rules` (`shell`, `install_packages`)
 - [ ] "Celebrating" island status (the events endpoint exists now; game side to do)
 - [ ] Run several tasks at once (one per free resident)
-- [ ] Friendship meter between residents who hand off to each other
+- [x] Friendship meter between residents who hand off to each other (`Friendship` table,
+      `friendships` in the snapshot, `friendship` event; game side to do)
+- [x] Cancel a task (`cancel_task` / `POST .../cancel`), create one over the socket
+      (`create_task`), residents and islands can be deleted
 - [ ] Mii faces (with mood expressions), hats, hair, portraits ([docs/mii-customization.md](docs/mii-customization.md))
 - [ ] Dreams, parties, apartment interiors
 - [ ] Blueprints (save and share island layouts as workflow templates)
