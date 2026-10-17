@@ -409,7 +409,7 @@ func _text_field(key: String, browse := false) -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)
 	row.add_child(edit)
-	if browse and not OS.has_feature("web"):  # in a browser, "this computer" is the server: nothing to browse
+	if browse:
 		var button := _icon_button(FOLDER_ICON, "Browse…")
 		button.pressed.connect(_browse_for.bind(key))
 		_browse[key] = button

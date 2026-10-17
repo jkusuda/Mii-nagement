@@ -76,8 +76,7 @@ var thinking := {}
 ## Set MII_SERVER (e.g. "127.0.0.1:8001") to use another backend. The default is
 ## 127.0.0.1, not "localhost": on Windows, localhost can resolve to the IPv6
 ## address ::1 first, which the backend (uvicorn on 127.0.0.1) doesn't answer.
-## In a browser (the web export) the backend is the server that served the page.
-var url := _server_url()
+var url := "ws://%s/ws" % (OS.get_environment("MII_SERVER") if OS.has_environment("MII_SERVER") else "127.0.0.1:8000")
 
 var is_online := false
 ## The latest island from the server: the last snapshot, kept up to date with
@@ -111,16 +110,6 @@ func visit_island(id: String) -> void:
 ## Godot concept: _ready() runs once, when the node enters the scene tree.
 func _ready() -> void:
 	_try_connect()
-
-
-## Godot concept: OS.has_feature("web") is true only in the web export, where
-## JavaScriptBridge.eval() runs a line of the page's JavaScript. An https page
-## needs wss://: browsers block plain ws:// there.
-static func _server_url() -> String:
-	if OS.has_feature("web"):
-		var secure: bool = JavaScriptBridge.eval("location.protocol") == "https:"
-		return "%s://%s/ws" % ["wss" if secure else "ws", JavaScriptBridge.eval("location.host")]
-	return "ws://%s/ws" % (OS.get_environment("MII_SERVER") if OS.has_environment("MII_SERVER") else "127.0.0.1:8000")
 
 
 ## Godot concept: _process(delta) runs every frame. `delta` is the number of
@@ -158,7 +147,7 @@ func send_resident(resident: Dictionary) -> bool:
 
 ## The backend's HTTP address for `path`, e.g. http_url("/brains").
 func http_url(path: String) -> String:
-	return "http" + url.trim_prefix("ws").trim_suffix("/ws") + path  # ws -> http, wss -> https
+	return url.replace("ws://", "http://").trim_suffix("/ws") + path
 
 
 ## One HTTP call to the backend: `done` is called later with (ok, data), where

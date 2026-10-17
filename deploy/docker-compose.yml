@@ -18,7 +18,6 @@ services:
       MII_DOMAIN: ${MII_DOMAIN:?set MII_DOMAIN in server.env}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      # - ../game/builds/web:/srv/game:ro   # the browser build, off for now (push.sh)
       - ./landing:/srv/landing:ro
       - ../downloads:/srv/downloads:ro
       - caddy:/data

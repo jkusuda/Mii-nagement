@@ -15,10 +15,6 @@ if [ "$(setting MOCK_AGENTS)" = "0" ] && { [ -z "$(setting AUTH0_DOMAIN)" ] || [
 fi
 [ "$(setting PUBLIC_DEMO)" = "1" ] || { echo "Set PUBLIC_DEMO=1 in deploy/server.env."; exit 1; }
 
-# The browser build is off for now (the landing page only offers the download). To bring
-# it back: `make web` here, add game/builds/web to the rsync, and uncomment the /app/
-# handler in Caddyfile and the game volume in docker-compose.yml.
-# make web
 rsync -azR --delete \
   --exclude .venv --exclude .worktrees --exclude __pycache__ --exclude '*.db' --exclude .secrets.json \
   backend deploy "$host:/opt/mii/"

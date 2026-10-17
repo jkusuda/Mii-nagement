@@ -43,7 +43,7 @@ func _init() -> void:
 
 ## Contents/Resources of the app bundle when it carries a backend, else "".
 func _resources_dir() -> String:
-	if OS.has_feature("editor") or OS.has_feature("web"):
+	if OS.has_feature("editor"):
 		return ""
 	var resources := OS.get_executable_path().get_base_dir().path_join("../Resources").simplify_path()
 	return resources if FileAccess.file_exists(resources.path_join("backend/manage.py")) else ""
