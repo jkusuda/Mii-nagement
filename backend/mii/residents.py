@@ -24,6 +24,7 @@ JOB_BUILDINGS = {"planner": ["mailbox", "post_office"], "coder": ["workshop", "l
 SLIDERS = ("bluntness", "caution", "chattiness", "creativity")
 KEY_VALUES = ("yes", "ask", "no")
 MAX_NAME = 20
+MAX_APPEARANCE_KEYS = 24
 HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 
@@ -79,7 +80,21 @@ def clean_fields(data: dict, partial: bool) -> dict:
         if not isinstance(gifts, list) or any(g not in GIFTS for g in gifts):
             raise ResidentError(f"gifts must be a list of {list(GIFTS)}")
         out["gifts"] = list(dict.fromkeys(gifts))  # drop duplicates, keep order
+    if "appearance" in data:
+        out["appearance"] = clean_appearance(data["appearance"])
     return out
+
+
+def clean_appearance(look) -> dict:
+    """The Mii's look. The game owns its meaning, so we only check it's small and flat:
+    a dict of short keys to numbers, booleans, or short strings (colours like #RRGGBB)."""
+    if not isinstance(look, dict) or len(look) > MAX_APPEARANCE_KEYS:
+        raise ResidentError(f"appearance must be an object with at most {MAX_APPEARANCE_KEYS} fields")
+    for key, value in look.items():
+        ok = isinstance(value, (bool, int, float)) or (isinstance(value, str) and len(value) <= 20)
+        if len(key) > 20 or not ok:
+            raise ResidentError(f"appearance.{key[:20]} must be a number, true/false, or a short string")
+    return dict(look)
 
 
 async def _work_at(island_id: str, resident: Resident, data: dict) -> None:

@@ -9,16 +9,38 @@ extends SubViewportContainer
 
 const SPIN_PER_PIXEL := 0.01
 const IDLE_SPIN_SPEED := 0.25  # radians per second while nobody is dragging
+## Camera spots: the whole Mii, or close on the face (while picking face parts).
+const BODY_SHOT := [Vector3(0, 1.1, 3.8), -0.07]
+const FACE_SHOT := [Vector3(0, 1.3, 3.0), -0.02]
 
 var _dragging := false
 var _anim_index := 0
 
+var _camera_tween: Tween
+
 @onready var turntable: Node3D = %Turntable
 @onready var mii: Mii = %Mii
+@onready var camera: Camera3D = $SubViewport/Camera3D
 
 
 func set_color(color: Color) -> void:
 	mii.color = color
+
+
+func set_appearance(look: Dictionary) -> void:
+	mii.appearance = look
+
+
+## Move the camera close to the face (true) or back to the whole Mii (false).
+## Godot concept: a Tween animates properties over time; tween_property() glides
+## one property to a new value, and set_parallel() runs several at once.
+func focus_face(on: bool) -> void:
+	var shot: Array = FACE_SHOT if on else BODY_SHOT
+	if _camera_tween:
+		_camera_tween.kill()
+	_camera_tween = create_tween().set_parallel().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	_camera_tween.tween_property(camera, "position", shot[0], 0.35)
+	_camera_tween.tween_property(camera, "rotation:x", shot[1], 0.35)
 
 
 ## Show the next animation (idle -> walk -> run -> idle ...).

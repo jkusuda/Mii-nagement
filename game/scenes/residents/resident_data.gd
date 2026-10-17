@@ -114,7 +114,7 @@ static func blank() -> Dictionary:
 	return {
 		"name": "", "job": "coder", "color": COLORS[0], "brain": "mock", "model": null,
 		"catchphrase": "", "bluntness": 0.5, "caution": 0.5, "chattiness": 0.5, "creativity": 0.5,
-		"keys": default_keys(), "gifts": [],
+		"keys": default_keys(), "gifts": [], "appearance": MiiParts.DEFAULT.duplicate(),
 	}
 
 

@@ -36,6 +36,9 @@ func _ready() -> void:
 ## their waiting bubble, or {} when they don't need you.
 func show_resident(resident: Dictionary, open_bubble: Dictionary) -> void:
 	mii.color = Color(str(resident.get("color", "#FFFFFF")))
+	var look := MiiParts.for_resident(resident)
+	if look != mii.appearance:
+		mii.appearance = look
 	name_tag.text = str(resident.get("name", "?"))
 	bubble.visible = not open_bubble.is_empty()
 	if bubble.visible:
