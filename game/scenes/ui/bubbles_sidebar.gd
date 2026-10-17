@@ -99,6 +99,7 @@ func _set_tab(tab: String) -> void:
 ## Status tab: one row per open task with its status and where it is now.
 func _show_tasks() -> void:
 	for row in _task_rows.get_children():
+		_task_rows.remove_child(row)  # queue_free alone leaves it counted until the frame ends
 		row.queue_free()
 	_task_rows.visible = _tab == "status"
 	if _tab != "status":
