@@ -250,14 +250,6 @@ tooltip_text = "The coding agent that runs this resident (over ACP)"
 theme_type_variation = &"OutlineButton"
 text_overrun_behavior = 3
 
-[node name="ModelEdit" type="LineEdit" parent="Rows/Columns/AboutPage/IdentityPanel/Rows/BrainRow"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-tooltip_text = "Optional model override. Leave blank for the agent's default."
-theme_override_font_sizes/font_size = 13
-placeholder_text = "default model"
-
 [node name="PersonalityPanel" type="PanelContainer" parent="Rows/Columns/AboutPage"]
 layout_mode = 2
 size_flags_horizontal = 3

@@ -76,12 +76,15 @@ Grouped by layer; a module only imports from its own layer or the ones below it.
 |---|---|---|---|
 | entry | `asgi.py` | ASGI app: HTTP (`urls.py`), `/ws` (`consumers.py`), lifespan (starts the engine via `runtime.py`) | |
 | entry | `urls.py`, `views.py` | HTTP routes; views parse the request and pick the status code | `test_views.py` |
-| entry | `consumers.py` | the `/ws` consumer: sends the snapshot, dispatches commands in `_handle` | `test_residents.py`, `test_tasks.py` |
+| entry | `consumers.py` | the `/ws` consumer: checks `?token=` (close 4401 / 4403), sends the snapshot, dispatches commands in `_handle` | `test_residents.py`, `test_tasks.py`, `test_auth.py` |
+| entry | `auth.py` | optional Auth0 login: `verify` (JWKS, RS256), `can_see`, `island_guard`, the device-flow proxies behind `/auth/*` | `test_auth.py` |
 | entry | `management/commands/` | `manage.py seed [--reset\|--loop]` and `manage.py watch` | |
-| runtime | `runtime.py` | the one bus, bubbles, judge and engine per process; `reload()` applies saved settings | |
+| runtime | `runtime.py` | the one bus, bubbles, judge, spectator hook and engine per process; `reload()` applies saved settings | `test_judge.py` |
 | engine | `engine.py` | `IslandGraph`, the five `BuildingHandler`s, `WorkflowEngine` (one `Lane` per island) | `test_engine.py` |
-| engine | `judge.py` | small typed decisions: `RuleJudge` (offline) or `JevJudge` (TypeSafe Jev) | `test_judge.py` |
-| engine | `events.py` | event builders (one per protocol event), `EventBus` (store + broadcast), `Bubbles` (ask and wait) | `test_engine.py` |
+| engine | `judge.py` | small typed decisions: `RuleJudge` (offline), or an `AskingJudge`: `JevJudge` (TypeSafe Jev) or `GeminiJudge` (Gemini structured output) | `test_judge.py` |
+| engine | `events.py` | event builders (one per protocol event), `EventBus` (store + hooks + broadcast), `Bubbles` (ask and wait) | `test_engine.py` |
+| engine | `hooks.py` | `SpectatorHook`: copies a few events to the outside spectator feed (outbound only, off by default) | `test_hooks.py` |
+| engine | `metrics.py` | Tiger Data: one row per finished step / task in a TimescaleDB hypertable, `per_day` for Insights; a no-op on SQLite | `test_metrics.py` |
 | agents | `agents/__init__.py` | `AgentJob`, `StepResult`, `build_prompt`, `parse_verdict`, `permission_for`, `make_runner` | `test_acp.py` |
 | agents | `agents/acp.py` | `AcpRunner` (Claude Code, Codex, Gemini over ACP; one kept agent per resident per task), `BRAINS`, `GIFTS` | `test_acp.py` (with `fake_acp_agent.py`) |
 | agents | `agents/openrouter.py` | `OpenRouterRunner`: a small tool loop over OpenRouter's chat API | `test_openrouter.py` |
@@ -169,6 +172,14 @@ Bubbles sidebar, and every screen (`show_screen()` shows one).
    and emits `task: queued`.
 2. **Queue.** `run_forever` hands it to the island's `Lane`; `run_task` cuts a worktree
    (`sandbox.Sandbox.create_worktree`, real mode only) and walks the `IslandGraph` from the mailbox.
+   Tasks live in SQLite, so a restart loses nothing: `recover` re-queues them, and a
+   half-done one resumes at the building it was in, its history rebuilt from its `Step` rows.
+   A Lane runs up to `parallel_packages` (setting, default 3) packages at once, each in its
+   own worktree. Every step books its resident (`_claim`): when the building's owner is busy
+   with another package, a free neighbour stands in (the same job first, and residents
+   without a building of their own before owners; anyone at a work building, only the same
+   job at the Lab and the Courthouse), with a "busy with another package" `chat` and
+   `Step.helped` set; with nobody free the package waits its turn.
 3. **Each building** (`_run_task` → `_run_step`): handoff, walk, work. The building's
    `BuildingHandler` builds the instructions and hands an `AgentJob` to the runner for the
    resident's brain (`agents/`). Bubbles go through `events.Bubbles.ask` and wait for
@@ -204,6 +215,10 @@ Bubbles sidebar, and every screen (`show_screen()` shows one).
      `activity` events; permission requests are decided by the resident's house
      keys (`yes` = allow, `no` = reject, `ask` = a ✋ bubble whose buttons are
      the agent's own options; no answer = reject); file reads/writes are served only inside the worktree.
+     Claude Code's subagents (its Agent tool, ACP kind `think`) count as `read`; the
+     fresh-session prompt carries the brain's `tip` (`BRAINS`), which asks Claude Code to
+     run independent parts as parallel subagents. Their tool calls ask like any other, so
+     several ✋ bubbles from one resident can be open at once (`MiiClient.pending`).
      ACP has no "ask the user" request, so the prompt tells the agent it may
      end a turn with `QUESTION: ...`: the runner shows a ❓ bubble and prompts
      the same session again with your answer (up to 3 per step). The final
@@ -270,14 +285,23 @@ scratch worktree, never in the island's repo); a short name is matched by `pick_
 ## The judge, help visits, chat and the diary
 
 `judge.py` answers the small questions the engine used to settle with hard-coded rules.
-`RuleJudge` *is* those rules (the default, offline, deterministic). With a TypeSafe key
-saved (`typesafe_api_key`, env `TYPESAFE_API_KEY`) and the `judge` setting not `off`,
-`JevJudge` asks Jev, a fast typed-decision model (one HTTPS call per decision, ~100-500 ms,
-pick-one / score / yes-no probability over a state dict), and falls back to the rules on
-any error. Mock mode included: the calls cost a fraction of a cent and are the demo.
-`GET /health` says which judge is active. The judge never decides permissions.
+`RuleJudge` *is* those rules (the default, offline, deterministic). Two model judges share
+`AskingJudge`, which builds each question and parses the answer; they only differ in `_ask`
+(state + questions in, `{id: {"choice": key}}` / `{id: {"noul": 0..1}}` out, or `None`):
 
-| decision | when | with Jev | with the rules |
+- `JevJudge` asks TypeSafe's Jev, a fast typed-decision model (one HTTPS call per decision,
+  ~100-500 ms). Needs `typesafe_api_key` (env `TYPESAFE_API_KEY`).
+- `GeminiJudge` asks Gemini (`judge_model`, default `gemini-2.5-flash`) with structured
+  output: a JSON schema with one property per question (an enum over the choices, or a
+  number), temperature 0, a 6-second timeout. Needs `gemini_api_key` (the same key the
+  Gemini CLI brain uses, so it is not private).
+
+The `judge` setting picks one: `off` = rules; `jev` / `gemini` = that judge when its key is
+set; `auto` (default) = Jev, else Gemini, else rules. A model judge falls back to the rules
+on any error and warns once. Mock mode included: the calls cost a fraction of a cent and
+are the demo. `GET /health` says which judge is active. The judge never decides permissions.
+
+| decision | when | with a model judge | with the rules |
 |---|---|---|---|
 | mood | after every step | reads the resident, building, outcome and reply | happy / frustrated, tired on timeout |
 | verdict | the reply had no `VERDICT` line | "did the agent finish?" < 0.4 → fail | pass (as before) |
@@ -307,6 +331,14 @@ under "Messages from your neighbours" in that resident's next prompt on the task
 three lines explained at the end of its prompt (`agents.build_prompt`); `parse_verdict`
 strips them from the summary.
 
+**Spectator feed.** `hooks.SpectatorHook` is registered on the `EventBus` and, when the
+`spectator_url` setting is set, POSTs the `task`, `handoff`, `bubble`, `bubble_resolved`,
+`chat`, `weather` and `mood` events (stored shape, plus `island`) to that URL with
+`Authorization: Bearer <spectator_secret>`. Outbound only: the hook just enqueues (200
+events at most, extra ones are dropped) and one background task posts them, 3 s timeout,
+one warning while the feed is down. A dead feed never slows the engine. The page itself
+lives in `spectator/`; this is not a game message, so protocol.md doesn't list it.
+
 ## Safety
 
 - Agents only run inside a git worktree of the island's own repository (`sandbox.py`).
@@ -320,14 +352,20 @@ strips them from the summary.
 - Permission requests become bubbles; file requests are path-checked. Shell
   commands are gated by a bubble, not path-restricted.
 - Every step has a timeout, and a package can visit at most 20 buildings (3 visits to one building).
-- The OpenRouter key is never passed to agent processes. API keys live in the OS
-  keychain (or an owner-only file where there is none), never in the database.
+- The OpenRouter, TypeSafe and spectator keys are never passed to agent processes
+  (`prefs.PRIVATE_ENV`). API keys live in the OS keychain (or an owner-only file where
+  there is none), never in the database.
+- Login (optional, `auth.py`): islands without an `owner` are **public**: anyone who can
+  reach the server sees them and can send packages there. Only owned islands are
+  private (owner + `members`). Only the owner may abandon an island while login is on.
+- The public demo (`PUBLIC_DEMO=1`) locks `PUT /settings`, refuses `folder` /
+  `existing_repo` on `POST /islands`, and refuses abandoning public islands.
 
 ## Tables
 
 | Table | What it holds |
 |---|---|
-| `Island` | id, name, GitHub repo, `repo_path` (its local git repository), branch, town plan, house rules, `map` (land tiles, pond, plants, season) |
+| `Island` | id, name, GitHub repo, `repo_path` (its local git repository), branch, town plan, house rules, `map` (land tiles, pond, plants, season), `owner` (Auth0 user id, null = public) and `members` |
 | `Resident` | name, job, 4 personality sliders, `brain`, optional `model`, catchphrase, color, house `keys`, `gifts`, live state / building / mood / `notebook` / `activity`, `appearance`, `notes` (the diary: `REMEMBER:` lines from their own replies) |
 | `Building` | type, name, lot (`x`, `y`, `facing`), resident |
 | `Road` | from, to, condition |
@@ -337,6 +375,12 @@ strips them from the summary.
 | `Event` | every event sent to the game (history + replay) |
 | `Friendship` | the friendship meter: one row per pair of residents (`a` < `b`), `handoffs`, `score` |
 | `Setting` | user settings saved from the game (never secrets: those live in the OS keychain) |
+| `metrics` | TimescaleDB only, no Django model (a hypertable has no primary key): one row per finished step (`kind=step`) and task (`kind=task`); the continuous aggregate `metrics_daily` buckets it by UTC day and feeds Insights' "packages per day". Made by migration `0015_metrics`, which does nothing on SQLite or plain Postgres |
+
+The database is SQLite (`DATABASE_PATH`) unless `MII_DATABASE_URL` is a `postgres://` DSN
+(Tiger Cloud or a local TimescaleDB). `GET /health` says `sqlite`, `postgres` or `timescale`.
+Days in Insights are the server's local days and Timescale's buckets are UTC: hosted
+setups run with `TZ=UTC` so both agree.
 
 After changing a model: `uv run python manage.py makemigrations mii`, then
 `migrate` (the server also migrates at startup).
@@ -359,15 +403,19 @@ Today a second Godot client is a full co-pilot: start the backend with
 `uvicorn ... --host 0.0.0.0`, run the game elsewhere on the LAN with
 `MII_SERVER=<host-ip>:8000`, and both players get the same broadcasts, answer the same
 bubbles and send packages to the same island. Everything still runs on the host: the
-agents, the host's CLI logins and keychain keys, `gh`, the repositories. Two *accounts*
-on one island (each resident on its owner's subscription, each player's own house keys)
-would need a login on the socket, per-user brains (agents run as the host today), `wss://`
-in `net.gd`, and island ownership. Parked on purpose; the co-pilot mode covers pairing.
+agents, the host's CLI logins and keychain keys, `gh`, the repositories.
+
+With login on (`AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, `AUTH0_CLIENT_ID`), islands get an
+**owner**: whoever founded it while logged in (the game's device login, proxied through
+`/auth/*`). The owner adds **members** by user id (`update_island` with `members`); owner
+and members see the island and play it as co-pilots, everyone else gets 403 (HTTP) or
+close code 4403 (socket). Islands without an owner, like the seed island, stay public.
+Agents still run as the host: per-user brains and house keys stay out of scope.
 
 ## Not in scope (on purpose)
 
-LangChain or other direct-API runners beyond OpenRouter, the ML team router, several
-tasks at once on one island, multi-account islands (see above). (Islands run in parallel:
-`run_forever` hands each task to its island's `Lane`, which runs that island's
-packages one at a time. Island News is written by the game from stored events;
-the backend only serves them, see "Events history".)
+LangChain or other direct-API runners beyond OpenRouter, the ML team router,
+multi-account islands (see above). (Islands run in parallel, and each island's `Lane`
+runs up to `parallel_packages` packages at once, see "One task, end to end". Island
+News is written by the game from stored events; the backend only serves them, see
+"Events history".)

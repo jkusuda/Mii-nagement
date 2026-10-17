@@ -58,14 +58,23 @@ class Sandbox:
         """Create (or reuse) the worktree for a task and return its path.
 
         The task branch starts from the island's `branch` (a local branch, else
-        `origin/<branch>` if it was fetched, else wherever HEAD is).
+        `origin/<branch>` if it was fetched, else wherever HEAD is). A task resumed after a
+        restart keeps its branch, and its work, even if the folder was removed.
         """
         path = self.worktree_path(task_id)
         base = self.resolve_branch(branch)
-        self.bases[task_id] = self._git(self.repo_path, "rev-parse", base).strip() or base
+        task_branch = f"mii/{task_id}"
+        resumed = self._ok(self.repo_path, "rev-parse", "--verify", "-q", task_branch)
+        # A resumed branch started where it meets the base, not at the base's newest commit.
+        start = self._git(self.repo_path, "merge-base", base, task_branch, check=False) if resumed else ""
+        self.bases[task_id] = start.strip() or self._git(self.repo_path, "rev-parse", base).strip() or base
         if not path.exists():
             self.worktree_root.mkdir(parents=True, exist_ok=True)
-            self._git(self.repo_path, "worktree", "add", "-b", f"mii/{task_id}", str(path), base)
+            self._git(self.repo_path, "worktree", "prune")  # forget a folder deleted by hand
+            if resumed:
+                self._git(self.repo_path, "worktree", "add", str(path), task_branch)
+            else:
+                self._git(self.repo_path, "worktree", "add", "-b", task_branch, str(path), base)
         return path
 
     def resolve_branch(self, branch: str | None) -> str:

@@ -38,8 +38,15 @@ SETTINGS = {
     "keep_worktrees": ("KEEP_WORKTREES", False, bool),
     "database_url": ("DATABASE_URL", None, str),  # for the `database` gift (agents/acp.py GIFTS)
     "godot_path": ("GODOT_PATH", None, str),  # for the `godot` gift: the Godot 4 executable
-    "judge": ("JUDGE", "auto", str),  # "auto": Jev when a TypeSafe key is set; "off": rules only (judge.py)
+    "judge": ("JUDGE", "auto", str),  # auto | off | jev | gemini (judge.py, runtime.reload)
+    "judge_model": ("JUDGE_MODEL", "gemini-2.5-flash", str),  # the Gemini judge's model
+    "spectator_url": ("SPECTATOR_URL", None, str),  # the spectator feed's ingest URL (hooks.py); None = off
+    "parallel_packages": ("PARALLEL_PACKAGES", 3, int),  # packages one island works on at once (engine.py)
+    "master_key": ("MASTER_KEY", False, bool),  # residents never ask: every bubble answers itself (engine.py)
 }
+# Settings with a fixed list of values.
+CHOICES = {"judge": ("auto", "off", "jev", "gemini")}
+MAX_PARALLEL = 8  # parallel_packages is kept between 1 and this (each real package runs its own agents)
 
 # secret -> environment variable (what the agent processes expect)
 SECRETS = {
@@ -47,10 +54,11 @@ SECRETS = {
     "typesafe_api_key": "TYPESAFE_API_KEY",  # the judge (judge.py); never handed to agents
     "anthropic_api_key": "ANTHROPIC_API_KEY",
     "openai_api_key": "OPENAI_API_KEY",
-    "gemini_api_key": "GEMINI_API_KEY",
+    "gemini_api_key": "GEMINI_API_KEY",  # the Gemini CLI brain and the Gemini judge: shared on purpose
+    "spectator_secret": "SPECTATOR_SECRET",  # the spectator feed's bearer secret (hooks.py)
 }
 # Keys the backend uses itself. They never reach agent processes (secrets_env, agents/acp.py).
-PRIVATE_ENV = {"OPENROUTER_API_KEY", "TYPESAFE_API_KEY"}
+PRIVATE_ENV = {"OPENROUTER_API_KEY", "TYPESAFE_API_KEY", "SPECTATOR_SECRET"}
 
 
 class PrefsError(ValueError):
@@ -74,6 +82,11 @@ def _parse(value, kind):
         return str(value).strip().lower() not in ("0", "", "false", "no", "off")
     if kind == "path":
         return str(Path(str(value)).expanduser())
+    if kind is int:
+        try:
+            return min(max(int(value), 1), MAX_PARALLEL)
+        except (TypeError, ValueError):
+            return 1
     return str(value)
 
 
@@ -109,10 +122,16 @@ def set_many(values: dict) -> None:
             if not isinstance(value, bool):
                 raise PrefsError(f"{key} must be true or false")
             clean[key] = value
+        elif kind is int:
+            if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= MAX_PARALLEL:
+                raise PrefsError(f"{key} must be a whole number from 1 to {MAX_PARALLEL}")
+            clean[key] = value
         else:
             if not isinstance(value, str):
                 raise PrefsError(f"{key} must be text")
             clean[key] = value.strip() or None
+            if key in CHOICES and clean[key] is not None and clean[key].lower() not in CHOICES[key]:
+                raise PrefsError(f"{key} must be one of {', '.join(CHOICES[key])}")
     for key, value in clean.items():
         Setting.objects.update_or_create(pk=key, defaults={"value": value})
 

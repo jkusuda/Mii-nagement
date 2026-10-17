@@ -1,5 +1,6 @@
 extends Node
 
+
 func _ready() -> void:
 	var game = load("res://scenes/game.tscn").instantiate()
 	add_child(game)

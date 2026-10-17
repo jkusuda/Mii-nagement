@@ -16,9 +16,15 @@ const FORGET_ICON := preload("res://assets/icons/x.svg")
 const ARROW := preload("res://assets/ui/dropdown_arrow.svg")
 const MODEL_MATCHES := 40  # rows in the model dropdown
 
-## [setting, label, help, "bool" | "text" | "model"]. Must match SETTINGS in backend/mii/prefs.py.
+## [setting, label, help, "bool" | "text" | "model" | "number"]. Must match SETTINGS in backend/mii/prefs.py.
 const SETTINGS := [
 	["mock_agents", "Mock agents", "Fake work, no cost. Turn off to let real coding agents work.", "bool"],
+	[
+		"master_key",
+		"Master key",
+		"Residents never ask: permissions are granted, reviews approved, questions left to them.",
+		"bool"
+	],
 	["test_command", "Test command", "What the Lab runs, e.g. uv run pytest. Empty: the reviewer decides.", "text"],
 	["islands_root", "Folder for new islands", "Where new island repositories go.", "text"],
 	[
@@ -26,6 +32,12 @@ const SETTINGS := [
 		"Default OpenRouter model",
 		"For OpenRouter residents without a model of their own. Pick one, or type any model id.",
 		"model"
+	],
+	[
+		"parallel_packages",
+		"Packages at once",
+		"How many issues one island works on at the same time (1-8). Free residents stand in for busy ones.",
+		"number"
 	],
 	["keep_worktrees", "Keep worktrees", "Leave each task's git worktree behind afterwards, for debugging.", "bool"],
 	[
@@ -46,7 +58,7 @@ const SECRETS := [
 ]
 
 var _mode := Label.new()
-var _inputs := {}  # setting -> CheckButton or LineEdit
+var _inputs := {}  # setting -> CheckButton, LineEdit or SpinBox
 var _keys := {}  # secret -> LineEdit
 var _forget := {}  # secret -> true: delete it on Save
 var _loaded := {}  # GET /settings `settings`, to send only what changed
@@ -77,10 +89,16 @@ func _init() -> void:
 
 	box.add_child(_section("Island work"))
 	for s in SETTINGS:
-		var input  # a CheckButton or a LineEdit
+		var input  # a CheckButton, a LineEdit or a SpinBox
 		if s[3] == "bool":
 			input = CheckButton.new()
 			input.text = s[1]
+		elif s[3] == "number":
+			# Godot concept: a SpinBox is a number field with up/down arrows, kept within min/max.
+			input = SpinBox.new()
+			input.min_value = 1
+			input.max_value = 8
+			input.rounded = true
 		else:
 			input = LineEdit.new()
 		input.tooltip_text = s[2]
@@ -268,11 +286,14 @@ func _show_settings(data: Dictionary) -> void:
 	_loaded = data.get("settings", {})
 	var locked: Array = data.get("from_env", [])
 	for key in _inputs:
-		var input = _inputs[key]  # a CheckButton or a LineEdit
+		var input = _inputs[key]  # a CheckButton, a LineEdit or a SpinBox
 		var value = _loaded.get(key)
 		if input is CheckButton:
 			input.set_pressed_no_signal(bool(value))
 			input.disabled = key in locked
+		elif input is SpinBox:
+			input.set_value_no_signal(float(value if value != null else 1))
+			input.editable = key not in locked
 		else:
 			input.text = "" if value == null else str(value)
 			input.editable = key not in locked
@@ -292,9 +313,13 @@ func _show_settings(data: Dictionary) -> void:
 func _on_save() -> void:
 	var settings := {}
 	for key in _inputs:
-		var input = _inputs[key]  # a CheckButton or a LineEdit
-		var value = input.button_pressed if input is CheckButton else input.text.strip_edges()
+		var input = _inputs[key]  # a CheckButton, a LineEdit or a SpinBox
 		var before = _loaded.get(key)
+		if input is SpinBox:
+			if before == null or int(input.value) != int(before):
+				settings[key] = int(input.value)
+			continue
+		var value = input.button_pressed if input is CheckButton else input.text.strip_edges()
 		if (
 			(input is CheckButton and value != bool(before))
 			or (input is LineEdit and value != ("" if before == null else str(before)))

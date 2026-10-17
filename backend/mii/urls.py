@@ -25,4 +25,8 @@ urlpatterns = [
     path("islands/<str:island_id>/talks", views.talks_view),
     path("islands/<str:island_id>/layout", views.layout_view),
     path("replay/<str:task_id>", views.replay),
+    path("auth/config", views.auth_config),
+    path("auth/me", views.auth_me),
+    path("auth/device", views.auth_device),
+    path("auth/token", views.auth_token),
 ]

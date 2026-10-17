@@ -58,7 +58,7 @@ func _ready() -> void:
 	_mood_tag.outline_size = 0
 	# The speech bubble's tail tip sits just above the name tag (see say).
 	_speech = SpeechBubble.new()
-	_speech.position = Vector3(0, 3.4, 0)
+	_speech.position = Vector3(0, 3.75, 0)
 	add_child(_speech)
 
 
@@ -217,7 +217,7 @@ func settle(route: Array[Vector3], new_state: String, look_at_point: Vector3) ->
 ## in a speech bubble over their head.
 func say(text: String, seconds := 4.0) -> void:
 	# Just above the name tag, or above the request bubble when one is showing.
-	_speech.position.y = 4.9 if bubble.visible else 3.4
+	_speech.position.y = 4.9 if bubble.visible else 3.75
 	_speech.say(short_line(text), seconds)
 
 

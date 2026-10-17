@@ -6,10 +6,16 @@ here first, then update both halves.
 
 - Endpoint: `ws://localhost:8000/ws?island=<id>` (leave out `island` for the
   server's first island). A client only gets events for the island it watches.
+- Login (optional, only when the server has `AUTH0_*` set; `GET /auth/config` says
+  so): add `&token=<jwt>`, the access token from the device login (docs/http-api.md).
+  Islands without an `owner` stay public and need no token. On a bad or expired token
+  the server sends an `error` and closes with code **4401** (log in again); on a private
+  island you are neither the owner nor a member of, an `error` and code **4403**.
 - Every message is one JSON object with a `"type"` field.
 - The server sends a `snapshot` as soon as a client connects, then a live stream
   of events.
-- Every server event is also stored in SQLite (the `Event` table), so a session can
+- Every server event is also stored in the database (the `Event` table; SQLite by
+  default, Postgres / Tiger Cloud when `MII_DATABASE_URL` is set), so a session can
   be replayed later.
 
 ## Rules for both sides
@@ -42,6 +48,8 @@ The client should rebuild its view from scratch when it gets one.
     "plan": "classic",
     "rules": {"merge_pr": true, "install_packages": true, "shell": false},
     "created_at": "2026-10-04T09:12:00+00:00",
+    "owner": null,
+    "members": [],
     "map": {
       "version": 1, "shape": "classic",
       "land": ["....................", ".##################.", "...", "...................."],
@@ -200,6 +208,9 @@ A bubble was answered (by any client) or timed out. Remove it.
 ```
 `answered` is `false` (and `response` `null`) when the bubble timed out. The
 insights endpoint counts answers and answer times from these.
+With the `master_key` setting on, every `bubble` is followed right away by its
+`bubble_resolved`, answered by the backend: the first option that isn't a refusal,
+or "carry on" for a question.
 
 ### `handoff`
 A task package passed from one resident to another.
@@ -309,8 +320,10 @@ shapes are the snapshot's.
 The island's header changed (renamed, a repo linked, branch or house rules
 edited, by any client). Same fields as the top of the snapshot: replace them.
 ```json
-{"type": "island", "island": {"id": "sunny", "name": "Sunnier Isle", "repo": "me/sunny", "path": "/home/you/Documents/Mii-nagement/sunny", "branch": "main", "plan": "classic", "rules": {"merge_pr": true, "install_packages": true, "shell": false}, "created_at": "2026-10-04T09:12:00+00:00"}}
+{"type": "island", "island": {"id": "sunny", "name": "Sunnier Isle", "repo": "me/sunny", "path": "/home/you/Documents/Mii-nagement/sunny", "branch": "main", "plan": "classic", "rules": {"merge_pr": true, "install_packages": true, "shell": false}, "created_at": "2026-10-04T09:12:00+00:00", "owner": null, "members": []}}
 ```
+`owner` is the Auth0 user id that founded the island (`null`: a public island, the
+default without login); `members` are the other user ids who may see it.
 
 ### `chat`
 One resident said something to another: a request for help, the helper's reply, or a
@@ -481,6 +494,8 @@ the island repository's `origin` at it, so the post office can push.
 ```json
 {"type": "update_island", "island": {"name": "Sunnier Isle", "repo": "me/sunny", "rules": {"shell": true}}}
 ```
+With login on, the owner may also send `"members": ["auth0|abc", ...]` (the whole
+list); anyone else gets an `error`.
 The server replies with `error` (bad name or repo, nothing to change), or an
 `island` event to every client. Same thing over HTTP: `PATCH /islands/{id}`.
 

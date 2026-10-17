@@ -136,3 +136,58 @@ async def test_islands_work_in_parallel_but_one_package_at_a_time_each(island):
     finally:
         worker.cancel()
         await asyncio.gather(worker, return_exceptions=True)
+
+
+class BusyRunner(ScriptedRunner):
+    """Records which tasks run at the same moment, and fails if one resident works on two at once."""
+
+    def __init__(self, delay: float):
+        super().__init__(delay=delay)
+        self.working: dict[str, str] = {}  # resident id -> task id
+        self.tasks_at_once = 0
+        self.stand_ins: list[tuple[str, str]] = []  # (building type, who did it) when not the owner
+
+    async def run(self, job):
+        assert job.resident.id not in self.working, f"{job.resident.id} is doing two steps at once"
+        self.working[job.resident.id] = job.task.id
+        self.tasks_at_once = max(self.tasks_at_once, len(set(self.working.values())))
+        if job.resident.id != job.building.resident_id:
+            self.stand_ins.append((job.building.type, job.resident.id))
+        try:
+            return await super().run(job)
+        finally:
+            del self.working[job.resident.id]
+
+
+async def test_one_island_works_on_several_packages_and_free_residents_stand_in(island):
+    runner = BusyRunner(delay=0.1)
+    workflow, client = make_workflow(runner, parallel=3)
+    worker = asyncio.create_task(workflow.run_forever())
+    try:
+        tasks = [await workflow.submit("sunny", f"Issue {n}") for n in range(4)]
+        for _ in range(200):
+            if await Task.objects.filter(pk__in=[t.id for t in tasks], status="done").acount() == 4:
+                break
+            await asyncio.sleep(0.05)
+        assert await Task.objects.filter(pk__in=[t.id for t in tasks], status="done").acount() == 4
+        assert runner.tasks_at_once >= 2  # several packages moved at the same time
+        assert runner.stand_ins  # a busy owner's building was done by a free neighbour
+        # At the Lab and the Courthouse only the same job stands in (Sunny has one of each, so nobody).
+        assert not [who for kind, who in runner.stand_ins if kind in ("lab", "courthouse")]
+        assert any("busy with another package" in e["text"] for e in client.of_type("chat"))
+        assert not workflow._claimed  # everyone was released
+    finally:
+        worker.cancel()
+        await asyncio.gather(worker, return_exceptions=True)
+
+
+async def test_a_stand_in_without_a_building_of_their_own_comes_first(island):
+    await Resident.objects.acreate(id="pia", island_id="sunny", name="Pia", job="reviewer")  # no building
+    workflow, _ = make_workflow(ScriptedRunner())
+    task = await workflow.submit("sunny", "Busy day")
+    workshop = await Building.objects.aget(pk="workshop")
+    carlos = await Resident.objects.aget(pk="carlos")
+    workflow._claimed["carlos"] = "t_other"  # Carlos (the coder) is on another package
+    assert (await workflow._claim(task, workshop, carlos)).id == "pia"  # not Jun or Sydney, who run buildings
+    lab = await Building.objects.aget(pk="lab")
+    assert await workflow._stand_in(task, lab, carlos) is None  # no other coder may run the tests
