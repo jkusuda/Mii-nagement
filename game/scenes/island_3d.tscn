@@ -9,6 +9,9 @@
 [ext_resource type="Shader" uid="uid://xqv25s7dloit" path="res://shaders/water.gdshader" id="7_water"]
 [ext_resource type="Script" uid="uid://bm0u4itifj4k6" path="res://scenes/camera_rig.gd" id="8_rig"]
 [ext_resource type="Script" path="res://scenes/island/island_residents.gd" id="9_residents"]
+[ext_resource type="Shader" path="res://shaders/pond.gdshader" id="9_pond"]
+[ext_resource type="PackedScene" path="res://scenes/apple_tree.tscn" id="10_tree"]
+[ext_resource type="PackedScene" path="res://scenes/bush.tscn" id="11_bush"]
 [ext_resource type="Script" path="res://scenes/day_night.gd" id="10_day_night"]
 
 [sub_resource type="ProceduralSkyMaterial" id="sky_material"]
@@ -58,6 +61,14 @@ noise = SubResource("ripple_noise")
 seamless = true
 as_normal_map = true
 bump_strength = 4.0
+
+[sub_resource type="PlaneMesh" id="pond_mesh"]
+size = Vector2(9, 5.2)
+
+[sub_resource type="ShaderMaterial" id="pond_material"]
+render_priority = 0
+shader = ExtResource("9_pond")
+shader_parameter/noise = SubResource("foam_noise")
 
 [sub_resource type="ShaderMaterial" id="water_material"]
 render_priority = 0
@@ -110,6 +121,130 @@ surface_material_override/0 = SubResource("water_material")
 
 [node name="BaseIsland" parent="." unique_id=1798371886 instance=ExtResource("1_island")]
 transform = Transform3D(20, 0, 0, 0, 20, 0, 0, 0, 20, 0, 0.8, 0)
+
+[node name="Pond" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.9, -0.48, 0.8)
+mesh = SubResource("pond_mesh")
+surface_material_override/0 = SubResource("pond_material")
+
+[node name="Trees" type="Node3D" parent="."]
+
+[node name="BackLeft" parent="Trees" instance=ExtResource("10_tree")]
+position = Vector3(-6, 0, -9.6)
+rotation_degrees = Vector3(0, 20, 0)
+scale = Vector3(3.6, 3.6, 3.6)
+
+[node name="BackRight" parent="Trees" instance=ExtResource("10_tree")]
+position = Vector3(5.5, 0, -9.8)
+rotation_degrees = Vector3(0, 140, 0)
+scale = Vector3(3.3, 3.3, 3.3)
+
+[node name="CornerBackLeft" parent="Trees" instance=ExtResource("10_tree")]
+position = Vector3(-15.6, 0, -9.6)
+rotation_degrees = Vector3(0, 75, 0)
+scale = Vector3(3.9, 3.9, 3.9)
+
+[node name="RightSide" parent="Trees" instance=ExtResource("10_tree")]
+position = Vector3(16, 0, -1.2)
+rotation_degrees = Vector3(0, 200, 0)
+scale = Vector3(3.5, 3.5, 3.5)
+
+[node name="LeftSide" parent="Trees" instance=ExtResource("10_tree")]
+position = Vector3(-16.2, 0, -1.8)
+rotation_degrees = Vector3(0, 310, 0)
+scale = Vector3(3.4, 3.4, 3.4)
+
+[node name="FrontLeft" parent="Trees" instance=ExtResource("10_tree")]
+position = Vector3(-4.2, 0, 9.6)
+rotation_degrees = Vector3(0, 250, 0)
+scale = Vector3(3, 3, 3)
+
+[node name="FrontRight" parent="Trees" instance=ExtResource("10_tree")]
+position = Vector3(4.8, 0, 9.9)
+rotation_degrees = Vector3(0, 30, 0)
+scale = Vector3(3.7, 3.7, 3.7)
+
+[node name="PondRight" parent="Trees" instance=ExtResource("10_tree")]
+position = Vector3(6.9, 0, 3.4)
+rotation_degrees = Vector3(0, 100, 0)
+scale = Vector3(2.8, 2.8, 2.8)
+
+[node name="PondLeft" parent="Trees" instance=ExtResource("10_tree")]
+position = Vector3(-7.3, 0, 3.6)
+rotation_degrees = Vector3(0, 170, 0)
+scale = Vector3(2.6, 2.6, 2.6)
+
+[node name="Bushes" type="Node3D" parent="."]
+
+[node name="FrontLeftEdge" parent="Bushes" instance=ExtResource("11_bush")]
+position = Vector3(-10.85, 0, 9.5)
+rotation_degrees = Vector3(0, 35, 0)
+scale = Vector3(1.3, 1.3, 1.3)
+
+[node name="PostOfficeFront" parent="Bushes" instance=ExtResource("11_bush")]
+position = Vector3(-13.35, 0, 7.8)
+rotation_degrees = Vector3(0, 160, 0)
+scale = Vector3(1.35, 1.35, 1.35)
+
+[node name="LeftSide" parent="Bushes" instance=ExtResource("11_bush")]
+position = Vector3(-16.05, 0, 4)
+rotation_degrees = Vector3(0, 280, 0)
+scale = Vector3(1.2, 1.2, 1.2)
+
+[node name="BehindMailbox" parent="Bushes" instance=ExtResource("11_bush")]
+position = Vector3(-13, 0, -8.2)
+rotation_degrees = Vector3(0, 95, 0)
+scale = Vector3(1.25, 1.25, 1.25)
+
+[node name="UnderMailbox" parent="Bushes" instance=ExtResource("11_bush")]
+position = Vector3(-11.4, 0, -7)
+rotation_degrees = Vector3(0, 230, 0)
+scale = Vector3(1.1, 1.1, 1.1)
+
+[node name="UnderLab" parent="Bushes" instance=ExtResource("11_bush")]
+position = Vector3(10.3, 0, -7.65)
+rotation_degrees = Vector3(0, 340, 0)
+scale = Vector3(1.3, 1.3, 1.3)
+
+[node name="LabSideA" parent="Bushes" instance=ExtResource("11_bush")]
+position = Vector3(12.9, 0, -6.1)
+rotation_degrees = Vector3(0, 210, 0)
+scale = Vector3(1.35, 1.35, 1.35)
+
+[node name="LabSideB" parent="Bushes" instance=ExtResource("11_bush")]
+position = Vector3(14.6, 0, -6.2)
+rotation_degrees = Vector3(0, 20, 0)
+scale = Vector3(1.5, 1.5, 1.5)
+
+[node name="RightSide" parent="Bushes" instance=ExtResource("11_bush")]
+position = Vector3(15.25, 0, 5.15)
+rotation_degrees = Vector3(0, 130, 0)
+scale = Vector3(1.3, 1.3, 1.3)
+
+[node name="FrontRightEdge" parent="Bushes" instance=ExtResource("11_bush")]
+position = Vector3(13.15, 0, 8.65)
+rotation_degrees = Vector3(0, 300, 0)
+scale = Vector3(1.3, 1.3, 1.3)
+
+[node name="WorkshopLeft" parent="Bushes" instance=ExtResource("11_bush")]
+position = Vector3(-3.6, 0, -6)
+rotation_degrees = Vector3(0, 60, 0)
+scale = Vector3(0.8, 0.8, 0.8)
+
+[node name="WorkshopRight" parent="Bushes" instance=ExtResource("11_bush")]
+position = Vector3(3.4, 0, -6.2)
+rotation_degrees = Vector3(0, 250, 0)
+scale = Vector3(0.7, 0.7, 0.7)
+
+[node name="PondEdge" parent="Bushes" instance=ExtResource("11_bush")]
+position = Vector3(4.6, 0, -2.2)
+rotation_degrees = Vector3(0, 15, 0)
+scale = Vector3(0.8, 0.8, 0.8)
+
+[node name="FrontLawn" parent="Bushes" instance=ExtResource("11_bush")]
+position = Vector3(0.3, 0, 8.6)
+rotation_degrees = Vector3(0, 190, 0)
+scale = Vector3(0.9, 0.9, 0.9)
 
 [node name="Buildings" type="Node3D" parent="." unique_id=899933915]
 

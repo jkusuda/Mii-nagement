@@ -18,6 +18,9 @@ const IslandScene := preload("res://scenes/island_3d.tscn")
 const SPACING := Vector2(50, 38)           # distance between island centers (x, z)
 const ISLAND_HALF := Vector2(18.6, 12.4)   # the island's size, as in water.gdshader
 const MAX_ISLANDS := 8                      # the water shader knows up to 8 shores
+## The nodes in island_3d.tscn that make up one island (everything else is
+## the shared stage: sun, sky, water). Add new island decorations here.
+const ISLAND_PARTS := ["BaseIsland", "Pond", "Trees", "Bushes", "Buildings"]
 
 var _viewport := SubViewport.new()
 var _stage: Node3D                # island_3d.tscn, minus its own island, residents and camera
@@ -36,7 +39,7 @@ func _init() -> void:
 	add_child(_viewport)
 
 	_stage = IslandScene.instantiate()
-	for part in ["Residents", "CameraRig", "BaseIsland", "Buildings"]:
+	for part in ["Residents", "CameraRig"] + ISLAND_PARTS:
 		_stage.get_node(part).free()  # we add our own islands and camera
 	var sun: DirectionalLight3D = _stage.get_node("Sun")
 	sun.directional_shadow_max_distance = 300.0  # the sea view is further away than the island view
@@ -99,12 +102,12 @@ func has_island(id: String) -> bool:
 	return _islands.has(id)
 
 
-## One island: the base model plus only the buildings it has.
+## One island: the base model, pond and plants, plus only the buildings it has.
 func _make_island(types: Array, center: Vector3) -> Node3D:
 	var island := Node3D.new()
 	island.position = center
 	var source := IslandScene.instantiate()
-	for part in ["BaseIsland", "Buildings"]:
+	for part in ISLAND_PARTS:
 		var node: Node3D = source.get_node(part)
 		source.remove_child(node)
 		node.owner = null  # it belonged to the scene we took it from

@@ -37,6 +37,7 @@ The client should rebuild its view from scratch when it gets one.
     "id": "sunny",
     "name": "Sunny Isle",
     "repo": null,
+    "path": "/home/you/Documents/Mii-nagement/sunny",
     "branch": "main",
     "plan": "classic",
     "rules": {"merge_pr": true, "install_packages": true, "shell": false},
@@ -68,23 +69,27 @@ The client should rebuild its view from scratch when it gets one.
 }
 ```
 
-- `branch`: what residents branch off from. `plan`: the town plan the island
-  was founded with. `rules`: house rules from the island creator (`true` = ask
-  me before doing this); stored only for now.
+- `repo`: the island's GitHub repo (`owner/name`) or `null`. `path`: the island's
+  local git repository (every island is a repository; see `GET /islands` and
+  `POST /islands` in architecture.md). `branch`: what residents branch off from.
+  `plan`: the town plan the island was founded with. `rules`: house rules from
+  the island creator (`true` = ask me before doing this); stored only for now.
 - `created_at`: when the island was founded (ISO-8601 UTC). The game counts
   days from it ("Day 1" is the founding day, in the player's local time).
 - `buildings[].x / y`: the building's lot on a grid. The 3D client currently
   places buildings itself (`island_3d.tscn`); x/y are for build mode later.
 - `buildings[].resident`: the resident who works there.
 - `residents[].brain`: which coding agent runs the resident: `mock`,
-  `claude-code`, `codex`, or `gemini`. `model` is an optional model override
-  (`null` = the agent's default). Use it for a small brain badge.
+  `claude-code`, `codex`, `gemini`, or `openrouter`. `model` is an optional model
+  override (`null` = the brain's default; for `openrouter` it is an OpenRouter
+  model id such as `anthropic/claude-sonnet-4.5`). Use it for a small brain badge.
 - `roads[].condition`: `always`, `pass`, or `fail` (see the workflow section below).
 - `residents[].bluntness / caution / chattiness / creativity`: personality
   sliders, 0.0-1.0 (see `backend/mii/personality.py`).
 - `residents[].keys`: house keys, what the resident may do without asking.
   Keys `read`, `edit`, `execute`, `fetch` (ACP tool kinds), each `yes`, `ask`,
-  or `no`. Stored only for now; the ACP runner doesn't use them yet.
+  or `no`. The ACP runner honours them: `yes` answers the agent's own
+  "allow once" option, `ask` shows a ✋ bubble, `no` rejects.
 - `residents[].gifts`: ids of extra MCP servers (`browser`, `github`, `docs`,
   `database`, `terminal`). Stored only for now.
 - `bubbles`: bubbles still waiting for an answer.
@@ -217,7 +222,8 @@ client.
 }
 ```
 `name` is required (1-20 characters). Every other field is optional and gets a
-default. Unknown `job`, `brain`, key values, or gifts are rejected with `error`.
+default. `brain` is one of `mock`, `claude-code`, `codex`, `gemini`, `openrouter`.
+Unknown `job`, `brain`, key values, or gifts are rejected with `error`.
 
 New residents are placeholders for now: they live on the island and show up in
 the game, but the workflow keeps using the residents assigned to buildings.

@@ -1,52 +1,36 @@
-import json
-
 import pytest
-from sqlmodel import Session
+from conftest import FakeClient, ScriptedRunner, db_test, make_workflow
 
-from mii import events, residents, seed, server
-from mii.models import DEFAULT_KEYS, Resident, island_snapshot, make_engine
+from mii import residents
+from mii.consumers import handle_message
+from mii.models import DEFAULT_KEYS, Resident, island_snapshot
 
-
-class FakeClient:
-    def __init__(self):
-        self.sent: list[dict] = []
-
-    async def send_json(self, event: dict) -> None:
-        self.sent.append(event)
+pytestmark = db_test
 
 
-@pytest.fixture
-def db():
-    engine = make_engine("sqlite://")
-    seed.seed(engine)
-    return engine
+async def test_create_fills_defaults_and_home(island):
+    r = await residents.create_resident("sunny", {"name": "  Mo  ", "job": "reviewer"})
+    assert r.id.startswith("mo_")
+    assert r.name == "Mo"
+    assert r.building_id == "courthouse"
+    assert r.brain == "mock"
+    assert r.keys == DEFAULT_KEYS
+    assert r.gifts == []
 
 
-def test_create_fills_defaults_and_home(db):
-    with Session(db) as session:
-        r = residents.create_resident(session, "sunny", {"name": "  Mo  ", "job": "reviewer"})
-        assert r.id.startswith("mo_")
-        assert r.name == "Mo"
-        assert r.building_id == "courthouse"
-        assert r.brain == "mock"
-        assert r.keys == DEFAULT_KEYS
-        assert r.gifts == []
-
-
-def test_create_keeps_every_creator_field(db):
+async def test_create_keeps_every_creator_field(island):
     data = {
         "name": "Bea", "job": "planner", "color": "#2fa37a", "catchphrase": "Tidy!",
-        "brain": "codex", "model": "  ", "bluntness": 1.7, "caution": 0.25,
+        "brain": "openrouter", "model": "  ", "bluntness": 1.7, "caution": 0.25,
         "keys": {"edit": "yes"}, "gifts": ["docs", "browser", "docs"],
     }
-    with Session(db) as session:
-        r = residents.create_resident(session, "sunny", data)
-        assert (r.color, r.brain, r.model, r.bluntness, r.caution) == ("#2FA37A", "codex", None, 1.0, 0.25)
-        assert r.keys == {**DEFAULT_KEYS, "edit": "yes"}
-        assert r.gifts == ["docs", "browser"]
-        # ...and the snapshot sends it all to the game.
-        sent = next(x for x in island_snapshot(session, "sunny", [])["residents"] if x["id"] == r.id)
-        assert sent["keys"]["edit"] == "yes" and sent["gifts"] == ["docs", "browser"] and sent["bluntness"] == 1.0
+    r = await residents.create_resident("sunny", data)
+    assert (r.color, r.brain, r.model, r.bluntness, r.caution) == ("#2FA37A", "openrouter", None, 1.0, 0.25)
+    assert r.keys == {**DEFAULT_KEYS, "edit": "yes"}
+    assert r.gifts == ["docs", "browser"]
+    # ...and the snapshot sends it all to the game.
+    sent = next(x for x in (await island_snapshot("sunny", []))["residents"] if x["id"] == r.id)
+    assert sent["keys"]["edit"] == "yes" and sent["gifts"] == ["docs", "browser"] and sent["bluntness"] == 1.0
 
 
 @pytest.mark.parametrize("bad", [
@@ -60,51 +44,44 @@ def test_create_keeps_every_creator_field(db):
     {"name": "Mo", "keys": {"launch": "yes"}},
     {"name": "Mo", "gifts": ["jetpack"]},
 ])
-def test_create_rejects_bad_fields(db, bad):
-    with Session(db) as session, pytest.raises(residents.ResidentError):
-        residents.create_resident(session, "sunny", bad)
+async def test_create_rejects_bad_fields(island, bad):
+    with pytest.raises(residents.ResidentError):
+        await residents.create_resident("sunny", bad)
 
 
-def test_update_changes_only_sent_fields(db):
-    with Session(db) as session:
-        r = residents.update_resident(session, "sunny", {"id": "jun", "caution": 0.1, "gifts": ["github"]})
-        assert (r.caution, r.gifts, r.name, r.job) == (0.1, ["github"], "Jun", "planner")
-        with pytest.raises(residents.ResidentError):
-            residents.update_resident(session, "sunny", {"id": "nobody"})
+async def test_update_changes_only_sent_fields(island):
+    r = await residents.update_resident("sunny", {"id": "jun", "caution": 0.1, "gifts": ["github"]})
+    assert (r.caution, r.gifts, r.name, r.job) == (0.1, ["github"], "Jun", "planner")
+    assert (await Resident.objects.aget(pk="jun")).gifts == ["github"]
+    with pytest.raises(residents.ResidentError):
+        await residents.update_resident("sunny", {"id": "nobody"})
 
 
-async def test_websocket_create_broadcasts_resident(db, monkeypatch):
-    bus = events.EventBus(db)
-    watcher, sender = FakeClient(), FakeClient()
-    bus.add_client(watcher)
-    monkeypatch.setattr(server, "db_engine", db)
-    monkeypatch.setattr(server, "bus", bus)
+async def test_websocket_create_broadcasts_resident(island):
+    workflow, watcher = make_workflow(ScriptedRunner())
+    runtime = type("Runtime", (), {"bus": workflow.bus, "bubbles": workflow.bubbles})()
 
     msg = {"type": "create_resident", "resident": {"name": "Pip", "job": "coder", "color": "#EE7C93"}}
-    await server.handle_client_message(sender, "sunny", json.dumps(msg))
+    assert await handle_message(runtime, "sunny", msg) is None
     [event] = watcher.sent
     assert event["type"] == "resident"
     assert event["resident"]["name"] == "Pip" and event["resident"]["building"] == "workshop"
-    with Session(db) as session:
-        assert session.get(Resident, event["resident"]["id"]) is not None
+    assert await Resident.objects.filter(pk=event["resident"]["id"]).aexists()
 
     # A bad message only goes back to the sender, as an error.
-    await server.handle_client_message(sender, "sunny", json.dumps({"type": "create_resident", "resident": {}}))
-    assert sender.sent[-1]["type"] == "error" and len(watcher.sent) == 1
+    reply = await handle_message(runtime, "sunny", {"type": "create_resident", "resident": {}})
+    assert reply["type"] == "error" and len(watcher.sent) == 1
+    assert (await handle_message(runtime, "sunny", "nope"))["type"] == "error"
+    assert (await handle_message(runtime, "sunny", {"type": "answer_bubble", "id": "b_x"}))["type"] == "error"
 
 
-async def test_bus_sends_events_only_to_that_islands_clients(db):
-    bus = events.EventBus(db)
+async def test_bus_sends_events_only_to_that_islands_clients(island):
+    from mii import events
+
+    bus = events.EventBus()
     sunny, other, everything = FakeClient(), FakeClient(), FakeClient()
     bus.add_client(sunny, "sunny")
     bus.add_client(other, "maple")
     bus.add_client(everything)
     await bus.emit("sunny", events.mood("jun", "proud"))
     assert len(sunny.sent) == 1 and other.sent == [] and len(everything.sent) == 1
-
-
-def test_list_islands(db, monkeypatch):
-    monkeypatch.setattr(server, "db_engine", db)
-    [island] = server.list_islands()["islands"]
-    assert {k: island[k] for k in ("id", "name", "repo")} == {"id": "sunny", "name": "Sunny Isle", "repo": None}
-    assert island["created_at"].endswith("+00:00")

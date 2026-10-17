@@ -2,28 +2,31 @@
 
 A Tomodachi Life-style manager for teams of coding agents doing real software work.
 
-- Each **project is an island** linked to a GitHub repo.
+- Each **project is an island**, and every island **is a git repository** on your
+  machine (created for you, in a folder you choose), optionally linked to GitHub.
 - Each **agent is a resident** with a name, a job, and a personality. Their
   **brain** is a real coding agent you already have (**Claude Code**, **Codex**,
   or **Gemini CLI**), driven over the open
-  [Agent Client Protocol](https://agentclientprotocol.com). Use your subscription
-  login or an API key.
+  [Agent Client Protocol](https://agentclientprotocol.com) on your subscription
+  login (or an API key). Or pick the **OpenRouter** brain: any model from
+  [openrouter.ai](https://openrouter.ai/models), no CLI to install.
 - **The town layout is the workflow.** Buildings are steps (plan, code, test,
   review, ship) and roads are handoffs. A task is a little package that residents
   carry from building to building.
 - When a resident needs you, a **bubble** pops up over their head. Click it to
   answer.
 
-> **Status:** hackathon skeleton. Runs end to end in **mock mode** (fake agents, no
-> API cost). Real features are marked with `TODO(mvp)` / `TODO(stretch)` in the
-> code; the roadmap is in [TODO.md](TODO.md).
+> **Status:** the backend MVP is done (Django + Channels, ACP brains, OpenRouter
+> brain, GitHub in/out, insights, replay) and runs end to end in **mock mode**
+> (fake agents, no API cost). The game is still mostly a mockup. Open work is
+> marked `TODO(mvp)` / `TODO(stretch)` in the code; the roadmap is in [TODO.md](TODO.md).
 
 ## How it fits together
 
 ```
 ┌───────────────────────────┐   WebSocket (JSON events)   ┌──────────────────────┐
 │ backend/  (Python)        │ ──────────────────────────▶ │ game/  (Godot 4)     │
-│ FastAPI · workflow engine │     ws://localhost:8000/ws  │ draws the island,    │
+│ Django · workflow engine  │     ws://localhost:8000/ws  │ draws the island,    │
 │ ACP agents · SQLite       │ ◀────────────────────────── │ sends your clicks    │
 │ git worktrees             │      answer_bubble          │ (no agent logic)     │
 └───────────────────────────┘                             └──────────────────────┘
@@ -32,7 +35,20 @@ A Tomodachi Life-style manager for teams of coding agents doing real software wo
 Every message is defined in [docs/protocol.md](docs/protocol.md). How the
 backend works: [docs/architecture.md](docs/architecture.md).
 
-## Setup (once)
+## The lazy way
+
+With [uv](https://docs.astral.sh/uv) and Godot 4 installed:
+
+```bash
+make
+```
+
+That installs everything, creates `.env`, starts the backend and the simulator,
+and opens the game. Ctrl+C stops all three. Other targets: `make server`,
+`make sim`, `make watch`, `make game`, `make test`, `make reset`. If Godot isn't
+found, pass it: `make GODOT=/path/to/godot`.
+
+## Setup (once, by hand)
 
 You need macOS, [Homebrew](https://brew.sh), and
 [Godot 4](https://godotengine.org/download) (4.3 or newer; built with 4.7) in
@@ -65,14 +81,14 @@ echo 'alias godot="/Applications/Godot.app/Contents/MacOS/Godot"' >> ~/.zshrc &&
 
 Open a separate terminal for each step, starting in the repo root.
 
-**1. Backend server.** Creates and seeds `backend/mii.db` on first run. Check it at http://localhost:8000/health.
+**1. Backend server.** Creates the tables and seeds `backend/mii.db` on first run. Check it at http://localhost:8000/health.
 ```bash
-cd backend && uv run uvicorn mii.server:app --reload --port 8000
+cd backend && uv run python -m uvicorn mii.asgi:application --reload --port 8000
 ```
 
 **2. Simulator.** Sends fake tasks through the island, one after another.
 ```bash
-cd backend && uv run python -m mii.seed --loop
+cd backend && uv run python manage.py seed --loop
 ```
 
 **3. The game.** Starts it directly, without the editor:
@@ -88,7 +104,7 @@ The first time, you can also open Godot normally, click **Import**, and pick
 
 **Optional: watch the raw event stream** in a terminal:
 ```bash
-cd backend && uv run python -m mii.watch
+cd backend && uv run python manage.py watch
 ```
 
 **Tests and checks:**
@@ -102,8 +118,10 @@ The second one loads the game without a window and prints any script errors.
 
 **Start over with a fresh database.** Stop the server first.
 ```bash
-cd backend && uv run python -m mii.seed --reset
+cd backend && uv run python manage.py seed --reset
 ```
+After changing a table in `models.py`: `uv run python manage.py makemigrations mii`
+(the server applies migrations when it starts).
 
 ## What you should see
 
@@ -119,31 +137,51 @@ see TODO.md.
 
 New to Godot? Read [docs/godot-tour.md](docs/godot-tour.md).
 
-## Real agents (in progress)
+## Real agents
 
-The ACP runner is still boilerplate (`backend/mii/agents/acp.py`). When it's
-built, real mode will need:
+Set `MOCK_AGENTS=0` in `.env`. Every island already has its own git repository
+(the seed island's is created on first start under `~/Documents/Mii-nagement`,
+or `~/Mii-nagement` without a Documents folder; change the root with
+`ISLANDS_ROOT`). Each task gets its own git worktree of that repo and a
+`mii/<task_id>` branch. Optional: `TEST_COMMAND` (what the Lab runs) and the
+island's `repo` (`owner/name`, for issues in and PRs out via the logged-in `gh` CLI).
 
-- [Node.js](https://nodejs.org) (the Claude Code and Codex adapters run through `npx`).
-- The agent CLIs you want, logged in: `claude`, `codex`, `gemini`. Or set their
-  API keys in `.env` instead.
-- The [GitHub CLI](https://cli.github.com), logged in (`gh auth login`), for
-  issues in and PRs out.
-- In `.env`: `MOCK_AGENTS=0` and `SANDBOX_REPO_PATH` (a local git repo the
-  agents may work on). Each task gets its own git worktree of that repo.
+New islands (the game's island creator, or `POST /islands` with
+`{"name": "Rocky Cove"}`) get their buildings from a town plan and a fresh repo in
+the default folder; add `"folder": "/some/dir"` to put it elsewhere or
+`"existing_repo": "/path/to/repo"` to adopt one you already have.
+`GET /islands` lists islands and the default folder.
 
-Check which agents the backend can see: http://localhost:8000/brains
+**ACP brains (your subscriptions, no API key needed):**
+
+- [Node.js](https://nodejs.org): the Claude Code and Codex adapters run through `npx`.
+- `claude-code`: install the `claude` CLI, run it once and log in (Claude Pro/Max).
+- `codex`: run `npx -y @agentclientprotocol/codex-acp` once or `codex login` (ChatGPT).
+- `gemini`: install the Gemini CLI, run it once and log in with Google.
+- Or set `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` in `.env` instead.
+
+**OpenRouter brain (any model, no CLI):** set `OPENROUTER_API_KEY` in `.env`, give
+a resident `brain = "openrouter"` and a `model` from http://localhost:8000/models.
+
+Check which brains the backend can see: http://localhost:8000/brains
+
+While a real resident works you'll see `activity` events and ✋ permission
+bubbles (the agent's own options as buttons). No answer within
+`PERMISSION_TIMEOUT` means "reject". The Workshop commits the coder's changes,
+the Lab runs `TEST_COMMAND`, and the Post Office pushes the branch and opens the PR.
 
 ## Repo layout
 
 ```
-backend/   Python server: workflow engine, ACP agents, event bus, insights
+backend/   Django server: workflow engine, ACP + OpenRouter agents, event bus, insights
 game/      Godot 4 client: 3D island, UI, residents, bubbles
 docs/      protocol.md (WebSocket events), architecture.md (backend design),
            godot-tour.md (Godot for beginners)
 TODO.md    roadmap (MVP vs stretch)
 CLAUDE.md  context for Claude Code sessions
 ```
+
+`Makefile` runs the commands above for you.
 
 Find every open TODO:
 ```bash

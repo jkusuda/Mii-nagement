@@ -4,23 +4,26 @@ The island's buildings and roads form a directed graph. A package starts at the
 mailbox. At each building, that building's resident walks over, does the work
 (through their brain's runner), and the outcome (pass/fail) picks the next road.
 No road left = the task is finished. Event order: docs/protocol.md.
+
+Database access is Django's async ORM (`aget`, `asave`, `async for`), because
+the engine runs inside the ASGI server's event loop.
 """
 
 import asyncio
 import logging
 import uuid
 from functools import partial
+from pathlib import Path
 
-from sqlmodel import Session, select
-
-from mii import events
+from mii import events, github
 from mii.agents import AgentJob, StepResult
-from mii.models import Building, Resident, Road, Step, Task, utcnow
-from mii.sandbox import Sandbox
+from mii.models import Building, Island, Resident, Road, Step, Task, utcnow
+from mii.sandbox import Sandbox, SandboxError, Sandboxes
 
 log = logging.getLogger(__name__)
 
 MAX_STEPS = 20  # safety net against packages bouncing forever
+OUTPUT_LIMIT = 4000  # characters of command output we keep
 
 # Mood a resident shows while a bubble of this kind is waiting.
 BUBBLE_MOODS = {"confused": "confused", "struggling": "frustrated", "permission": "focused", "ready": "proud", "tired": "tired"}
@@ -35,10 +38,10 @@ class IslandGraph:
         self.roads = roads
 
     @classmethod
-    def load(cls, session: Session, island_id: str) -> "IslandGraph":
-        buildings = session.exec(select(Building).where(Building.island_id == island_id)).all()
-        roads = session.exec(select(Road).where(Road.island_id == island_id)).all()
-        return cls(list(buildings), list(roads))
+    async def load(cls, island_id: str) -> "IslandGraph":
+        buildings = [b async for b in Building.objects.filter(island_id=island_id)]
+        roads = [r async for r in Road.objects.filter(island_id=island_id).order_by("id")]
+        return cls(buildings, roads)
 
     def start(self) -> str:
         """Packages arrive at the mailbox."""
@@ -49,68 +52,126 @@ class IslandGraph:
 
     def next_building(self, current: str, outcome: str) -> str | None:
         """A road matching the outcome wins, then an 'always' road, else we're done."""
-        outgoing = [r for r in self.roads if r.from_id == current]
+        outgoing = [r for r in self.roads if r.from_building_id == current]
         for road in outgoing:
             if road.condition == outcome:
-                return road.to_id
+                return road.to_building_id
         for road in outgoing:
             if road.condition == "always":
-                return road.to_id
+                return road.to_building_id
         return None
 
 
 # --- Building handlers (one class per building type) ------------------------------
 # A handler says what the resident should do there, and by default hands the work
-# to the runner. Override `run` for steps that don't need an agent.
+# to the runner. Override `run` for steps that do more than talk to an agent.
+# `engine` gives handlers the sandbox, the test command, and set_pr_url().
 
 VERDICT_RULE = "End your reply with one line: `VERDICT: PASS` or `VERDICT: FAIL`."
 
 
 class BuildingHandler:
+    read_only = False  # True = the resident must not change files here
+
     def instructions(self, task: Task) -> str:
         raise NotImplementedError
 
-    async def run(self, job: AgentJob, runner) -> StepResult:
+    async def run(self, job: AgentJob, runner, engine: "WorkflowEngine") -> StepResult:
         return await runner.run(job)
 
 
 class Mailbox(BuildingHandler):
     """The planner reads the request (a GitHub issue or a typed task) and writes a plan."""
 
+    read_only = True
+
     def instructions(self, task: Task) -> str:
         return f"New request: {task.title}\n\n{task.description}\n\nWrite a short, numbered plan for the coder. Don't change files."
 
 
 class Workshop(BuildingHandler):
-    """The coder implements the plan in the task's worktree."""
+    """The coder implements the plan in the task's worktree, then the engine commits it."""
 
-    # TODO(mvp): commit the coder's changes on the task branch after this step.
     def instructions(self, task: Task) -> str:
         return f"Implement: {task.title}\n\n{task.description}\n\nFollow the plan in the notes. If work was sent back, fix what was reported."
 
+    async def run(self, job: AgentJob, runner, engine: "WorkflowEngine") -> StepResult:
+        result = await runner.run(job)
+        if job.sandbox and job.workdir:
+            message = f"{job.task.title}\n\nStep by {job.resident.name} (attempt {job.attempt})."
+            try:
+                committed = await asyncio.to_thread(job.sandbox.commit_all, job.task.id, message, engine.git_author)
+            except SandboxError as e:
+                return StepResult("fail", f"{result.summary} Commit failed: {e}")
+            result.summary += " Committed the changes." if committed else " No file changes to commit."
+        return result
+
 
 class Lab(BuildingHandler):
-    """Tests run here. Pass goes on to review; fail goes back to the workshop."""
+    """Tests run here. Pass goes on to review; fail goes back to the workshop.
 
-    # TODO(mvp): run the repo's test command here (override `run`) and pass/fail on the exit code.
+    With TEST_COMMAND set (real mode) the engine runs the command itself and the
+    exit code decides. Otherwise the resident is asked to run the tests.
+    """
+
     def instructions(self, task: Task) -> str:
         return f"Run the project's tests for: {task.title}\n\n{VERDICT_RULE}"
+
+    async def run(self, job: AgentJob, runner, engine: "WorkflowEngine") -> StepResult:
+        if not (engine.test_command and job.workdir):
+            return await runner.run(job)
+        await job.report(f"Running: {engine.test_command}")
+        code, output = await run_shell(engine.test_command, job.workdir, timeout=engine.step_timeout)
+        tail = "\n".join(output.splitlines()[-20:])
+        if code == 0:
+            return StepResult("pass", f"Tests passed.\n{tail}".strip())
+        return StepResult("fail", f"Tests failed (exit {code}).\n{tail}".strip())
 
 
 class Courthouse(BuildingHandler):
     """The reviewer judges the diff. Pass goes to the post office; fail goes back."""
 
+    read_only = True
+
     def instructions(self, task: Task) -> str:
         return f"Review the changes on this branch for: {task.title}. If you fail it, say exactly what to fix.\n\n{VERDICT_RULE}"
+
+    async def run(self, job: AgentJob, runner, engine: "WorkflowEngine") -> StepResult:
+        if job.sandbox and job.workdir:
+            stat = await asyncio.to_thread(job.sandbox.diff_stat, job.task.id)
+            job.instructions = f"{job.instructions}\n\nWhat changed on this branch (git log + diff --stat):\n{stat}"
+        return await runner.run(job)
 
 
 class PostOffice(BuildingHandler):
     """Finished work leaves the island as a pull request."""
 
-    # TODO(mvp): after the agent writes the description, call github.open_pull_request()
-    # and save the URL on task.pr_url.
+    read_only = True
+
     def instructions(self, task: Task) -> str:
-        return f"The change for '{task.title}' passed review. Write a pull request title and description."
+        return (
+            f"The change for '{task.title}' passed review. Write a pull request title and description. "
+            "Put the title on the first line, then a blank line, then the description."
+        )
+
+    async def run(self, job: AgentJob, runner, engine: "WorkflowEngine") -> StepResult:
+        result = await runner.run(job)
+        if result.outcome != "pass" or not (job.sandbox and job.workdir and job.task.branch):
+            return result
+        island = await Island.objects.aget(pk=job.task.island_id)
+        if not island.repo:
+            result.summary += " No GitHub repo linked to this island, so no PR was opened."
+            return result
+        title, body = split_pr_text(result.summary, fallback_title=job.task.title)
+        await job.report("Opening the pull request")
+        try:
+            url = await asyncio.to_thread(
+                github.open_pull_request, island.repo, job.workdir, job.task.branch, title, body
+            )
+        except github.GitHubError as e:
+            return StepResult("fail", f"Could not open the PR: {e}")
+        await engine.set_pr_url(job.task, url)
+        return StepResult("pass", f"Opened {url}")
 
 
 HANDLERS: dict[str, BuildingHandler] = {
@@ -122,6 +183,38 @@ HANDLERS: dict[str, BuildingHandler] = {
 }
 
 
+def split_pr_text(text: str, fallback_title: str) -> tuple[str, str]:
+    """First non-empty line = title (minus '#'/'Title:' decorations), the rest = body."""
+    lines = [line.rstrip() for line in text.strip().splitlines()]
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    if not lines:
+        return fallback_title, ""
+    title = lines[0].strip().lstrip("#").strip()
+    if title.lower().startswith("title:"):
+        title = title[6:].strip()
+    body = "\n".join(lines[1:]).strip()
+    if body.lower().startswith("description:"):
+        body = body[12:].strip()
+    return (title or fallback_title)[:200], body
+
+
+async def run_shell(command: str, cwd: Path, timeout: float) -> tuple[int, str]:
+    """Run a shell command in `cwd`. Returns (exit code, combined output, capped)."""
+    proc = await asyncio.create_subprocess_shell(
+        command, cwd=str(cwd), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
+    )
+    try:
+        raw, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except TimeoutError:
+        proc.kill()
+        return 124, "(timed out)"
+    output = raw.decode(errors="replace")
+    if len(output) > OUTPUT_LIMIT:
+        output = "…" + output[-OUTPUT_LIMIT:]
+    return proc.returncode or 0, output
+
+
 # --- The engine ---------------------------------------------------------------------
 
 
@@ -130,35 +223,42 @@ class WorkflowEngine:
 
     def __init__(
         self,
-        db_engine,
         bus: events.EventBus,
         bubbles: events.Bubbles,
         runner,
         *,
-        sandbox: Sandbox | None = None,  # None in mock mode: no git at all
+        sandboxes: Sandboxes | None = None,  # None in mock mode: no git at all
         walk_seconds: float = 2.0,
         bubble_timeout: float = 30.0,
+        permission_timeout: float | None = None,  # None = bubble_timeout
         sleep_after: float = 45.0,
         step_timeout: float = 600.0,
+        test_command: str | None = None,
+        keep_worktrees: bool = False,
+        git_author: str = "Mii-nagement <mii@localhost>",
     ):
-        self.db_engine = db_engine
         self.bus = bus
         self.bubbles = bubbles
         self.runner = runner
-        self.sandbox = sandbox
+        self.sandboxes = sandboxes
         self.walk_seconds = walk_seconds
         self.bubble_timeout = bubble_timeout
+        self.permission_timeout = permission_timeout or bubble_timeout
         self.sleep_after = sleep_after
         self.step_timeout = step_timeout
+        self.test_command = test_command
+        self.keep_worktrees = keep_worktrees
+        self.git_author = git_author
         self.queue: asyncio.Queue[str] = asyncio.Queue()
 
     # --- Public API -----------------------------------------------------------
 
     async def submit(self, island_id: str, title: str, description: str = "", issue_number: int | None = None) -> Task:
         """Add a task to the queue. It starts at the island's mailbox."""
-        task = Task(id="t_" + uuid.uuid4().hex[:6], island_id=island_id, title=title,
-                    description=description, issue_number=issue_number)
-        self._save(task)
+        task = await Task.objects.acreate(
+            id="t_" + uuid.uuid4().hex[:6], island_id=island_id, title=title,
+            description=description, issue_number=issue_number,
+        )
         await self._emit(task, events.task(task))
         await self.queue.put(task.id)
         return task
@@ -175,30 +275,49 @@ class WorkflowEngine:
                 await self.run_task(task_id)
             except Exception:
                 log.exception("task %s crashed", task_id)
-                task = self._update(Task, task_id, status="failed")
+                task = await self._update(Task, task_id, status="failed")
                 await self._emit(task, events.task(task))
 
     async def recover(self) -> None:
         """After a restart: re-queue waiting tasks, fail half-done ones, wake everyone."""
-        with Session(self.db_engine) as session:
-            for t in session.exec(select(Task).where(Task.status.in_(["queued", "in_progress"]))).all():
-                if t.status == "in_progress":
-                    t.status = "failed"
-                else:
-                    self.queue.put_nowait(t.id)
-            for r in session.exec(select(Resident)).all():
-                r.state = "idle"
-            session.commit()
+        async for t in Task.objects.filter(status__in=["queued", "in_progress"]):
+            if t.status == "in_progress":
+                t.status = "failed"
+                await t.asave(update_fields=["status"])
+            else:
+                self.queue.put_nowait(t.id)
+        await Resident.objects.all().aupdate(state="idle")
+
+    async def set_pr_url(self, task: Task, url: str) -> Task:
+        task = await self._update(Task, task.id, pr_url=url)
+        await self._emit(task, events.task(task))
+        return task
 
     async def run_task(self, task_id: str) -> Task:
-        task = self._update(Task, task_id, status="in_progress")
+        task = await self._update(Task, task_id, status="in_progress")
         await self._emit(task, events.task(task))
+        sandbox = await self._sandbox_for(task)
+        try:
+            return await self._run_task(task, sandbox)
+        finally:
+            if sandbox and not self.keep_worktrees:
+                try:
+                    await asyncio.to_thread(sandbox.remove_worktree, task.id)
+                except SandboxError as e:
+                    log.warning("could not remove worktree for %s: %s", task.id, e)
 
-        with Session(self.db_engine) as session:
-            graph = IslandGraph.load(session, task.island_id)
-        workdir = self.sandbox.create_worktree(task.id) if self.sandbox else None
+    async def _sandbox_for(self, task: Task) -> Sandbox | None:
+        """The island's repository sandbox (real mode only). A missing repo fails the task loudly."""
+        if self.sandboxes is None:
+            return None
+        island = await Island.objects.aget(pk=task.island_id)
+        return self.sandboxes.for_island(island)  # raises SandboxError -> run_forever marks the task failed
+
+    async def _run_task(self, task: Task, sandbox: Sandbox | None) -> Task:
+        graph = await IslandGraph.load(task.island_id)
+        workdir = await asyncio.to_thread(sandbox.create_worktree, task.id) if sandbox else None
         if workdir:
-            task = self._update(Task, task.id, branch=f"mii/{task.id}")
+            task = await self._update(Task, task.id, branch=f"mii/{task.id}")
 
         history: list[str] = []  # notes passed along with the package
         visits: dict[str, int] = {}
@@ -208,7 +327,7 @@ class WorkflowEngine:
 
         while building_id is not None and len(history) < MAX_STEPS:
             building = graph.buildings[building_id]
-            resident = self._get(Resident, building.resident_id)
+            resident = await self._get(Resident, building.resident_id)
 
             # 1. Hand the package over, if someone else takes it.
             if previous and previous.id != resident.id:
@@ -220,12 +339,13 @@ class WorkflowEngine:
             resident = await self._walk(resident, building_id)
             resident = await self._set_state(resident, "working")
             resident = await self._set_mood(resident, "focused")
-            task = self._update(Task, task.id, building_id=building_id, agent_id=resident.id)
+            task = await self._update(Task, task.id, building_id=building_id, agent_id=resident.id)
             await self._emit(task, events.task(task))
 
             visits[building_id] = visits.get(building_id, 0) + 1
-            result, step = await self._run_step(task, building, resident, visits[building_id], history, workdir)
+            result, step = await self._run_step(task, building, resident, visits[building_id], history, workdir, sandbox)
             history.append(f"{resident.name} at the {building.name}: {result.outcome.upper()}. {result.summary}")
+            task = await self._get(Task, task.id)  # a handler may have set pr_url
 
             # 4. React, then follow the road that matches the outcome.
             resident = await self._set_mood(resident, "happy" if result.outcome == "pass" else "frustrated")
@@ -233,26 +353,29 @@ class WorkflowEngine:
             building_id = graph.next_building(building_id, outcome)
 
         gave_up = building_id is not None  # hit MAX_STEPS
-        task = self._update(Task, task.id, status="failed" if gave_up or outcome == "fail" else "done")
-        await self._emit(task, events.task(task))
+        task = await self._update(Task, task.id, status="failed" if gave_up or outcome == "fail" else "done")
         if previous:
             await self._set_mood(previous, "proud" if task.status == "done" else "frustrated")
             await self._set_state(previous, "idle")
+        await self._emit(task, events.task(task))  # last event of the task (replay.py relies on this)
         return task
 
     # --- One step ------------------------------------------------------------------
 
-    async def _run_step(self, task, building, resident, attempt, history, workdir) -> tuple[StepResult, Step]:
+    async def _run_step(self, task, building, resident, attempt, history, workdir, sandbox=None) -> tuple[StepResult, Step]:
         """Run one building visit with a timeout, and record it as a Step row."""
-        step = self._save(Step(island_id=task.island_id, task_id=task.id, building_id=building.id,
-                               building_type=building.type, resident_id=resident.id, brain=resident.brain))
+        step = await Step.objects.acreate(
+            island_id=task.island_id, task_id=task.id, building_id=building.id,
+            building_type=building.type, resident_id=resident.id, brain=resident.brain,
+        )
         bubbles_raised = 0
 
         async def ask(kind: str, text: str, options: list[str] | None = None) -> str | None:
             nonlocal bubbles_raised
             bubbles_raised += 1
+            timeout = self.permission_timeout if kind == "permission" else self.bubble_timeout
             await self._set_mood(resident, BUBBLE_MOODS.get(kind, "confused"))
-            answer = await self.bubbles.ask(task.island_id, resident.id, kind, text, self.bubble_timeout, options)
+            answer = await self.bubbles.ask(task.island_id, resident.id, kind, text, timeout, options)
             await self._set_mood(resident, "focused")
             return answer
 
@@ -260,18 +383,18 @@ class WorkflowEngine:
         job = AgentJob(
             resident=resident, task=task, building=building, instructions=handler.instructions(task),
             ask=ask, report=partial(self._report, task, resident), attempt=attempt,
-            history=list(history), workdir=workdir,
+            history=list(history), workdir=workdir, sandbox=sandbox, read_only=handler.read_only,
         )
         timed_out = False
         try:
-            result = await asyncio.wait_for(handler.run(job, self.runner), timeout=self.step_timeout)
+            result = await asyncio.wait_for(handler.run(job, self.runner, self), timeout=self.step_timeout)
         except TimeoutError:
             timed_out = True
             result = StepResult("fail", f"{resident.name} ran out of time.")
             await self._set_mood(resident, "tired")
 
-        step = self._update(Step, step.id, outcome=result.outcome, timed_out=timed_out,
-                            bubbles_raised=bubbles_raised, finished_at=utcnow())
+        step = await self._update(Step, step.id, outcome=result.outcome, timed_out=timed_out,
+                                  bubbles_raised=bubbles_raised, finished_at=utcnow())
         return result, step
 
     # --- Helpers -------------------------------------------------------------------
@@ -287,48 +410,37 @@ class WorkflowEngine:
             return resident
         if resident.building_id is not None:
             await self.bus.emit(resident.island_id, events.move(resident.id, resident.building_id, to_building))
-        resident = self._update(Resident, resident.id, state="walking", building_id=to_building)
+        resident = await self._update(Resident, resident.id, state="walking", building_id=to_building)
         await self.bus.emit(resident.island_id, events.agent_state(resident.id, "walking", to_building))
         await asyncio.sleep(self.walk_seconds)  # give the game time to animate
         return resident
 
     async def _set_state(self, resident: Resident, state: str) -> Resident:
-        resident = self._update(Resident, resident.id, state=state)
+        resident = await self._update(Resident, resident.id, state=state)
         await self.bus.emit(resident.island_id, events.agent_state(resident.id, state, resident.building_id))
         return resident
 
     async def _set_mood(self, resident: Resident, mood: str) -> Resident:
-        resident = self._update(Resident, resident.id, mood=mood)
+        resident = await self._update(Resident, resident.id, mood=mood)
         await self.bus.emit(resident.island_id, events.mood(resident.id, mood))
         return resident
 
     async def _put_idle_residents_to_sleep(self) -> None:
-        with Session(self.db_engine) as session:
-            idle = session.exec(select(Resident).where(Resident.state == "idle")).all()
+        idle = [r async for r in Resident.objects.filter(state="idle")]
         for resident in idle:
             await self._set_state(resident, "sleeping")
             await self._set_mood(resident, "tired")
 
-    def _save(self, row):
-        with Session(self.db_engine, expire_on_commit=False) as session:
-            session.add(row)
-            session.commit()
-        return row
-
-    def _get(self, model, row_id):
-        with Session(self.db_engine, expire_on_commit=False) as session:
-            row = session.get(model, row_id)
-        if row is None:
+    async def _get(self, model, row_id):
+        try:
+            return await model.objects.aget(pk=row_id)
+        except model.DoesNotExist:
             raise KeyError(f"{model.__name__} {row_id} not found")
-        return row
 
-    def _update(self, model, row_id, **changes):
+    async def _update(self, model, row_id, **changes):
         """Change some fields of one row and return the updated row."""
-        with Session(self.db_engine, expire_on_commit=False) as session:
-            row = session.get(model, row_id)
-            if row is None:
-                raise KeyError(f"{model.__name__} {row_id} not found")
-            for name, value in changes.items():
-                setattr(row, name, value)
-            session.commit()
+        row = await self._get(model, row_id)
+        for name, value in changes.items():
+            setattr(row, name, value)
+        await row.asave(update_fields=list(changes))
         return row

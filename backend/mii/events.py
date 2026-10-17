@@ -11,8 +11,6 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from sqlmodel import Session
-
 from mii.models import Event, Task, resident_to_dict, task_to_dict
 
 log = logging.getLogger(__name__)
@@ -60,6 +58,10 @@ def resident(r) -> dict:
     return {"type": "resident", "resident": resident_to_dict(r)}
 
 
+def resident(r) -> dict:
+    return {"type": "resident", "resident": resident_to_dict(r)}
+
+
 def error(message: str) -> dict:
     return {"type": "error", "message": message}
 
@@ -70,13 +72,12 @@ def error(message: str) -> dict:
 class EventBus:
     """Saves events to SQLite and broadcasts them to the clients watching that island.
 
-    A "client" is anything with an async `send_json(dict)` method: a FastAPI
-    WebSocket, or a fake one in tests. Each client watches one island, or every
-    island (`island_id=None`, what tests use).
+    A "client" is anything with an async `send_json(dict)` method: the Channels
+    WebSocket consumer, or a fake one in tests. Each client watches one island,
+    or every island (`island_id=None`, what tests use).
     """
 
-    def __init__(self, db_engine):
-        self.db_engine = db_engine
+    def __init__(self):
         self.clients: dict = {}  # client -> island id it watches (None = all)
 
     def add_client(self, client, island_id: str | None = None) -> None:
@@ -87,9 +88,7 @@ class EventBus:
 
     async def emit(self, island_id: str | None, event: dict) -> None:
         event = {**event, "ts": datetime.now(timezone.utc).isoformat()}
-        with Session(self.db_engine) as session:
-            session.add(Event(island_id=island_id, type=event["type"], payload=event))
-            session.commit()
+        await Event.objects.acreate(island_id=island_id, type=event["type"], payload=event)
         await self.broadcast(event, island_id)
 
     async def broadcast(self, event: dict, island_id: str | None = None) -> None:

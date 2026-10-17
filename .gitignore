@@ -26,3 +26,4 @@ game/builds/
 .DS_Store
 .vscode/
 .idea/
+.claude/
