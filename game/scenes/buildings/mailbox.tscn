@@ -1,0 +1,13 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scenes/buildings/building.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://assets/models/mailbox.glb" id="2_model"]
+
+[node name="Mailbox" type="Node3D"]
+script = ExtResource("1_script")
+
+[node name="Model" parent="." instance=ExtResource("2_model")]
+transform = Transform3D(2.6, 0, 0, 0, 2.6, 0, 0, 0, 2.6, 0, 2.204, 0)
+
+[node name="Door" type="Marker3D" parent="."]
+position = Vector3(0, 0, 4)

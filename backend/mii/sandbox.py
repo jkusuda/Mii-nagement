@@ -42,19 +42,35 @@ class Sandbox:
             raise SandboxError(f"the island's repository is not a git repo: {repo_path}")
         self.repo_path = repo_path.resolve()
         self.worktree_root = worktree_root.resolve()
+        self.bases: dict[str, str] = {}  # task id -> the commit its branch started from
 
     def worktree_path(self, task_id: str) -> Path:
         if not TASK_ID_PATTERN.match(task_id):
             raise SandboxError(f"unsafe task id: {task_id!r}")
         return self.worktree_root / f"{self.repo_path.name}-{task_id}"  # one folder per island + task
 
-    def create_worktree(self, task_id: str) -> Path:
-        """Create (or reuse) the worktree for a task and return its path."""
+    def create_worktree(self, task_id: str, branch: str | None = None) -> Path:
+        """Create (or reuse) the worktree for a task and return its path.
+
+        The task branch starts from the island's `branch` (a local branch, else
+        `origin/<branch>` if it was fetched, else wherever HEAD is).
+        """
         path = self.worktree_path(task_id)
+        base = self.resolve_branch(branch)
+        self.bases[task_id] = self._git(self.repo_path, "rev-parse", base).strip() or base
         if not path.exists():
             self.worktree_root.mkdir(parents=True, exist_ok=True)
-            self._git(self.repo_path, "worktree", "add", "-b", f"mii/{task_id}", str(path), "HEAD")
+            self._git(self.repo_path, "worktree", "add", "-b", f"mii/{task_id}", str(path), base)
         return path
+
+    def resolve_branch(self, branch: str | None) -> str:
+        """The ref to branch tasks from: `branch`, `origin/<branch>`, or HEAD when neither exists."""
+        for candidate in ([branch, f"origin/{branch}"] if branch else []):
+            ok = subprocess.run(["git", "-C", str(self.repo_path), "rev-parse", "--verify", "-q", candidate],
+                                capture_output=True).returncode == 0
+            if ok:
+                return candidate
+        return "HEAD"
 
     def remove_worktree(self, task_id: str) -> None:
         """Delete the worktree folder (the branch stays, so a pushed PR is unaffected)."""
@@ -84,12 +100,14 @@ class Sandbox:
             ["git", "-C", str(path), "diff", "--stat", "HEAD~0", "--", "."], capture_output=True, text=True
         )
         committed = subprocess.run(
-            ["git", "-C", str(path), "log", "--oneline", f"HEAD...{self._base(path)}"], capture_output=True, text=True
+            ["git", "-C", str(path), "log", "--oneline", f"HEAD...{self._base(task_id)}"], capture_output=True, text=True
         )
         return (committed.stdout + result.stdout).strip() or "(no changes yet)"
 
-    def _base(self, path: Path) -> str:
-        """The commit the task branch was created from (the main repo's HEAD at that time)."""
+    def _base(self, task_id: str) -> str:
+        """The commit the task branch was created from (the main repo's HEAD if we don't know)."""
+        if task_id in self.bases:
+            return self.bases[task_id]
         result = subprocess.run(["git", "-C", str(self.repo_path), "rev-parse", "HEAD"], capture_output=True, text=True)
         return result.stdout.strip() or "HEAD"
 

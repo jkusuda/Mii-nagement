@@ -24,6 +24,9 @@ const PAN_LIMIT := Vector2(14.0, 10.0)  # how far (x, z) you can drag from the s
 const CLICK_SLOP := 6.0  # pixels the mouse may move and still count as a click
 
 var zoom := 1.0  # 1.0 = 100%
+## Left-drag pans the island. Build mode turns this off (it uses the left button
+## for editing); right- or middle-drag always pans.
+var left_drag_pans := true
 
 var _target_zoom := 1.0
 var _home_offset := Vector3.ZERO  # the camera's position at 100% zoom
@@ -56,11 +59,13 @@ func _unhandled_input(event: InputEvent) -> void:
 			zoom_by(ZOOM_STEP)
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN and event.pressed:
 			zoom_by(-ZOOM_STEP)
-		elif event.button_index == MOUSE_BUTTON_LEFT:
+		elif event.button_index == MOUSE_BUTTON_LEFT and left_drag_pans:
 			if event.pressed:
 				_drag_distance = 0.0
 			elif _dragging and _drag_distance < CLICK_SLOP:
-				clicked.emit(event.position)
+				clicked.emit(event.position)  # pressed and let go without dragging: a click
+			_dragging = event.pressed
+		elif event.button_index == MOUSE_BUTTON_RIGHT or event.button_index == MOUSE_BUTTON_MIDDLE:
 			_dragging = event.pressed
 	elif event is InputEventMouseMotion and _dragging:
 		_drag_distance += event.relative.length()

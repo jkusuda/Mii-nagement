@@ -5,9 +5,10 @@
 // `uniform`s are settings you can tweak in the Inspector (select Water, then
 // Surface Material Override > Shader Parameters).
 //
-// How it works: we know the island's outline is (roughly) a rounded rectangle,
-// so for every water pixel we compute its distance to that outline. Close to
-// the island = light shallow water + white foam; far away = deep turquoise.
+// How it works: every island comes with a "field" texture (island_terrain.gd)
+// that stores, for each point around it, how far that point is from the coast.
+// So for every water pixel we know its distance to the shore. Close to an
+// island = light shallow water + white foam; far away = deep turquoise.
 // Scrolling noise textures add moving ripples, sparkles, and wave streaks.
 
 shader_type spatial;
@@ -17,14 +18,12 @@ uniform vec3 deep_color : source_color = vec3(0.12, 0.55, 0.68);
 uniform vec3 shallow_color : source_color = vec3(0.42, 0.82, 0.80);
 uniform vec3 foam_color : source_color = vec3(1.0, 1.0, 1.0);
 
-// --- Island outline (world units, matches island_3d.tscn) --------------------
-uniform vec2 island_half_size = vec2(18.6, 12.4);
-uniform float island_corner_radius = 5.0;
-// Several islands in one sea (the Archipelago screen): their centers (x, z).
-// island_count = 0 means one island at the origin (the island view);
-// -1 means no islands at all, just open sea.
+// --- Islands (set from code: IslandBuilder, or SeaView for several islands) --
+// island_count = 0 means no islands at all, just open sea.
 uniform int island_count = 0;
-uniform vec2 island_centers[8];
+uniform sampler2D island_fields[8] : filter_linear, repeat_disable;
+uniform vec4 island_rects[8];     // each field's x, z corner and its width, depth (world units)
+uniform float beach_width = 2.6;  // how far past the grass edge the sea starts
 
 // --- Look -------------------------------------------------------------------
 uniform float shallow_width = 7.0;   // how far the light shallow water reaches
@@ -41,11 +40,15 @@ uniform sampler2D foam_noise;                   // seamless noise, breaks up foa
 varying vec3 world_position;
 
 
-// Signed distance from point p to a rounded rectangle centered at the origin.
-// Negative inside, 0 on the edge, positive outside.
-float rounded_rect_distance(vec2 p, vec2 half_size, float radius) {
-	vec2 q = abs(p) - half_size + radius;
-	return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - radius;
+// Distance from p to island i's shore (where its beach meets the sea).
+// Outside the island's field, keep counting from the field's edge.
+float shore_distance(int i, vec2 p) {
+	vec4 rect = island_rects[i];
+	vec2 uv = (p - rect.xy) / rect.zw;
+	vec2 inside_uv = clamp(uv, vec2(0.002), vec2(0.998));
+	float coast = texture(island_fields[i], inside_uv).r;  // + on land, in world units
+	float beyond = length((uv - inside_uv) * rect.zw);
+	return -coast - beach_width + beyond;
 }
 
 
@@ -64,11 +67,10 @@ void fragment() {
 	float breakup_fine = texture(foam_noise, p * 0.2 - vec2(t * 1.5, 0.0)).r;
 
 	// Distance to the nearest island's shore. Wobble it a little so the shore
-	// lines aren't perfectly smooth.
-	float d = island_count < 0 ? 1000.0 : rounded_rect_distance(p, island_half_size, island_corner_radius);
+	// lines aren't perfectly smooth (the coast itself already wobbles).
+	float d = 1000.0;
 	for (int i = 0; i < island_count; i++) {
-		float di = rounded_rect_distance(p - island_centers[i], island_half_size, island_corner_radius);
-		d = (i == 0) ? di : min(d, di);
+		d = min(d, shore_distance(i, p));
 	}
 	d += (breakup - 0.5) * 0.6;
 

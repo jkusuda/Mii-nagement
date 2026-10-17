@@ -30,3 +30,10 @@ window/stretch/mode="canvas_items"
 [rendering]
 
 renderer/rendering_method.mobile="gl_compatibility"
+
+[shader_globals]
+
+night={
+"type": "float",
+"value": 0.0
+}

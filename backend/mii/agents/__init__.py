@@ -29,6 +29,8 @@ class StepResult:
 AskFn = Callable[..., Awaitable[str | None]]
 # report(text) sends an `activity` event: what the resident is doing right now.
 ReportFn = Callable[[str], Awaitable[None]]
+# notebook(fraction) says how full the agent's context window is (0.0-1.0).
+NotebookFn = Callable[[float], Awaitable[None]]
 
 
 @dataclass
@@ -46,6 +48,31 @@ class AgentJob:
     workdir: Path | None = None  # the task's worktree (None in mock mode)
     sandbox: object | None = None  # the island's Sandbox, for path checks (None in mock mode)
     read_only: bool = False  # True at buildings where the resident must not change files
+    rules: dict = field(default_factory=dict)  # the island's house rules (see permission_for)
+    notebook: NotebookFn | None = None  # how full the agent's context window is (ACP usage updates)
+
+
+# House rules (Island.rules, True = ask me first) that tighten a resident's house keys.
+INSTALL_PATTERN = re.compile(
+    r"\b(npm|pnpm|yarn|bun)\s+(i|install|add)\b|\bpip3?\s+install\b|\buv\s+(add|pip|sync)\b|\bpoetry\s+add\b"
+    r"|\bcargo\s+add\b|\bgo\s+get\b|\b(apt|apt-get|brew|gem|composer)\s+install\b",
+    re.IGNORECASE,
+)
+
+
+def permission_for(job: "AgentJob", kind: str, title: str = "") -> str:
+    """What to do with an agent's permission request: "yes" (allow), "ask" (a ✋ bubble) or "no".
+
+    The resident's house key for the tool kind decides, except that the island's
+    house rules can turn a "yes" into an "ask": `shell` for any command, and
+    `install_packages` for commands that look like a package install.
+    """
+    keys = getattr(job.resident, "keys", None) or {}
+    answer = keys.get(kind, "ask")
+    if answer == "yes" and kind == "execute":
+        if job.rules.get("shell") or (job.rules.get("install_packages") and INSTALL_PATTERN.search(title)):
+            return "ask"
+    return answer
 
 
 VERDICT_PATTERN = re.compile(r"VERDICT:\s*(PASS|FAIL)", re.IGNORECASE)

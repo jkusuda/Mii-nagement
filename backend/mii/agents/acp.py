@@ -16,18 +16,23 @@ import asyncio
 import logging
 import os
 import shutil
+import signal
+import subprocess
 import time
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any
 
-from acp import PROTOCOL_VERSION, Client, RequestError, spawn_agent_process
+from acp import PROTOCOL_VERSION, Client, RequestError, connect_to_agent
 from acp.schema import (
     AgentMessageChunk,
     AllowedOutcome,
     ClientCapabilities,
     DeniedOutcome,
+    EnvVariable,
     FileSystemCapabilities,
     Implementation,
+    McpServerStdio,
     PermissionOption,
     ReadTextFileResponse,
     RequestPermissionResponse,
@@ -35,11 +40,12 @@ from acp.schema import (
     ToolCallProgress,
     ToolCallStart,
     ToolCallUpdate,
+    UsageUpdate,
     WriteTextFileResponse,
 )
 
 from mii import prefs
-from mii.agents import AgentJob, StepResult, build_prompt, parse_verdict
+from mii.agents import AgentJob, StepResult, build_prompt, parse_verdict, permission_for
 from mii.personality import build_system_prompt
 from mii.sandbox import SandboxError, is_inside
 
@@ -52,7 +58,11 @@ AUTH_REQUIRED = -32000  # ACP error code: the agent wants a login first
 #   needs          a CLI that must be on PATH
 #   api_key_env    the API key it accepts instead of a subscription login
 #   login_marker   a file that exists once the CLI is logged in (None = can't tell; macOS keychains)
-#   edit_mode / readonly_mode   the agent's own session modes we switch on (None = leave the default)
+#   edit_mode / readonly_mode   the agent's own session modes we switch on (None = leave the default).
+#                  Claude Code's read-only steps also run in `acceptEdits`: MiiClient refuses edit
+#                  permissions and file writes there instead. Its `plan` mode doesn't work for us
+#                  (refusing "Approve plan" ends the turn as `cancelled` and the plan is lost) and in
+#                  `default` mode the first shell command never came back (the step timed out).
 #   env            extra environment for the process
 BRAINS = {
     "claude-code": {
@@ -62,7 +72,7 @@ BRAINS = {
         "login_hint": "run `claude` once and log in with your Claude subscription",
         "login_marker": None,
         "edit_mode": "acceptEdits",
-        "readonly_mode": "plan",
+        "readonly_mode": "acceptEdits",
         "env": {},
     },
     "codex": {
@@ -84,6 +94,36 @@ BRAINS = {
         "edit_mode": None,
         "readonly_mode": None,
         "env": {},
+    },
+}
+
+# Gifts: extra MCP servers a resident brings to every ACP session (Resident.gifts holds the ids).
+# Each is a stdio MCP server started by the agent; `npx -y` fetches it on first use.
+#   command    how to start it (the first word must be on PATH)
+#   needs_env  an environment variable / setting the server can't run without ({NAME} in command/env is filled in)
+#   gh_token   put the user's `gh auth token` in this environment variable
+GIFTS = {
+    "browser": {
+        "label": "Browser", "command": ["npx", "-y", "@playwright/mcp@latest"],
+        "hint": "a web browser the resident can drive (Playwright MCP)",
+    },
+    "github": {
+        "label": "GitHub", "command": ["npx", "-y", "@modelcontextprotocol/server-github"],
+        "gh_token": "GITHUB_PERSONAL_ACCESS_TOKEN", "needs": "gh",
+        "hint": "issues, PRs and repos through your `gh` login",
+    },
+    "docs": {
+        "label": "Docs", "command": ["npx", "-y", "@upstash/context7-mcp"],
+        "hint": "up-to-date library documentation (Context7)",
+    },
+    "database": {
+        "label": "Database", "command": ["npx", "-y", "@bytebase/dbhub", "--dsn", "{DATABASE_URL}"],
+        "needs_env": "DATABASE_URL",
+        "hint": "query the database at DATABASE_URL (save it in settings)",
+    },
+    "terminal": {
+        "label": "Terminal", "command": ["npx", "-y", "mcp-server-commands"],
+        "hint": "an extra shell tool (the ACP agents have their own too)",
     },
 }
 
@@ -123,6 +163,50 @@ def available_brains(openrouter_api_key: str | None = None, saved_keys: dict[str
     return result
 
 
+def available_gifts() -> dict[str, dict]:
+    """Which gifts can be handed over on this machine (the resident creator greys out the rest)."""
+    result = {}
+    for gift, spec in GIFTS.items():
+        missing = _gift_missing(spec)
+        result[gift] = {"ok": missing is None, "label": spec["label"], "hint": missing or spec["hint"]}
+    return result
+
+
+def _gift_missing(spec: dict) -> str | None:
+    """Why a gift can't be used right now, or None when it can."""
+    for tool in (spec["command"][0], spec.get("needs")):
+        if tool and shutil.which(tool) is None:
+            return f"install `{tool}` first"
+    if spec.get("needs_env") and not prefs.extra_env(spec["needs_env"]):
+        return f"set {spec['needs_env']} in settings first"
+    return None
+
+
+def gift_servers(gifts: list[str]) -> tuple[list[McpServerStdio], list[str]]:
+    """MCP servers for a resident's gifts, plus a note for each gift we had to skip. Sync (may run `gh`)."""
+    servers, skipped = [], []
+    for gift in gifts:
+        spec = GIFTS.get(gift)
+        if spec is None:
+            skipped.append(f"Unknown gift {gift!r}")
+            continue
+        missing = _gift_missing(spec)
+        if missing:
+            skipped.append(f"Left the {spec['label']} gift at home: {missing}")
+            continue
+        fill = {spec["needs_env"]: prefs.extra_env(spec["needs_env"])} if spec.get("needs_env") else {}
+        command = [word.format(**fill) for word in spec["command"]]
+        env = []
+        if spec.get("gh_token"):
+            token = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True).stdout.strip()
+            if not token:
+                skipped.append(f"Left the {spec['label']} gift at home: `gh auth login` first")
+                continue
+            env.append(EnvVariable(name=spec["gh_token"], value=token))
+        servers.append(McpServerStdio(name=gift, command=shutil.which(command[0]), args=command[1:], env=env))
+    return servers, skipped
+
+
 class MiiClient(Client):
     """Our side of the ACP connection for one step: streams progress, answers permission
     requests through bubbles, and serves file reads/writes inside the worktree only."""
@@ -143,6 +227,8 @@ class MiiClient(Client):
                 self.text.append(update.content.text)
         elif isinstance(update, (ToolCallStart, ToolCallProgress)) and update.title:
             await self._report(update.title)
+        elif isinstance(update, UsageUpdate) and update.size > 0 and self.job.notebook:
+            await self.job.notebook(update.used / update.size)  # the resident's notebook fills up
 
     async def _report(self, text: str) -> None:
         now = time.monotonic()
@@ -159,10 +245,10 @@ class MiiClient(Client):
         def pick(kind: str) -> str | None:
             return next((o.option_id for o in options if o.kind == kind), None)
 
-        if self.job.read_only and tool_call.kind == "switch_mode" and pick("reject_once"):
-            return _allow(pick("reject_once"))  # Claude's "exit plan mode": stay read-only, no bubble
-        keys = getattr(self.job.resident, "keys", None) or {}
-        key = keys.get(KEY_FOR_KIND.get(tool_call.kind or "", "other"), "ask")
+        key_name = KEY_FOR_KIND.get(tool_call.kind or "", "other")
+        key = permission_for(self.job, key_name, tool_call.title or "")
+        if self.job.read_only and key_name == "edit":
+            key = "no"  # planning and reviewing never change files, whatever the house key says
         if key == "yes" and pick("allow_once"):
             return _allow(pick("allow_once"))
         if key == "no" and (pick("reject_once") or pick("reject_always")):
@@ -241,6 +327,46 @@ def _allow(option_id: str) -> RequestPermissionResponse:
     return RequestPermissionResponse(outcome=AllowedOutcome(outcome="selected", option_id=option_id))
 
 
+@asynccontextmanager
+async def spawn_agent(client: Client, command: list[str], *, cwd: Path, env: dict[str, str]):
+    """Start an ACP agent process and connect to it over stdio. Yields the connection.
+
+    Like the SDK's `spawn_agent_process`, but the agent gets its own process group, so
+    when the step ends (or times out) the whole tree goes: `npx` -> the adapter -> the
+    CLI. Killing only `npx` leaves a stuck CLI holding the stdout pipe, and the step
+    hangs for as long as it takes that CLI to give up (12 minutes, when we checked).
+    """
+    group = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {"start_new_session": True}
+    proc = await asyncio.create_subprocess_exec(
+        *command, cwd=str(cwd), env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, **group
+    )
+    conn = connect_to_agent(client, proc.stdin, proc.stdout)
+    try:
+        yield conn
+    finally:
+        with suppress(Exception):
+            await conn.close()  # closes the agent's stdin: a healthy agent exits on its own
+        await _end_process_tree(proc)
+
+
+async def _end_process_tree(proc: asyncio.subprocess.Process, grace: float = 2.0) -> None:
+    """Wait briefly for the agent to exit, then terminate, then kill: the whole process group."""
+    # Windows has no SIGKILL (proc.kill() is used there anyway); fall back to SIGTERM so this loads.
+    for sig in (None, signal.SIGTERM, getattr(signal, "SIGKILL", signal.SIGTERM)):
+        if sig is not None:
+            with suppress(ProcessLookupError, PermissionError):
+                if os.name == "nt":
+                    proc.kill()
+                else:
+                    os.killpg(proc.pid, sig)
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=grace)
+            return
+        except TimeoutError:
+            continue
+    log.warning("agent process %s did not exit", proc.pid)
+
+
 class AcpRunner:
     """One brain's runner. A fresh agent process per step, so nothing leaks between steps."""
 
@@ -266,7 +392,7 @@ class AcpRunner:
         session_id: str | None = None
         conn = None
         try:
-            async with spawn_agent_process(client, *self.command, cwd=job.workdir, env=env) as (conn, _proc):
+            async with spawn_agent(client, self.command, cwd=job.workdir, env=env) as conn:
                 await conn.initialize(
                     protocol_version=PROTOCOL_VERSION,
                     client_capabilities=ClientCapabilities(
@@ -274,8 +400,11 @@ class AcpRunner:
                     ),
                     client_info=Implementation(name="mii-nagement", title="Mii-nagement", version="0.2.0"),
                 )
+                servers, skipped = await asyncio.to_thread(gift_servers, list(job.resident.gifts or []))
+                for note in skipped:
+                    await job.report(note)
                 try:
-                    session = await conn.new_session(cwd=str(job.workdir), mcp_servers=[])
+                    session = await conn.new_session(cwd=str(job.workdir), mcp_servers=servers)
                 except RequestError as e:
                     if e.code == AUTH_REQUIRED:
                         await job.ask("tired", f"My {self.brain} brain isn't logged in: {self.spec['login_hint']}.")

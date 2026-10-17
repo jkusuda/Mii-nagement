@@ -57,6 +57,19 @@ async def test_update_changes_only_sent_fields(island):
         await residents.update_resident("sunny", {"id": "nobody"})
 
 
+async def test_resident_can_be_given_buildings(island):
+    from mii.models import Building
+
+    r = await residents.create_resident("sunny", {"name": "Mo", "job": "coder", "buildings": ["lab", "courthouse"]})
+    assert (await Building.objects.aget(pk="lab")).resident_id == r.id
+    assert (await Building.objects.aget(pk="courthouse")).resident_id == r.id
+    assert (await Building.objects.aget(pk="workshop")).resident_id == "carlos"  # still taken
+    await residents.update_resident("sunny", {"id": "sydney", "buildings": ["courthouse"]})
+    assert (await Building.objects.aget(pk="courthouse")).resident_id == "sydney"
+    with pytest.raises(residents.ResidentError):
+        await residents.update_resident("sunny", {"id": "sydney", "buildings": ["castle"]})
+
+
 async def test_websocket_create_broadcasts_resident(island):
     workflow, watcher = make_workflow(ScriptedRunner())
     runtime = type("Runtime", (), {"bus": workflow.bus, "bubbles": workflow.bubbles})()
@@ -71,6 +84,13 @@ async def test_websocket_create_broadcasts_resident(island):
     # A bad message only goes back to the sender, as an error.
     reply = await handle_message(runtime, "sunny", {"type": "create_resident", "resident": {}})
     assert reply["type"] == "error" and len(watcher.sent) == 1
+
+    # Giving a resident a building also broadcasts the new layout.
+    msg = {"type": "update_resident", "resident": {"id": event["resident"]["id"], "buildings": ["lab"]}}
+    assert await handle_message(runtime, "sunny", msg) is None
+    assert [e["type"] for e in watcher.sent[1:]] == ["resident", "layout"]
+    lab = next(b for b in watcher.sent[-1]["buildings"] if b["id"] == "lab")
+    assert lab["resident"] == event["resident"]["id"]
     assert (await handle_message(runtime, "sunny", "nope"))["type"] == "error"
     assert (await handle_message(runtime, "sunny", {"type": "answer_bubble", "id": "b_x"}))["type"] == "error"
 

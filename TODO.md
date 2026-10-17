@@ -25,9 +25,12 @@ Backend design: [docs/architecture.md](docs/architecture.md).
       login → 💤 bubble. Tested against a fake ACP agent (`tests/fake_acp_agent.py`).
 - [x] **OpenRouter brain** (`agents/openrouter.py`): any OpenRouter model as a
       resident, no CLI needed (`OPENROUTER_API_KEY`).
-- [ ] **Real-mode run on stage**: a hands-on task through each live CLI. The Claude
-      Code adapter handshake (modes + model list) is verified; a full prompt run,
-      Codex, and Gemini haven't been watched yet.
+- [ ] **Real-mode run on stage**: a hands-on task through each live CLI. Claude
+      Code: verified end to end (`POST /islands/{id}/tasks` → plan, code + commit,
+      tests, review, PR text, all five residents on `claude-code`). Codex and Gemini
+      haven't been watched yet.
+- [x] **Tasks over HTTP**: `GET /islands/{id}/tasks` and `GET /islands/{id}/tasks/{task_id}`
+      (steps with what each resident reported, plus the events while it ran).
 - [x] **GitHub issue in → real PR out** (`github.py`, via the `gh` CLI): the
       workshop commits, the post office pushes and opens the PR.
 - [x] **Lab runs the real tests** (`TEST_COMMAND`) and passes/fails on the exit code.
@@ -35,7 +38,8 @@ Backend design: [docs/architecture.md](docs/architecture.md).
 - [x] **Insights screen** (Godot): stat cards, packages per day, where packages
       wait, comfort report. Shows dashes until the backend sends the fields.
 - [x] **Insights backend, rest of the payload** ([docs/architecture.md](docs/architecture.md)
-      "Insights payload"): ranges, per-day counts, answer time, test pass rate, previous-range numbers, tip.
+      "Insights payload"): ranges, per-day counts, answer time, keys lent, test pass rate,
+      flaky tests, PRs merged (via `gh`), previous-range numbers, tip.
 - [x] **Replay** (`replay.py`): re-play a recorded good run if anything fails on stage.
 - [x] **Game: live island**: residents on the 3D island walking the roads, states
       (working / idle / sleeping), bubble icons, station counts, the Bubbles
@@ -47,29 +51,36 @@ Backend design: [docs/architecture.md](docs/architecture.md).
 - [x] **Resident creator, backend half**: `create_resident` / `update_resident`,
       `keys` / `gifts` columns (new residents are placeholders for now).
 - [x] **ACP honours house keys**: `yes` / `ask` / `no` per tool kind in `AcpRunner`.
-- [ ] **Gifts as MCP servers** (a `GIFTS` table next to `BRAINS`), and giving new
-      residents a building ([docs/mii-customization.md](docs/mii-customization.md)).
+- [x] **Gifts as MCP servers** (the `GIFTS` table next to `BRAINS`, `GET /gifts`), and giving
+      residents a building (`buildings` on `create_resident` / `update_resident`).
+- [ ] **Game: gifts and "works at"** in the creator: grey out gifts `GET /gifts` says won't run,
+      a building picker that sends `buildings`.
 - [x] **Game: `openrouter` brain** in the creator's brain list, with a model picker (GET /models).
 - [x] **Game: send a package** (POST /islands/{id}/tasks): title + details, or a GitHub issue number.
 - [x] **Game: click a building**: the camera glides to it and a panel opens (Mailbox: open issues +
       send a new one; other buildings: packages at that stage, residents there and their activity).
 - [ ] **Build mode**: place the 5 building types and draw pass/fail roads.
+      Backend done: `set_layout` / `PUT /islands/{id}/layout` + the `layout` event (protocol.md).
+      The game still needs the editing UI.
 
 ## 🌈 Stretch
 
 - [x] Island News tab (Godot): stories from live events, headline, unread badge, daily digest
 - [x] `GET /islands/{id}/events` so News shows history from before the game started
+      ([docs/architecture.md](docs/architecture.md), "Events history"); `prs_merged`
+      and `keys_lent` in the insights payload for News' "This week"
 - [x] Settings popup (GET/PUT /settings, /health, /brains/detail) and Replay on shipped News stories
-- [x] `keys_lent` in the insights payload for News' "This week"
-- [ ] `prs_merged` (watch PRs on GitHub) and `flaky_tests` (needs re-runs in the Lab)
 - [x] Archipelago home screen + island switcher (GET /islands, per-island events)
 - [x] Island creator: name, repo (via gh), branch, town plan, residents, house rules;
       every island gets its own git repository (`islands.py`)
 - [ ] Island looks (seasons), Caretaker
-- [ ] ACP runner honours island `branch` and house `rules`
-- [ ] "Celebrating" island status (needs recent shipped tasks: the events endpoint)
+- [x] ACP runner honours island `branch` (worktrees + PRs) and house `rules` (`shell`, `install_packages`)
+- [ ] "Celebrating" island status (the events endpoint exists now; game side to do)
 - [ ] Run several tasks at once (one per free resident)
-- [ ] Friendship meter between residents who hand off to each other
+- [x] Friendship meter between residents who hand off to each other (`Friendship` table,
+      `friendships` in the snapshot, `friendship` event; game side to do)
+- [x] Cancel a task (`cancel_task` / `POST .../cancel`), create one over the socket
+      (`create_task`), residents and islands can be deleted
 - [ ] Mii faces (with mood expressions), hats, hair, portraits ([docs/mii-customization.md](docs/mii-customization.md))
 - [ ] Dreams, parties, apartment interiors
 - [ ] Blueprints (save and share island layouts as workflow templates)

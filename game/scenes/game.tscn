@@ -466,7 +466,7 @@ stretch_mode = 5
 [node name="Text" type="Label" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/IslandNav/Content" unique_id=371957032]
 layout_mode = 2
 theme_type_variation = &"NavText"
-text = "Island"
+text = "Build"
 
 [node name="Residents" type="Button" parent="Margin/Columns/Left/NavRow/NavTray/Buttons" unique_id=852800135]
 unique_name_in_owner = true

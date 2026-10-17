@@ -7,43 +7,51 @@ VERDICT line. `--needs-login` makes session/new fail with "auth required".
 """
 
 import asyncio
+import os
 import sys
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from acp import Agent, InitializeResponse, NewSessionResponse, PromptResponse, RequestError, run_agent
 from acp.interfaces import Client
-from acp.schema import AgentMessageChunk, PermissionOption, TextContentBlock, ToolCallStart, ToolCallUpdate
+from acp.schema import AgentMessageChunk, PermissionOption, TextContentBlock, ToolCallStart, ToolCallUpdate, UsageUpdate
 
 
 class FakeAgent(Agent):
     _conn: Client
 
-    def __init__(self, needs_login: bool):
+    def __init__(self, needs_login: bool, hang: bool = False):
+        self.hang = hang
         self.needs_login = needs_login
 
     def on_connect(self, conn: Client) -> None:
         self._conn = conn
 
     async def initialize(self, protocol_version: int, **kwargs: Any) -> InitializeResponse:
+        Path("agent.pid").write_text(str(os.getpid()))  # in the cwd the runner gave us (the worktree)
         return InitializeResponse(protocol_version=protocol_version)
 
-    async def new_session(self, cwd: str, **kwargs: Any) -> NewSessionResponse:
+    async def new_session(self, cwd: str, mcp_servers=None, **kwargs: Any) -> NewSessionResponse:
         if self.needs_login:
             raise RequestError.auth_required()
         self.cwd = cwd
+        self.gifts = [s.name for s in mcp_servers or []]
         return NewSessionResponse(session_id=uuid4().hex)
 
     async def cancel(self, session_id: str, **kwargs: Any) -> None:
         pass
 
     async def prompt(self, session_id: str, prompt: list, **kwargs: Any) -> PromptResponse:
+        if self.hang:
+            await asyncio.sleep(120)  # a stuck agent: the runner's caller times out and must end us
         text = " ".join(getattr(block, "text", "") for block in prompt)
 
         async def say(line: str) -> None:
             await self._conn.session_update(session_id=session_id, update=AgentMessageChunk(session_update="agent_message_chunk", content=TextContentBlock(type="text", text=line)))
 
-        await say("Looking at the code. ")
+        await say(f"Looking at the code (gifts: {','.join(self.gifts) or 'none'}). ")
+        await self._conn.session_update(session_id=session_id, update=UsageUpdate(session_update="usage_update", used=250, size=1000))
         await self._conn.session_update(
             session_id=session_id, update=ToolCallStart(session_update="tool_call", tool_call_id="tc1", title="Reading hello.py", kind="read")
         )
@@ -66,6 +74,15 @@ class FakeAgent(Agent):
             ],
         )
         await say(f"permission outcome: {answer.outcome.outcome}. ")
+        edit = await self._conn.request_permission(
+            session_id=session_id,
+            tool_call=ToolCallUpdate(tool_call_id="tc3", title="Edit hello.py", kind="edit"),
+            options=[
+                PermissionOption(option_id="allow", name="Allow once", kind="allow_once"),
+                PermissionOption(option_id="reject", name="Reject", kind="reject_once"),
+            ],
+        )
+        await say(f"edit permission: {getattr(edit.outcome, 'option_id', edit.outcome.outcome)}. ")
 
         try:
             await self._conn.write_text_file(session_id=session_id, path=f"{self.cwd}/hello.txt", content="hi\n")
@@ -78,4 +95,4 @@ class FakeAgent(Agent):
 
 
 if __name__ == "__main__":
-    asyncio.run(run_agent(FakeAgent(needs_login="--needs-login" in sys.argv)))
+    asyncio.run(run_agent(FakeAgent(needs_login="--needs-login" in sys.argv, hang="--hang" in sys.argv)))

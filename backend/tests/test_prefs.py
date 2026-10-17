@@ -1,4 +1,6 @@
 import json
+import os
+from pathlib import Path
 
 import keyring
 import keyring.backend
@@ -67,7 +69,8 @@ def test_settings_default_then_saved_then_env(no_env, monkeypatch):
     prefs.set_many({"mock_agents": False, "test_command": "  pytest -q  ", "islands_root": "~/isles"})
     assert prefs.get("mock_agents") is False
     assert prefs.get("test_command") == "pytest -q"
-    assert prefs.get("islands_root").endswith("/isles") and "~" not in prefs.get("islands_root")
+    root = Path(prefs.get("islands_root"))
+    assert root.name == "isles" and "~" not in str(root)
     monkeypatch.setenv("MOCK_AGENTS", "1")  # the environment wins
     assert prefs.get("mock_agents") is True
     assert "mock_agents" in prefs.snapshot()["from_env"]
@@ -115,6 +118,7 @@ def test_file_fallback_when_there_is_no_keychain(monkeypatch, tmp_path):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     prefs.set_secret("openrouter_api_key", "sk-file")
     assert prefs.secret("openrouter_api_key") == "sk-file"
-    assert oct((tmp_path / ".secrets.json").stat().st_mode & 0o777) == "0o600"
+    if os.name != "nt":  # Windows has no Unix permission bits
+        assert oct((tmp_path / ".secrets.json").stat().st_mode & 0o777) == "0o600"
     prefs.set_secret("openrouter_api_key", None)
     assert prefs.secret("openrouter_api_key") is None

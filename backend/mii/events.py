@@ -11,7 +11,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from mii.models import Event, Task, resident_to_dict, task_to_dict
+from mii.models import Event, Friendship, Task, friendship_to_dict, resident_to_dict, task_to_dict
 
 log = logging.getLogger(__name__)
 
@@ -41,8 +41,9 @@ def bubble(
     return event
 
 
-def bubble_resolved(bubble_id: str, answer: str | None = None) -> dict:
-    return {"type": "bubble_resolved", "id": bubble_id, "answer": answer}
+def bubble_resolved(bubble_id: str, answered: bool = False, response: str | None = None) -> dict:
+    """`answered` is False when the bubble timed out. insights.py counts answers from these."""
+    return {"type": "bubble_resolved", "id": bubble_id, "answered": answered, "response": response}
 
 
 def handoff(from_agent: str, to_agent: str, task: str, outcome: str) -> dict:
@@ -63,6 +64,22 @@ def task(t: Task) -> dict:
 
 def resident(r) -> dict:
     return {"type": "resident", "resident": resident_to_dict(r)}
+
+
+def resident_removed(resident_id: str) -> dict:
+    return {"type": "resident_removed", "id": resident_id}
+
+
+def friendship(f: Friendship) -> dict:
+    return {"type": "friendship", **friendship_to_dict(f)}
+
+
+def notebook(agent: str, value: float) -> dict:
+    return {"type": "notebook", "agent": agent, "value": value}
+
+
+def layout(buildings: list[dict], roads: list[dict]) -> dict:
+    return {"type": "layout", "buildings": buildings, "roads": roads}
 
 
 def error(message: str) -> dict:
@@ -143,15 +160,15 @@ class Bubbles:
         future = asyncio.get_running_loop().create_future()
         self.open[bubble_id] = OpenBubble(bubble_id, island_id, agent, kind, text, options, future, task, detail)
         await self.bus.emit(island_id, bubble(agent, kind, bubble_id, text, options, task, detail))
-        answer = None
+        response: str | None = None
         try:
-            answer = await asyncio.wait_for(future, timeout)
-            return answer
+            response = await asyncio.wait_for(future, timeout)
+            return response
         except TimeoutError:
             return None
         finally:
             del self.open[bubble_id]
-            await self.bus.emit(island_id, bubble_resolved(bubble_id, answer))
+            await self.bus.emit(island_id, bubble_resolved(bubble_id, response is not None, response))
 
     def answer(self, bubble_id: str, response: str) -> bool:
         """Deliver an answer. Returns False if the bubble is unknown or already closed."""

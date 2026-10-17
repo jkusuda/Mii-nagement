@@ -62,7 +62,7 @@ func _show_connection() -> void:
 
 func _show_islands(islands: Array) -> void:
 	var entries := islands.map(func(i): return {
-		"id": str(i["id"]), "types": i.get("buildings", []).map(func(b): return str(b["type"]))})
+		"id": str(i["id"]), "layout": IslandLayout.from_snapshot(i)})
 	sea.show_islands(entries, true)
 
 	var ids := entries.map(func(e): return e["id"])

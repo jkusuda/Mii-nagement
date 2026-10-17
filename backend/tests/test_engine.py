@@ -1,8 +1,10 @@
 import asyncio
 import random
 
+import subprocess
+
 import pytest
-from conftest import RecordingAsk, ScriptedRunner, db_test, make_job, make_workflow
+from conftest import FakeClient, RecordingAsk, ScriptedRunner, db_test, make_job, make_workflow
 
 from mii import events
 from mii.agents import StepResult
@@ -43,7 +45,7 @@ async def test_task_bounces_back_on_fail_then_finishes(island):
 async def test_package_that_never_passes_gives_up(island):
     workflow, _ = make_workflow(ScriptedRunner(lab=["fail"] * 100))
     task = await workflow.run_task((await workflow.submit("sunny", "Impossible bug")).id)
-    assert task.status == "failed"
+    assert task.status == "failed" and task.finished_at is not None
 
 
 async def test_every_step_is_recorded_for_insights(island):
@@ -108,7 +110,7 @@ async def test_lab_runs_the_test_command_and_workshop_commits(island, sandbox, s
     workflow, client = make_workflow(WritingRunner(), sandboxes=sandboxes, test_command="test -f feature.py", keep_worktrees=True)
     task = await workflow.run_task((await workflow.submit("sunny", "Add feature")).id)
 
-    assert task.status == "done" and task.branch == "mii/" + task.id
+    assert task.status == "done" and task.branch == "mii/" + task.id and task.finished_at is not None
     workdir = sandbox.worktree_path(task.id)
     assert workdir.exists()  # keep_worktrees
     log = sandbox._git(workdir, "log", "--oneline")
@@ -142,6 +144,24 @@ async def test_real_mode_task_fails_when_the_island_has_no_repository(island, tm
         await workflow.run_task(task.id)
 
 
+async def test_tasks_branch_off_the_islands_branch(island, sandbox, sandboxes):
+    from mii.models import Island
+
+    git = ["git", "-C", str(sandbox.repo_path), "-c", "user.name=t", "-c", "user.email=t@t"]
+    first = subprocess.run([*git, "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True).stdout.strip()
+    subprocess.run([*git, "checkout", "-q", "-b", "develop"], check=True)
+    (sandbox.repo_path / "dev.txt").write_text("dev\n")
+    subprocess.run([*git, "add", "."], check=True)
+    subprocess.run([*git, "commit", "-q", "-m", "on develop"], check=True)
+    subprocess.run([*git, "checkout", "-q", first], check=True)  # HEAD is back on the first branch
+    await Island.objects.filter(pk="sunny").aupdate(branch="develop")
+
+    workflow, _ = make_workflow(WritingRunner(), sandboxes=sandboxes, test_command="test -f dev.txt")
+    task = await workflow.run_task((await workflow.submit("sunny", "From develop")).id)
+    assert task.status == "done"  # dev.txt exists only on develop
+    assert sandbox.resolve_branch("nope") == "HEAD" and sandbox.resolve_branch("develop") == "develop"
+
+
 def test_split_pr_text():
     assert split_pr_text("# Add feature\n\nAdds x.", "fallback") == ("Add feature", "Adds x.")
     assert split_pr_text("Title: Fix\nDescription: body", "fallback") == ("Fix", "body")
@@ -172,6 +192,8 @@ async def test_bubble_answer_reaches_the_waiting_resident(island):
     assert bubbles.answer(shown["id"], "Allow") is True
     assert await asking == "Allow"
     assert bubbles.answer(shown["id"], "again") is False  # already closed
+    [resolved] = [e for e in client.sent if e["type"] == "bubble_resolved"]
+    assert resolved["answered"] is True and resolved["response"] == "Allow"
 
 
 async def test_bubble_carries_its_task_and_detail(island):
@@ -196,9 +218,13 @@ async def test_mock_ready_bubble_can_send_work_back(island):
 
 
 async def test_bubble_times_out_with_none(island):
-    bubbles = events.Bubbles(events.EventBus())
+    bus = events.EventBus()
+    client = FakeClient()
+    bus.add_client(client)
+    bubbles = events.Bubbles(bus)
     assert await bubbles.ask("sunny", "jun", "tired", "Zzz?", timeout=0.01) is None
     assert bubbles.open == {}
+    assert client.of_type("bubble_resolved")[0]["answered"] is False
 
 
 async def test_permission_bubbles_can_wait_longer(island):

@@ -67,6 +67,28 @@ async def test_openrouter_runner_asks_before_running_commands(sandbox):
     assert ask.asked == [("permission", "May I run `echo hello`?", ["Allow", "Deny"])]
 
 
+async def test_openrouter_runner_honours_house_keys_for_commands(sandbox):
+    workdir = sandbox.create_worktree("t_test")
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return assistant(tool_calls=[("run_command", {"command": "echo hello"}), ("run_command", {"command": "npm install x"})])
+        body = json.loads(request.content)
+        outputs = [m["content"] for m in body["messages"] if m["role"] == "tool"]
+        assert "exit code 0\nhello" in outputs[0] and outputs[1].startswith("denied")
+        return assistant(content="VERDICT: PASS")
+
+    ask = RecordingAsk(answer="Deny")
+    job = make_job("openrouter", workdir=workdir, ask=ask, sandbox=sandbox)
+    job.resident.keys = {"read": "yes", "edit": "yes", "execute": "yes", "fetch": "no"}
+    job.rules = {"install_packages": True}
+    assert (await make_runner(handler).run(job)).outcome == "pass"
+    assert [text for _, text, _ in ask.asked] == ["May I run `npm install x`?"]  # only the install asked
+
+
 async def test_openrouter_runner_reports_billing_problems_as_tired(sandbox):
     workdir = sandbox.create_worktree("t_test")
 

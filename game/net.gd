@@ -34,8 +34,10 @@ signal event_received(event: Dictionary)
 ## Something in `island` changed (after any of the signals above).
 signal island_changed
 
-## Set MII_SERVER (e.g. "localhost:8001") to use another backend.
-var url := "ws://%s/ws" % (OS.get_environment("MII_SERVER") if OS.has_environment("MII_SERVER") else "localhost:8000")
+## Set MII_SERVER (e.g. "127.0.0.1:8001") to use another backend. The default is
+## 127.0.0.1, not "localhost": on Windows, localhost can resolve to the IPv6
+## address ::1 first, which the backend (uvicorn on 127.0.0.1) doesn't answer.
+var url := "ws://%s/ws" % (OS.get_environment("MII_SERVER") if OS.has_environment("MII_SERVER") else "127.0.0.1:8000")
 const RECONNECT_SECONDS := 2.0
 
 var is_online := false
@@ -213,6 +215,13 @@ func _handle_message(text: String) -> void:
 		"activity":
 			_patch_resident(event["agent"], {"activity": event["text"]})
 			activity_reported.emit(str(event["agent"]), str(event["text"]))
+		"notebook":
+			# How full the resident's context window is (0-1); resident_card shows it.
+			_patch_resident(event["agent"], {"notebook": event["value"]})
+		"layout":
+			# Build mode or the creator changed who works where: replace buildings + roads.
+			island["buildings"] = event["buildings"]
+			island["roads"] = event["roads"]
 		"task":
 			_remember_task(event)
 			task_updated.emit(event)

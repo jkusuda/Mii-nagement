@@ -59,11 +59,12 @@ row (`keys` and `gifts` are JSON columns), picks the id and home building, and
 broadcasts a `resident` event. Offline, the game adds the resident locally so
 the screens still work.
 
-New residents are **placeholders**: they're saved and shown, but the workflow
-still runs the residents assigned to buildings. Still to do:
-- `AcpRunner` honours `keys` (auto-answer permission requests) and `gifts` (`mcpServers`).
-- A way to give a building to a new resident (build mode, or the creator).
-- `appearance` (below), once customization starts.
+The backend half is done: `AcpRunner` honours `keys` (auto-answers permission
+requests) and `gifts` (handed to `session/new` as MCP servers from the `GIFTS`
+table; `GET /gifts` says which run on this machine), and `buildings` on
+`create_resident` / `update_resident` makes a resident the worker at those
+buildings (protocol.md). Still to do in the game: a "works at" picker and
+greying out unavailable gifts; and `appearance` (below), once customization starts.
 
 ## Customization, step by step
 
@@ -141,7 +142,7 @@ zoomed out.
 ## Suggested order
 
 1. ~~Protocol + backend for `create_resident`~~ (done).
-2. `keys` + `gifts` in `AcpRunner` (makes the creator matter).
+2. ~~`keys` + `gifts` in `AcpRunner`~~ (done; the creator's gift list should now follow `GET /gifts`).
 3. Faces with mood expressions.
 4. Portraits in the cards and sidebar.
 5. Hats, hair, body shape.

@@ -9,9 +9,9 @@ extends PanelContainer
 
 signal pressed
 
-## Where the pill sits relative to the building's center: just above the roof,
-## so residents standing in front of the building stay visible.
-const FRONT_OFFSET := Vector3(0, 3.4, 0)
+## Where the pill sits relative to the building's origin (the middle of its
+## lot, on the ground): just above the roof, so residents in front stay visible.
+const FRONT_OFFSET := Vector3(0, 5.2, 0)
 
 var target: Node3D
 var camera: Camera3D
@@ -49,8 +49,9 @@ func show_count(count: int, title := "") -> void:
 
 
 func _process(_delta: float) -> void:
-	if target == null or camera == null or not target.visible:
+	if target == null or camera == null:
 		return
+	# The island hides buildings it doesn't have (also while build mode previews).
 	var world_point := target.global_position + FRONT_OFFSET
-	visible = not camera.is_position_behind(world_point)
+	visible = target.is_visible_in_tree() and not camera.is_position_behind(world_point)
 	position = (camera.unproject_position(world_point) - size / 2.0).round()

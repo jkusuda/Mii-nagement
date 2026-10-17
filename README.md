@@ -152,6 +152,15 @@ the default folder; add `"folder": "/some/dir"` to put it elsewhere or
 `"existing_repo": "/path/to/repo"` to adopt one you already have.
 `GET /islands` lists islands and the default folder.
 
+Then send a task and watch it go round the island:
+
+```bash
+curl -X POST localhost:8000/islands/sunny/tasks -H 'content-type: application/json' \
+  -d '{"title": "Add hello.txt", "description": "Create hello.txt with one line: hello"}'
+curl localhost:8000/islands/sunny/tasks/t_d5d447      # steps (what each resident said) + events
+curl 'localhost:8000/islands/sunny/tasks?status=done'   # finished tasks, newest first
+```
+
 **ACP brains (your subscriptions, no API key needed):**
 
 - [Node.js](https://nodejs.org): the Claude Code and Codex adapters run through `npx`.

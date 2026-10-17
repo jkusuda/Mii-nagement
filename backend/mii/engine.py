@@ -17,7 +17,7 @@ from pathlib import Path
 
 from mii import events, github
 from mii.agents import AgentJob, StepResult
-from mii.models import Building, Island, Resident, Road, Step, Task, utcnow
+from mii.models import Building, Friendship, Island, Resident, Road, Step, Task, utcnow
 from mii.sandbox import Sandbox, SandboxError, Sandboxes
 
 log = logging.getLogger(__name__)
@@ -93,7 +93,10 @@ class Workshop(BuildingHandler):
     """The coder implements the plan in the task's worktree, then the engine commits it."""
 
     def instructions(self, task: Task) -> str:
-        return f"Implement: {task.title}\n\n{task.description}\n\nFollow the plan in the notes. If work was sent back, fix what was reported."
+        return (
+            f"Implement: {task.title}\n\n{task.description}\n\nFollow the plan in the notes. "
+            "If work was sent back, fix what was reported. Don't commit: your changes are committed for you when you're done."
+        )
 
     async def run(self, job: AgentJob, runner, engine: "WorkflowEngine") -> StepResult:
         result = await runner.run(job)
@@ -166,7 +169,7 @@ class PostOffice(BuildingHandler):
         await job.report("Opening the pull request")
         try:
             url = await asyncio.to_thread(
-                github.open_pull_request, island.repo, job.workdir, job.task.branch, title, body
+                github.open_pull_request, island.repo, job.workdir, job.task.branch, title, body, island.branch
             )
         except github.GitHubError as e:
             return StepResult("fail", f"Could not open the PR: {e}")
@@ -250,6 +253,9 @@ class WorkflowEngine:
         self.keep_worktrees = keep_worktrees
         self.git_author = git_author
         self.queue: asyncio.Queue[str] = asyncio.Queue()
+        self.current: asyncio.Task | None = None  # the task run in progress (run_forever)
+        self.current_id: str | None = None
+        self._cancel_requested: str | None = None  # task id that cancel() is stopping
 
     # --- Public API -----------------------------------------------------------
 
@@ -263,6 +269,25 @@ class WorkflowEngine:
         await self.queue.put(task.id)
         return task
 
+    async def cancel(self, task_id: str) -> Task:
+        """Cancel a queued task, or stop the one running (its resident drops the package).
+
+        Raises KeyError for an unknown task and ValueError for one that already finished.
+        A running task is stopped through asyncio cancellation, which also ends the
+        agent process (see agents/acp.py); run_task then marks it `cancelled`.
+        """
+        task = await self._get(Task, task_id)
+        if task.status == "queued":
+            task = await self._update(Task, task_id, status="cancelled", finished_at=utcnow())
+            await self._emit(task, events.task(task))  # run_forever skips it when it comes off the queue
+            return task
+        if task.status == "in_progress" and self.current and self.current_id == task_id and not self.current.done():
+            self._cancel_requested = task_id
+            self.current.cancel()
+            await asyncio.wait([self.current])
+            return await self._get(Task, task_id)
+        raise ValueError(f"task {task_id} is already {task.status}")
+
     async def run_forever(self) -> None:
         """Worker loop: take tasks off the queue and run them."""
         while True:
@@ -271,19 +296,28 @@ class WorkflowEngine:
             except TimeoutError:
                 await self._put_idle_residents_to_sleep()
                 continue
+            if not await Task.objects.filter(pk=task_id, status="queued").aexists():
+                continue  # cancelled while waiting, or its island was deleted
+            self.current_id = task_id
+            self.current = asyncio.create_task(self.run_task(task_id))
             try:
-                await self.run_task(task_id)
+                await self.current
+            except asyncio.CancelledError:
+                if self._cancel_requested != task_id:
+                    raise  # the server is shutting down
             except Exception:
                 log.exception("task %s crashed", task_id)
-                task = await self._update(Task, task_id, status="failed")
+                task = await self._update(Task, task_id, status="failed", finished_at=utcnow())
                 await self._emit(task, events.task(task))
+            finally:
+                self.current = self.current_id = self._cancel_requested = None
 
     async def recover(self) -> None:
         """After a restart: re-queue waiting tasks, fail half-done ones, wake everyone."""
         async for t in Task.objects.filter(status__in=["queued", "in_progress"]):
             if t.status == "in_progress":
-                t.status = "failed"
-                await t.asave(update_fields=["status"])
+                t.status, t.finished_at = "failed", utcnow()
+                await t.asave(update_fields=["status", "finished_at"])
             else:
                 self.queue.put_nowait(t.id)
         await Resident.objects.all().aupdate(state="idle")
@@ -299,12 +333,26 @@ class WorkflowEngine:
         sandbox = await self._sandbox_for(task)
         try:
             return await self._run_task(task, sandbox)
+        except asyncio.CancelledError:
+            if self._cancel_requested != task_id:
+                raise  # the server is shutting down, not a cancel request
+            return await self._drop_package(task_id)
         finally:
             if sandbox and not self.keep_worktrees:
                 try:
                     await asyncio.to_thread(sandbox.remove_worktree, task.id)
                 except SandboxError as e:
                     log.warning("could not remove worktree for %s: %s", task.id, e)
+
+    async def _drop_package(self, task_id: str) -> Task:
+        """cancel() stopped this task mid-step: the resident puts the package down."""
+        task = await self._update(Task, task_id, status="cancelled", finished_at=utcnow())
+        if task.agent_id:
+            resident = await self._get(Resident, task.agent_id)
+            await self._set_mood(resident, "confused")
+            await self._set_state(resident, "idle")
+        await self._emit(task, events.task(task))
+        return task
 
     async def _sandbox_for(self, task: Task) -> Sandbox | None:
         """The island's repository sandbox (real mode only). A missing repo fails the task loudly."""
@@ -314,8 +362,10 @@ class WorkflowEngine:
         return self.sandboxes.for_island(island)  # raises SandboxError -> run_forever marks the task failed
 
     async def _run_task(self, task: Task, sandbox: Sandbox | None) -> Task:
+        island = await Island.objects.aget(pk=task.island_id)
         graph = await IslandGraph.load(task.island_id)
-        workdir = await asyncio.to_thread(sandbox.create_worktree, task.id) if sandbox else None
+        # The task branch starts from the island's branch (`main` unless the creator chose another).
+        workdir = await asyncio.to_thread(sandbox.create_worktree, task.id, island.branch) if sandbox else None
         if workdir:
             task = await self._update(Task, task.id, branch=f"mii/{task.id}")
 
@@ -334,6 +384,7 @@ class WorkflowEngine:
                 await self._set_state(previous, "idle")
                 result_word = "success" if outcome == "pass" else "fail"
                 await self._emit(task, events.handoff(previous.id, resident.id, task.id, result_word))
+                await self._befriend(task.island_id, previous.id, resident.id)
 
             # 2. Walk over, then 3. work.
             resident = await self._walk(resident, building_id)
@@ -343,7 +394,9 @@ class WorkflowEngine:
             await self._emit(task, events.task(task))
 
             visits[building_id] = visits.get(building_id, 0) + 1
-            result, step = await self._run_step(task, building, resident, visits[building_id], history, workdir, sandbox)
+            result, step = await self._run_step(
+                task, building, resident, visits[building_id], history, workdir, sandbox, rules=island.rules
+            )
             history.append(f"{resident.name} at the {building.name}: {result.outcome.upper()}. {result.summary}")
             task = await self._get(Task, task.id)  # a handler may have set pr_url
 
@@ -353,7 +406,9 @@ class WorkflowEngine:
             building_id = graph.next_building(building_id, outcome)
 
         gave_up = building_id is not None  # hit MAX_STEPS
-        task = await self._update(Task, task.id, status="failed" if gave_up or outcome == "fail" else "done")
+        task = await self._update(
+            Task, task.id, status="failed" if gave_up or outcome == "fail" else "done", finished_at=utcnow()
+        )
         if previous:
             await self._set_mood(previous, "proud" if task.status == "done" else "frustrated")
             await self._set_state(previous, "idle")
@@ -362,7 +417,7 @@ class WorkflowEngine:
 
     # --- One step ------------------------------------------------------------------
 
-    async def _run_step(self, task, building, resident, attempt, history, workdir, sandbox=None) -> tuple[StepResult, Step]:
+    async def _run_step(self, task, building, resident, attempt, history, workdir, sandbox=None, rules=None) -> tuple[StepResult, Step]:
         """Run one building visit with a timeout, and record it as a Step row."""
         step = await Step.objects.acreate(
             island_id=task.island_id, task_id=task.id, building_id=building.id,
@@ -384,6 +439,7 @@ class WorkflowEngine:
             resident=resident, task=task, building=building, instructions=handler.instructions(task),
             ask=ask, report=partial(self._report, task, resident), attempt=attempt,
             history=list(history), workdir=workdir, sandbox=sandbox, read_only=handler.read_only,
+            rules=rules or {}, notebook=partial(self._set_notebook, resident),
         )
         timed_out = False
         try:
@@ -393,7 +449,7 @@ class WorkflowEngine:
             result = StepResult("fail", f"{resident.name} ran out of time.")
             await self._set_mood(resident, "tired")
 
-        step = await self._update(Step, step.id, outcome=result.outcome, timed_out=timed_out,
+        step = await self._update(Step, step.id, outcome=result.outcome, summary=result.summary, timed_out=timed_out,
                                   bubbles_raised=bubbles_raised, finished_at=utcnow())
         return result, step
 
@@ -402,8 +458,23 @@ class WorkflowEngine:
     async def _emit(self, task: Task, event: dict) -> None:
         await self.bus.emit(task.island_id, event)
 
+    async def _befriend(self, island_id: str, one: str, other: str) -> None:
+        """Every handoff brings the two residents a little closer (the friendship meter)."""
+        a, b = sorted((one, other))
+        friendship, _ = await Friendship.objects.aget_or_create(island_id=island_id, a=a, b=b)
+        friendship.handoffs += 1
+        friendship.updated_at = utcnow()
+        await friendship.asave(update_fields=["handoffs", "updated_at"])
+        await self.bus.emit(island_id, events.friendship(friendship))
+
     async def _report(self, task: Task, resident: Resident, text: str) -> None:
         await self._emit(task, events.activity(resident.id, text))
+
+    async def _set_notebook(self, resident: Resident, value: float) -> None:
+        """How full the resident's context window is (0-1), from the agent's usage updates."""
+        value = round(min(max(float(value), 0.0), 1.0), 3)
+        await Resident.objects.filter(pk=resident.id).aupdate(notebook=value)
+        await self.bus.emit(resident.island_id, events.notebook(resident.id, value))
 
     async def _walk(self, resident: Resident, to_building: str) -> Resident:
         if resident.building_id == to_building:
