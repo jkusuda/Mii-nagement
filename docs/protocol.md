@@ -211,6 +211,18 @@ bubbles or a status line under their name.
 {"type": "activity", "agent": "carlos", "text": "Reading auth.py"}
 ```
 
+### `thinking`
+The resident's train of thought while carrying a package, streamed from their
+agent in small batches (about once a second). Append `text` to what you have for
+that `task`; it is a piece of a longer stream, not a full message.
+```json
+{"type": "thinking", "agent": "carlos", "task": "t_12", "kind": "thought", "text": "The rate limiter should live in middleware, not the view. "}
+```
+`kind`: `thought` (the agent's own reasoning, when it shares it), `reply` (what
+it is writing back), or `tool` (a tool it is calling, one line). Stored like
+every event, so `GET /islands/{id}/tasks/{task_id}` returns them for a package
+already under way.
+
 ### `task`
 A task package's status changed. Lets the client show who is carrying a package.
 `pr_url` is set once the post office opens a pull request.

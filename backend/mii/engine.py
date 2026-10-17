@@ -520,6 +520,7 @@ class WorkflowEngine:
             ask=ask, report=partial(self._report, task, resident), attempt=attempt,
             history=list(history), workdir=workdir, sandbox=sandbox, read_only=handler.read_only,
             rules=rules or {}, notebook=partial(self._set_notebook, resident),
+            think=partial(self._think, task, resident),
         )
         timed_out = False
         try:
@@ -546,6 +547,9 @@ class WorkflowEngine:
         friendship.updated_at = utcnow()
         await friendship.asave(update_fields=["handoffs", "updated_at"])
         await self.bus.emit(island_id, events.friendship(friendship))
+
+    async def _think(self, task: Task, resident: Resident, kind: str, text: str) -> None:
+        await self._emit(task, events.thinking(resident.id, task.id, kind, text))
 
     async def _report(self, task: Task, resident: Resident, text: str) -> None:
         await self._emit(task, events.activity(resident.id, text))

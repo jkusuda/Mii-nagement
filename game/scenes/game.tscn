@@ -111,6 +111,7 @@ expand_mode = 1
 stretch_mode = 5
 
 [node name="Names" type="VBoxContainer" parent="Margin/Columns/Left/TopBar/IslandSelector/Row" unique_id=659621804]
+custom_minimum_size = Vector2(190, 0)
 layout_mode = 2
 size_flags_vertical = 4
 theme_override_constants/separation = 0
@@ -120,12 +121,14 @@ unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"IslandName"
 text = "Pebble Cove"
+text_overrun_behavior = 3
 
 [node name="Repo" type="Label" parent="Margin/Columns/Left/TopBar/IslandSelector/Row/Names" unique_id=1732636222]
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"LabelMuted"
 text = "your-org/pebble-api"
+text_overrun_behavior = 3
 
 [node name="Chevron" type="TextureRect" parent="Margin/Columns/Left/TopBar/IslandSelector/Row" unique_id=470373572]
 modulate = Color(0.161, 0.18, 0.314, 1)

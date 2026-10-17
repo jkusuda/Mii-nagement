@@ -274,6 +274,8 @@ func _show_island() -> void:
 	%IslandName.text = str(data.get("name", ""))
 	_show_time()
 	%Repo.text = str(data["repo"]) if data.get("repo") else "no repo linked"
+	# Long names get "…" (the top bar has a fixed width); the tooltip has them in full.
+	%IslandSelector.tooltip_text = "%s\n%s\nSwitch island" % [%IslandName.text, %Repo.text]
 	residents_screen.show_snapshot(data)
 	_show_resident_summary(data.get("residents", []))
 

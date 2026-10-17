@@ -15,14 +15,15 @@ from uuid import uuid4
 
 from acp import Agent, InitializeResponse, NewSessionResponse, PromptResponse, RequestError, run_agent
 from acp.interfaces import Client
-from acp.schema import AgentMessageChunk, PermissionOption, TextContentBlock, ToolCallStart, ToolCallUpdate, UsageUpdate
+from acp.schema import AgentMessageChunk, AgentThoughtChunk, PermissionOption, TextContentBlock, ToolCallStart, ToolCallUpdate, UsageUpdate
 
 
 class FakeAgent(Agent):
     _conn: Client
 
-    def __init__(self, needs_login: bool, hang: bool = False):
+    def __init__(self, needs_login: bool, hang: bool = False, login_at_prompt: bool = False):
         self.hang = hang
+        self.login_at_prompt = login_at_prompt
         self.needs_login = needs_login
 
     def on_connect(self, conn: Client) -> None:
@@ -43,6 +44,10 @@ class FakeAgent(Agent):
         pass
 
     async def prompt(self, session_id: str, prompt: list, **kwargs: Any) -> PromptResponse:
+        if self.login_at_prompt:
+            raise RequestError.auth_required()  # like Claude Code: the session opens, the prompt fails
+        if os.environ.get("ANTHROPIC_API_KEY") == "":
+            raise RequestError.internal_error({"details": "got a blank ANTHROPIC_API_KEY"})
         if self.hang:
             await asyncio.sleep(120)  # a stuck agent: the runner's caller times out and must end us
         text = " ".join(getattr(block, "text", "") for block in prompt)
@@ -58,6 +63,8 @@ class FakeAgent(Agent):
             await say(f"Thanks! Going with: {text.strip()[:80]}\nVERDICT: PASS")
             return PromptResponse(stop_reason="end_turn")
 
+        await self._conn.session_update(session_id=session_id, update=AgentThoughtChunk(
+            session_update="agent_thought_chunk", content=TextContentBlock(type="text", text="Hmm, hello.py first.")))
         await say(f"Looking at the code (gifts: {','.join(self.gifts) or 'none'}). ")
         await self._conn.session_update(session_id=session_id, update=UsageUpdate(session_update="usage_update", used=250, size=1000))
         await self._conn.session_update(
@@ -103,4 +110,5 @@ class FakeAgent(Agent):
 
 
 if __name__ == "__main__":
-    asyncio.run(run_agent(FakeAgent(needs_login="--needs-login" in sys.argv, hang="--hang" in sys.argv)))
+    asyncio.run(run_agent(FakeAgent(needs_login="--needs-login" in sys.argv, hang="--hang" in sys.argv,
+                                    login_at_prompt="--login-at-prompt" in sys.argv)))

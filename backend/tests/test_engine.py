@@ -275,6 +275,14 @@ async def test_bubble_answer_reaches_the_waiting_resident(island):
     assert resolved["answered"] is True and resolved["response"] == "Allow"
 
 
+async def test_mock_residents_stream_thinking_for_their_task(island):
+    workflow, client = make_workflow(MockRunner(work_seconds=(0, 0), bubble_chance=0.0, rng=random.Random(3)))
+    task = await workflow.run_task((await workflow.submit("sunny", "Think aloud")).id)
+    thoughts = client.of_type("thinking")
+    assert thoughts and all(e["task"] == task.id for e in thoughts)
+    assert {e["kind"] for e in thoughts} == {"thought", "tool", "reply"}
+
+
 async def test_bubble_carries_its_task_and_detail(island):
     bubbles = events.Bubbles(events.EventBus())
     asking = asyncio.create_task(

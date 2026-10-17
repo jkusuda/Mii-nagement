@@ -27,6 +27,7 @@ from typing import Any
 from acp import PROTOCOL_VERSION, Client, RequestError, connect_to_agent
 from acp.schema import (
     AgentMessageChunk,
+    AgentThoughtChunk,
     AllowedOutcome,
     ClientCapabilities,
     DeniedOutcome,
@@ -46,7 +47,7 @@ from acp.schema import (
 )
 
 from mii import prefs
-from mii.agents import VERDICT_PATTERN, AgentJob, StepResult, build_prompt, parse_verdict, permission_for
+from mii.agents import VERDICT_PATTERN, AgentJob, StepResult, ThinkingStream, build_prompt, parse_verdict, permission_for
 from mii.personality import build_system_prompt
 from mii.sandbox import SandboxError, is_inside
 
@@ -216,6 +217,7 @@ class MiiClient(Client):
         self.job = job
         self.workdir = workdir
         self.text: list[str] = []  # the agent's reply, chunk by chunk
+        self.thinking = ThinkingStream(job.think)  # thoughts + reply + tool calls, for the game
         self.pending: asyncio.Task | None = None  # a bubble we're waiting on
         self._last_report = 0.0
         self._last_text = ""
@@ -226,7 +228,13 @@ class MiiClient(Client):
         if isinstance(update, AgentMessageChunk):
             if isinstance(update.content, TextContentBlock):
                 self.text.append(update.content.text)
+                await self.thinking.add("reply", update.content.text)
+        elif isinstance(update, AgentThoughtChunk):
+            if isinstance(update.content, TextContentBlock):
+                await self.thinking.add("thought", update.content.text)
         elif isinstance(update, (ToolCallStart, ToolCallProgress)) and update.title:
+            if isinstance(update, ToolCallStart):
+                await self.thinking.add("tool", update.title)
             await self._report(update.title)
         elif isinstance(update, UsageUpdate) and update.size > 0 and self.job.notebook:
             await self.job.notebook(update.used / update.size)  # the resident's notebook fills up
@@ -387,6 +395,19 @@ def find_question(text: str) -> str | None:
     return questions[-1][:300] if questions else None
 
 
+def _is_key(name: str) -> bool:
+    return name.endswith(("_API_KEY", "_TOKEN", "_AUTH_TOKEN"))
+
+
+def pick_model(offered: list[str], wanted: str) -> str | None:
+    """The offered model the resident asked for: an exact match, else the one
+    whose id contains it ("haiku" -> "claude-haiku-4-5"), else None."""
+    if wanted in offered:
+        return wanted
+    close = [v for v in offered if wanted.strip().lower() in str(v).lower()]
+    return close[0] if len(close) == 1 else None
+
+
 class AcpRunner:
     """One brain's runner. A fresh agent process per step, so nothing leaks between steps."""
 
@@ -406,7 +427,9 @@ class AcpRunner:
         # The SDK passes only a minimal environment by default; the agent needs the user's
         # full one (PATH, HOME, keychain access). Vendor API keys saved in the app's keychain
         # are added; the OpenRouter key stays with us.
-        env = {k: v for k, v in os.environ.items() if k != "OPENROUTER_API_KEY"}
+        # An empty key (e.g. `ANTHROPIC_API_KEY=` in .env) is left out: some CLIs treat a
+        # set-but-blank key as "use this key" and stop using your subscription login.
+        env = {k: v for k, v in os.environ.items() if k != "OPENROUTER_API_KEY" and not (_is_key(k) and not v.strip())}
         env = prefs.secrets_env() | env | self.spec["env"]
         client = MiiClient(job, job.workdir)
         session_id: str | None = None
@@ -423,13 +446,7 @@ class AcpRunner:
                 servers, skipped = await asyncio.to_thread(gift_servers, list(job.resident.gifts or []))
                 for note in skipped:
                     await job.report(note)
-                try:
-                    session = await conn.new_session(cwd=str(job.workdir), mcp_servers=servers)
-                except RequestError as e:
-                    if e.code == AUTH_REQUIRED:
-                        await job.ask("tired", f"My {self.brain} brain isn't logged in: {self.spec['login_hint']}.")
-                        return StepResult("fail", f"{self.brain} needs a login ({self.spec['login_hint']}).")
-                    raise
+                session = await conn.new_session(cwd=str(job.workdir), mcp_servers=servers)
                 session_id = session.session_id
                 await self._configure(conn, session, job)
 
@@ -455,12 +472,21 @@ class AcpRunner:
                 except Exception:
                     pass
             raise
-        except (RequestError, OSError, ConnectionError) as e:
+        except RequestError as e:
+            if e.code != AUTH_REQUIRED:
+                log.warning("%s brain failed: %s", self.brain, e)
+                return StepResult("fail", f"The {self.brain} brain crashed: {e}")
+            # Not logged in. Claude Code only finds out at the first prompt, the others at session/new.
+            await job.ask("tired", f"My {self.brain} brain isn't logged in: {self.spec['login_hint']}.")
+            return StepResult("fail", f"{self.brain} needs a login ({self.spec['login_hint']}).")
+        except (OSError, ConnectionError) as e:
             log.warning("%s brain failed: %s", self.brain, e)
             return StepResult("fail", f"The {self.brain} brain crashed: {e}")
         finally:
             if client.pending is not None:
                 client.pending.cancel()
+            with suppress(Exception):
+                await client.thinking.flush()  # the last few words
 
     async def _configure(self, conn, session, job: AgentJob) -> None:
         """Switch on the agent's edit / read-only mode and the resident's model, when offered."""
@@ -476,8 +502,9 @@ class AcpRunner:
             if getattr(option, "category", None) != "model":
                 continue
             values = [o.value for o in getattr(option, "options", [])]
-            if model in values:
-                await conn.set_config_option(config_id=option.id, session_id=session.session_id, value=model)
+            chosen = pick_model(values, model)
+            if chosen:
+                await conn.set_config_option(config_id=option.id, session_id=session.session_id, value=chosen)
             else:
-                await job.report(f"Model {model} isn't offered by {self.brain}; using its default")
+                await job.report(f"Model {model} isn't offered by {self.brain} ({', '.join(values)}); using its default")
             return

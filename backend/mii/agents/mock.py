@@ -41,9 +41,23 @@ class MockRunner:
         self.bubble_chance = bubble_chance
         self.rng = rng or random.Random()
 
+    # Fake thoughts, so the game's "thinking" dropdown has something in mock mode too.
+    THOUGHTS = {
+        "mailbox": "Let me read the request carefully and split it into small steps. ",
+        "workshop": "I'll start with the smallest change that could work, then tidy up. ",
+        "lab": "Running the suite. If anything flakes I'll run it once more to be sure. ",
+        "courthouse": "Checking the diff: naming, edge cases, and whether the tests cover it. ",
+        "post_office": "Writing a short PR title and a description of what changed and why. ",
+    }
+
     async def run(self, job: AgentJob) -> StepResult:
         await job.report(self.ACTIVITY.get(job.building.type, "Working"))
+        if job.think:
+            await job.think("thought", self.THOUGHTS.get(job.building.type, "Thinking it over. "))
+            await job.think("tool", self.ACTIVITY.get(job.building.type, "Working"))
         await asyncio.sleep(self.rng.uniform(*self.work_seconds))
+        if job.think:
+            await job.think("reply", "(mock) All done here. ")
 
         note = ""
         if self.rng.random() < self.bubble_chance:

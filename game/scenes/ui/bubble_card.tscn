@@ -78,6 +78,8 @@ layout_mode = 2
 theme_type_variation = &"QuoteText"
 text = "“Two auth tests fail only on Tuesdays.”"
 autowrap_mode = 3
+text_overrun_behavior = 3
+max_lines_visible = 4
 
 [node name="FooterRow" type="HBoxContainer" parent="Rows"]
 layout_mode = 2

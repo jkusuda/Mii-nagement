@@ -58,6 +58,10 @@ def activity(agent: str, text: str) -> dict:
     return {"type": "activity", "agent": agent, "text": text}
 
 
+def thinking(agent: str, task: str, kind: str, text: str) -> dict:
+    return {"type": "thinking", "agent": agent, "task": task, "kind": kind, "text": text}
+
+
 def task(t: Task) -> dict:
     return {"type": "task", **task_to_dict(t)}
 

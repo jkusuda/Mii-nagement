@@ -10,6 +10,7 @@ engine never needs to know which brain it's talking to.
 """
 
 import re
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Awaitable, Callable, Protocol
@@ -31,6 +32,9 @@ AskFn = Callable[..., Awaitable[str | None]]
 ReportFn = Callable[[str], Awaitable[None]]
 # notebook(fraction) says how full the agent's context window is (0.0-1.0).
 NotebookFn = Callable[[float], Awaitable[None]]
+# think(kind, text) streams the resident's train of thought (`thinking` events):
+# kind is "thought", "reply" or "tool". Runners send it through a ThinkingStream.
+ThinkFn = Callable[[str, str], Awaitable[None]]
 
 
 @dataclass
@@ -50,6 +54,40 @@ class AgentJob:
     read_only: bool = False  # True at buildings where the resident must not change files
     rules: dict = field(default_factory=dict)  # the island's house rules (see permission_for)
     notebook: NotebookFn | None = None  # how full the agent's context window is (ACP usage updates)
+    think: ThinkFn | None = None  # the resident's train of thought, for the game's "thinking" dropdown
+
+
+class ThinkingStream:
+    """Batches an agent's streamed text into `thinking` events: one event per
+    second or so (or per ~600 characters), not one per token. A change of kind
+    ("thought" -> "reply") sends what's waiting first. Call flush() at the end."""
+
+    EVERY = 1.0  # seconds
+    MAX_CHARS = 600
+
+    def __init__(self, think: ThinkFn | None):
+        self.think = think
+        self.kind = ""
+        self.parts: list[str] = []
+        self.size = 0
+        self.last = time.monotonic()
+
+    async def add(self, kind: str, text: str) -> None:
+        if self.think is None or not text:
+            return
+        if kind != self.kind:
+            await self.flush()
+            self.kind = kind
+        self.parts.append(text)
+        self.size += len(text)
+        if kind == "tool" or self.size >= self.MAX_CHARS or time.monotonic() - self.last >= self.EVERY:
+            await self.flush()
+
+    async def flush(self) -> None:
+        if self.think is not None and self.parts:
+            text, self.parts, self.size = "".join(self.parts), [], 0
+            await self.think(self.kind, text)
+        self.last = time.monotonic()
 
 
 # House rules (Island.rules, True = ask me first) that tighten a resident's house keys.

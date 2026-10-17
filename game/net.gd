@@ -31,8 +31,16 @@ signal resident_updated(resident: Dictionary)
 ## A resident moved away (`resident_removed`).
 signal resident_removed(resident_id: String)
 signal activity_reported(agent: String, text: String)
+## More of a package's train of thought arrived (Net.thinking[task_id]).
+signal thinking_received(task_id: String)
 ## Every event from the server, as it arrived (the News tab turns them into stories).
 signal event_received(event: Dictionary)
+## Task id -> the residents' train of thought while carrying it: entries
+## {"agent", "kind" ("thought" | "reply" | "tool"), "text"}, oldest first. Live
+## `thinking` events add to it; building_panel.gd loads older ones on demand.
+var thinking := {}
+const THINKING_KEEP := 400  # entries per task
+
 ## Something in `island` changed (after any of the signals above).
 signal island_changed
 
@@ -135,7 +143,10 @@ func request_json(path: String, done: Callable, method := HTTPClient.METHOD_GET,
 	add_child(http)
 	http.request_completed.connect(func(result: int, code: int, _headers, raw: PackedByteArray):
 		http.queue_free()
-		var data = JSON.parse_string(raw.get_string_from_utf8())
+		# JSON.new().parse() reports bad input with an error code instead of printing
+		# an engine error (an old backend answers unknown paths with an HTML page).
+		var json := JSON.new()
+		var data = json.data if json.parse(raw.get_string_from_utf8()) == OK else null
 		if typeof(data) != TYPE_DICTIONARY:
 			data = {}
 		var ok := result == HTTPRequest.RESULT_SUCCESS and code == 200
@@ -253,6 +264,9 @@ func _handle_message(text: String) -> void:
 			pair.erase("type")
 			pair.erase("ts")
 			pairs.append(pair)
+		"thinking":
+			add_thinking(event)
+			return  # only the thinking dropdown cares; nothing in `island` changes
 		"notebook":
 			# How full the resident's context window is (0-1); resident_card shows it.
 			_patch_resident(event["agent"], {"notebook": event["value"]})
@@ -269,6 +283,21 @@ func _handle_message(text: String) -> void:
 		_:
 			return
 	island_changed.emit()
+
+
+## Add a `thinking` event (live, or from a task's stored events) to Net.thinking.
+## Text of the same resident and kind joins the previous entry.
+func add_thinking(event: Dictionary) -> void:
+	var task_id := str(event.get("task", ""))
+	var entries: Array = thinking.get_or_add(task_id, [])
+	var last: Dictionary = entries.back() if not entries.is_empty() else {}
+	if last and last["agent"] == event["agent"] and last["kind"] == event["kind"] and event["kind"] != "tool":
+		last["text"] += str(event["text"])
+	else:
+		entries.append({"agent": str(event["agent"]), "kind": str(event["kind"]), "text": str(event["text"])})
+	if entries.size() > THINKING_KEEP:
+		entries.pop_front()
+	thinking_received.emit(task_id)
 
 
 ## The resident with this id from `island`, or {} if there's none.
