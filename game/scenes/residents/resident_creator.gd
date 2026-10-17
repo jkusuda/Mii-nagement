@@ -104,7 +104,6 @@ func _ready() -> void:
 			_data["catchphrase"] = text
 			_refresh()
 	)
-	%ModelEdit.text_changed.connect(func(text: String): _data["model"] = text if text.strip_edges() else null)
 	# The page tabs get white Lucide icons, tinted dark like the text.
 	for pair in [[%AboutTab, ABOUT_ICON], [%LookTab, LOOK_ICON]]:
 		_set_tab_icon(pair[0], pair[1], INK, 18)
@@ -143,7 +142,6 @@ func open(resident: Dictionary = {}, island_name := "Pebble Cove", live := true)
 func _load_widgets() -> void:
 	%NameEdit.text = str(_data["name"])
 	%CatchphraseEdit.text = str(_data["catchphrase"])
-	%ModelEdit.text = str(_data["model"]) if _data["model"] else ""
 	_show_model_picker()
 	_job_buttons.get(_data["job"], _job_buttons["coder"]).button_pressed = true
 	%BrainPicker.select(maxi(_brain_ids.find(_data["brain"]), 0))
@@ -415,10 +413,12 @@ func _build_brains() -> void:
 	%BrainPicker.item_selected.connect(
 		func(index: int):
 			_data["brain"] = _brain_ids[index]
+			# A model id belongs to one brain: a new brain starts on its default.
+			_data["model"] = null
 			_show_model_picker()
 	)
 
-	# The brain's models, next to the model field (every brain but mock).
+	# The brain's models, next to the brain picker (every brain but mock).
 	_model_picker.theme_type_variation = &"OutlineButton"
 	_model_picker.add_theme_icon_override("arrow", ARROW)
 	_model_picker.custom_minimum_size = Vector2(0, 34)
@@ -428,16 +428,13 @@ func _build_brains() -> void:
 	_model_picker.fit_to_longest_item = false
 	_model_picker.clip_text = true
 	_model_picker.focus_mode = Control.FOCUS_NONE
-	_model_picker.tooltip_text = "Pick one of the models this brain offers (or type an id)"
+	_model_picker.tooltip_text = "Pick one of the models this brain offers"
 	_model_picker.visible = false
-	_model_picker.item_selected.connect(
-		func(index: int):
-			var models: Array = _models.get(_data["brain"], [])
-			if index > 0 and index <= models.size():
-				%ModelEdit.text = models[index - 1][0]
-				_data["model"] = models[index - 1][0]
-	)
-	%ModelEdit.add_sibling(_model_picker)
+	# Each item's metadata is its model id; "Default model" has none (null = the brain's default).
+	# The picker is only selectable once the list has loaded, so a loading or error
+	# line never touches the saved model.
+	_model_picker.item_selected.connect(func(index: int): _data["model"] = _model_picker.get_item_metadata(index))
+	%BrainPicker.add_sibling(_model_picker)
 
 
 ## Show the model picker for the picked brain (none for mock), loading that brain's
@@ -451,6 +448,7 @@ func _show_model_picker() -> void:
 		_fill_model_picker(brain)
 		return
 	_model_picker.clear()
+	_model_picker.disabled = true
 	_model_picker.add_item("Asking %s for its models…" % ResidentData.BRAINS.get(brain, brain))
 	if _models_asking.has(brain):
 		return
@@ -476,16 +474,26 @@ func _show_model_picker() -> void:
 
 func _fill_model_picker(brain: String) -> void:
 	var models: Array = _models[brain]
+	var saved = _data["model"]
 	_model_picker.clear()
-	_model_picker.tooltip_text = "Pick one of the models this brain offers (or type an id)"
-	_model_picker.add_item("Choose a model…" if models else "This brain offers no model choice")
+	_model_picker.disabled = false
+	_model_picker.tooltip_text = "Pick one of the models this brain offers"
+	_model_picker.add_item("Default model")
+	_model_picker.set_item_metadata(0, null)
 	var picked := 0
-	for i in models.size():
-		var id: String = models[i][0]
-		var name: String = models[i][1]
+	for model in models:
+		var id: String = model[0]
+		var name: String = model[1]
 		_model_picker.add_item(name if name == id else "%s  (%s)" % [name, id])
-		if id == %ModelEdit.text:
-			picked = i + 1
+		_model_picker.set_item_metadata(_model_picker.item_count - 1, id)
+		if id == saved:
+			picked = _model_picker.item_count - 1
+	# A saved model the list doesn't offer (typed in before, or dropped by the brain)
+	# stays selectable, so saving doesn't quietly change it.
+	if saved and picked == 0:
+		_model_picker.add_item(str(saved))
+		_model_picker.set_item_metadata(_model_picker.item_count - 1, str(saved))
+		picked = _model_picker.item_count - 1
 	_model_picker.select(picked)
 
 
