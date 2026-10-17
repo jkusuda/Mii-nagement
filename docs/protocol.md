@@ -63,7 +63,7 @@ The client should rebuild its view from scratch when it gets one.
       {"id": "b_3f2a", "agent": "carlos", "kind": "confused", "text": "Which test file?"}
     ],
     "tasks": [
-      {"id": "t_12", "title": "Fix login typo", "status": "in_progress", "building": "lab", "agent": "carlos", "pr_url": null}
+      {"id": "t_12", "title": "Fix login typo", "status": "in_progress", "building": "lab", "agent": "carlos", "pr_url": null, "issue": 42}
     ]
   }
 }
@@ -126,6 +126,15 @@ one back as the `response`. Agents' permission requests use it:
 {"type": "bubble", "agent": "carlos", "kind": "permission", "id": "b_9c1d", "text": "May I run `npm install`?", "options": ["Allow once", "Always allow", "Reject"]}
 ```
 
+`task` (optional): the id of the task package the resident is working on, so
+the client can show its title and pull request. `detail` (optional): extra
+context shown as-is, such as the exact command or file a permission bubble asks
+about:
+```json
+{"type": "bubble", "agent": "pip", "kind": "permission", "id": "b_7e10", "text": "May I borrow the toolbox key?", "options": ["Allow once", "Always allow", "Reject"], "task": "t_12", "detail": "npm install zod@3.23.8"}
+```
+Snapshot `bubbles[]` have the same fields (`task` and `detail` are `null` when unset).
+
 | kind         | meaning                                  | suggested emoji |
 |--------------|------------------------------------------|-----------------|
 | `confused`   | needs clarification                      | ❓              |
@@ -137,8 +146,10 @@ one back as the `response`. Agents' permission requests use it:
 ### `bubble_resolved`
 A bubble was answered (by any client) or timed out. Remove it.
 ```json
-{"type": "bubble_resolved", "id": "b_3f2a"}
+{"type": "bubble_resolved", "id": "b_3f2a", "answer": "Use tests/test_login.py"}
 ```
+`answer`: what was answered, or `null` if nobody answered in time. Insights use
+it (answer time, keys lent); clients can ignore it.
 
 ### `handoff`
 A task package passed from one resident to another.
@@ -176,8 +187,9 @@ bubbles or a status line under their name.
 A task package's status changed. Lets the client show who is carrying a package.
 `pr_url` is set once the post office opens a pull request.
 ```json
-{"type": "task", "id": "t_12", "title": "Fix login typo", "status": "in_progress", "building": "lab", "agent": "carlos", "pr_url": null}
+{"type": "task", "id": "t_12", "title": "Fix login typo", "status": "in_progress", "building": "lab", "agent": "carlos", "pr_url": null, "issue": 42}
 ```
+`issue` is the GitHub issue number the package came from, or `null`.
 
 ### `resident`
 A resident was created or edited (by any client). Add it, or replace the
@@ -203,6 +215,10 @@ sends `bubble_resolved` to every client.
 {"type": "answer_bubble", "id": "b_3f2a", "response": "Use tests/test_login.py"}
 ```
 If the bubble ID is unknown or already resolved, the server replies with `error`.
+
+For a bubble with `options`, `response` is one of them. A `ready` bubble's
+response may add a note for the resident after a colon, e.g.
+`"Send back: also test IPv6"`.
 
 ### `create_resident`
 Move a new resident onto the island (the resident creator's "Move in"). The

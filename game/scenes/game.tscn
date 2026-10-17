@@ -24,6 +24,8 @@
 [ext_resource type="PackedScene" path="res://scenes/home/home.tscn" id="26_home"]
 [ext_resource type="PackedScene" path="res://scenes/home/island_creator.tscn" id="27_island_creator"]
 [ext_resource type="Script" path="res://scenes/sea/sea_view.gd" id="40_sea"]
+[ext_resource type="Texture2D" path="res://assets/icons/mail.svg" id="41_mail"]
+[ext_resource type="Script" path="res://scenes/ui/answer_button.gd" id="42_answer"]
 
 [node name="Game" type="Control" unique_id=146576168]
 layout_mode = 3
@@ -198,6 +200,17 @@ text = "Day 12 · 10:42"
 layout_mode = 2
 size_flags_horizontal = 3
 mouse_filter = 2
+
+[node name="SendPackage" type="Button" parent="Margin/Columns/Left/TopBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(172, 40)
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "Open the Mailbox and send a new issue"
+theme_type_variation = &"AnswerButton"
+text = "Send a package"
+icon = ExtResource("41_mail")
+script = ExtResource("42_answer")
 
 [node name="IslandFrame" type="Control" parent="Margin/Columns/Left" unique_id=402004166]
 unique_name_in_owner = true

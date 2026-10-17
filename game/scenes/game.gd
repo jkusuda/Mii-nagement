@@ -16,7 +16,12 @@ extends Control
 ## The day pill and weather pill follow the Clock autoload (real time, the
 ## island's founding day); 3D lighting follows it too (scenes/day_night.gd).
 ##
-## TODO(mvp): Build mode, island creation.
+## Click a building (or its name pill) and the camera glides to it while a
+## BuildingPanel opens: the Mailbox lists open issues and sends new ones ("Send
+## a package" in the top bar opens it too), the other buildings show what's at
+## that stage. The Archipelago's Settings button opens SettingsPopup.
+##
+## TODO(mvp): Build mode.
 
 const BuildingLabelScene := preload("res://scenes/ui/building_label.tscn")
 
@@ -31,15 +36,10 @@ const WEATHER_LOOKS := {
 }
 const NIGHT_COLOR := Color("8E9BF0")
 
-## Building type (backend), default label, icon, color. The node in
-## island_3d.tscn is the type in PascalCase ("post_office" -> PostOffice).
-const BUILDINGS := [
-	["mailbox", "Mailbox", preload("res://assets/icons/mail.svg"), Color("F5708F")],
-	["workshop", "Workshop", preload("res://assets/icons/code.svg"), Color("E39537")],
-	["lab", "Lab", preload("res://assets/icons/flask-conical.svg"), Color("00B8A0")],
-	["post_office", "Post Office", preload("res://assets/icons/git-pull-request.svg"), Color("D9A321")],
-	["courthouse", "Courthouse", preload("res://assets/icons/scale.svg"), Color("7553DF")],
-]
+## Opening a building: zoom to at least this much, with the building this far
+## left of the middle (a fraction of the view's width) so it peeks out beside the panel.
+const FOCUS_ZOOM := 1.35
+const FOCUS_SHIFT := -0.36
 
 @onready var island: Node3D = %Island3D
 @onready var rig: CameraRig = %Island3D.get_node("CameraRig")
@@ -51,6 +51,9 @@ const BUILDINGS := [
 @onready var home: Home = %Home
 @onready var island_creator: IslandCreator = %IslandCreator
 var dropdown := IslandDropdown.new()
+var building_panel := BuildingPanel.new()
+var picker: BuildingPicker
+var settings_popup := SettingsPopup.new()
 
 ## Which screen is showing: "home" (the archipelago), "island_creator",
 ## "island", "residents", "creator", "insights", or "news".
@@ -68,11 +71,23 @@ var _labels := {}  # building type -> BuildingLabel
 
 
 func _ready() -> void:
-	for info in BUILDINGS:
+	for type in BuildingData.TYPES:
+		var info: Dictionary = BuildingData.TYPES[type]
 		var label: BuildingLabel = BuildingLabelScene.instantiate()
 		labels_root.add_child(label)
-		label.setup(island.get_node("Buildings/" + info[0].to_pascal_case()), rig.camera, info[1], info[2], info[3], 0)
-		_labels[info[0]] = label
+		label.setup(_building_node(type), rig.camera, info["name"], info["icon"], info["color"], 0)
+		label.pressed.connect(open_building.bind(type))
+		_labels[type] = label
+
+	# Clicking buildings on the island (see building_picker.gd and camera_rig.gd).
+	picker = BuildingPicker.new(island.get_node("Buildings"), rig.camera)
+	rig.clicked.connect(func(at: Vector2):
+		var type := BuildingData.type_of_node(picker.building_at(at))
+		if type:
+			open_building(type))
+	rig.hovered.connect(func(at: Vector2):
+		var container := rig.get_viewport().get_parent() as Control  # the SubViewportContainer
+		container.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND if picker.building_at(at) else Control.CURSOR_ARROW)
 
 	%ZoomIn.pressed.connect(func(): rig.zoom_by(CameraRig.ZOOM_STEP))
 	%ZoomOut.pressed.connect(func(): rig.zoom_by(-CameraRig.ZOOM_STEP))
@@ -90,14 +105,15 @@ func _ready() -> void:
 	insights.see_residents.connect(show_screen.bind("residents"))
 	%News.pressed.connect(func(): show_screen("island" if screen == "news" else "news"))
 	news.unread_changed.connect(_show_unread)
+	news.replay_started.connect(show_screen.bind("island"))
 	_show_unread(news.unread())
 	%BackButton.pressed.connect(_go_back)
 
 	# The archipelago and the island switcher.
 	home.visit.connect(_visit_island)
-	home.new_island_requested.connect(func():
-		island_creator.open()
-		show_screen("island_creator"))
+	home.new_island_requested.connect(_open_island_creator)
+	home.settings_requested.connect(settings_popup.open)
+	add_child(settings_popup)
 	island_creator.closed.connect(show_screen.bind("home"))
 	island_creator.resident_requested.connect(func(resident: Dictionary, index: int):
 		_drafting = true
@@ -109,6 +125,8 @@ func _ready() -> void:
 	add_child(dropdown)
 	dropdown.visit.connect(_visit_island)
 	dropdown.go_home.connect(show_screen.bind("home"))
+	dropdown.new_island.connect(_open_island_creator)
+	%SendPackage.pressed.connect(open_building.bind("mailbox", true))
 	%IslandSelector.gui_input.connect(func(event: InputEvent):
 		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 			dropdown.open_below(%IslandSelector))
@@ -126,6 +144,12 @@ func _ready() -> void:
 	_show_island()
 	show_screen("home")
 
+	# Added last, so it's drawn over everything else.
+	add_child(building_panel)
+	building_panel.closed.connect(rig.unfocus)
+	building_panel.answer_requested.connect(%Sidebar.open_reply)
+	Net.snapshot_received.connect(func(_island): building_panel.close())  # another island
+
 	Clock.ticked.connect(_show_time)
 	_show_time()
 	if OS.is_debug_build():
@@ -136,6 +160,8 @@ func _ready() -> void:
 ## Bubbles sidebar hides for the creator, which needs the whole width.
 func show_screen(which: String) -> void:
 	screen = which
+	if which != "island":
+		building_panel.close()
 	home.visible = which == "home"
 	island_creator.visible = which == "island_creator"
 	%Margin.visible = which not in ["home", "island_creator"]
@@ -213,7 +239,7 @@ func _show_island() -> void:
 		by_type[str(b["type"])] = b
 	for type in _labels:
 		var building: Dictionary = by_type.get(type, {})
-		island.get_node("Buildings/" + type.to_pascal_case()).visible = not building.is_empty()
+		_building_node(type).visible = not building.is_empty()
 		_labels[type].visible = not building.is_empty()
 		var here := 0
 		for r in data.get("residents", []):
@@ -234,6 +260,26 @@ func _go_back() -> void:
 		"creator": show_screen("island_creator" if _drafting else "residents")
 		"island": show_screen("home")
 		_: show_screen("island")
+
+
+## Open a building's panel ("mailbox", "lab", ...) and glide the camera to it.
+## `compose`: open the Mailbox on its "Send a new issue" form.
+func open_building(type: String, compose := false) -> void:
+	if Net.island.is_empty():
+		return
+	if screen != "island":
+		show_screen("island")
+	rig.focus_on(_building_node(type).global_position, maxf(rig.zoom, FOCUS_ZOOM), FOCUS_SHIFT)
+	building_panel.open(type, compose)
+
+
+func _building_node(type: String) -> Node3D:
+	return island.get_node("Buildings/" + BuildingData.node_name(type))
+
+
+func _open_island_creator() -> void:
+	island_creator.open()
+	show_screen("island_creator")
 
 
 ## A new island exists: go there, and move its residents in when it's ready.
@@ -277,6 +323,7 @@ func _open_creator(resident: Dictionary = {}) -> void:
 func _show_connection(online: bool) -> void:
 	%StatusLabel.text = "Connected" if online else "Reconnecting…"
 	%SyncedLabel.text = "synced just now" if online else "backend offline"
+	%SendPackage.disabled = not online
 	var dot: StyleBoxFlat = get_theme_stylebox("panel", "StatusDot").duplicate()
 	dot.bg_color = Color("39C16F") if online else Color("F2994A")
 	%StatusDot.add_theme_stylebox_override("panel", dot)

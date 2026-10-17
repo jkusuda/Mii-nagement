@@ -2,7 +2,7 @@ import asyncio
 import random
 
 import pytest
-from conftest import ScriptedRunner, db_test, make_workflow
+from conftest import RecordingAsk, ScriptedRunner, db_test, make_job, make_workflow
 
 from mii import events
 from mii.agents import StepResult
@@ -172,6 +172,27 @@ async def test_bubble_answer_reaches_the_waiting_resident(island):
     assert bubbles.answer(shown["id"], "Allow") is True
     assert await asking == "Allow"
     assert bubbles.answer(shown["id"], "again") is False  # already closed
+
+
+async def test_bubble_carries_its_task_and_detail(island):
+    bubbles = events.Bubbles(events.EventBus())
+    asking = asyncio.create_task(
+        bubbles.ask("sunny", "carlos", "permission", "Run npm?", 5, ["Allow", "Deny"], "t_1", "npm install zod")
+    )
+    while not bubbles.open:
+        await asyncio.sleep(0.01)
+    [shown] = bubbles.for_island("sunny")
+    assert shown["task"] == "t_1" and shown["detail"] == "npm install zod"
+    bubbles.answer(shown["id"], "Deny")
+    assert await asking == "Deny"
+
+
+async def test_mock_ready_bubble_can_send_work_back(island):
+    runner = MockRunner(work_seconds=(0, 0), bubble_chance=1.0, rng=random.Random(1))
+    job = make_job("mock", building_type="courthouse", ask=RecordingAsk("Send back: also test IPv6"))
+    result = await runner.run(job)
+    assert job.ask.asked[0][0] == "ready" and job.ask.asked[0][2] == ["Approve", "Send back"]
+    assert result.outcome == "fail" and "also test IPv6" in result.summary
 
 
 async def test_bubble_times_out_with_none(island):

@@ -27,15 +27,22 @@ def move(agent: str, from_building: str, to_building: str) -> dict:
     return {"type": "move", "agent": agent, "from": from_building, "to": to_building}
 
 
-def bubble(agent: str, kind: str, bubble_id: str, text: str, options: list[str] | None = None) -> dict:
+def bubble(
+    agent: str, kind: str, bubble_id: str, text: str, options: list[str] | None = None,
+    task: str | None = None, detail: str | None = None,
+) -> dict:
     event = {"type": "bubble", "agent": agent, "kind": kind, "id": bubble_id, "text": text}
     if options:
         event["options"] = options
+    if task:
+        event["task"] = task
+    if detail:
+        event["detail"] = detail
     return event
 
 
-def bubble_resolved(bubble_id: str) -> dict:
-    return {"type": "bubble_resolved", "id": bubble_id}
+def bubble_resolved(bubble_id: str, answer: str | None = None) -> dict:
+    return {"type": "bubble_resolved", "id": bubble_id, "answer": answer}
 
 
 def handoff(from_agent: str, to_agent: str, task: str, outcome: str) -> dict:
@@ -52,10 +59,6 @@ def activity(agent: str, text: str) -> dict:
 
 def task(t: Task) -> dict:
     return {"type": "task", **task_to_dict(t)}
-
-
-def resident(r) -> dict:
-    return {"type": "resident", "resident": resident_to_dict(r)}
 
 
 def resident(r) -> dict:
@@ -115,6 +118,8 @@ class OpenBubble:
     text: str
     options: list[str] | None
     answer: asyncio.Future
+    task: str | None = None  # the task package the resident is working on
+    detail: str | None = None  # e.g. the exact command a permission bubble asks about
 
 
 class Bubbles:
@@ -130,20 +135,23 @@ class Bubbles:
         self.open: dict[str, OpenBubble] = {}
 
     async def ask(
-        self, island_id: str, agent: str, kind: str, text: str, timeout: float, options: list[str] | None = None
+        self, island_id: str, agent: str, kind: str, text: str, timeout: float, options: list[str] | None = None,
+        task: str | None = None, detail: str | None = None,
     ) -> str | None:
         """Show a bubble. Returns your answer, or None if nobody answered in time."""
         bubble_id = "b_" + uuid.uuid4().hex[:6]
         future = asyncio.get_running_loop().create_future()
-        self.open[bubble_id] = OpenBubble(bubble_id, island_id, agent, kind, text, options, future)
-        await self.bus.emit(island_id, bubble(agent, kind, bubble_id, text, options))
+        self.open[bubble_id] = OpenBubble(bubble_id, island_id, agent, kind, text, options, future, task, detail)
+        await self.bus.emit(island_id, bubble(agent, kind, bubble_id, text, options, task, detail))
+        answer = None
         try:
-            return await asyncio.wait_for(future, timeout)
+            answer = await asyncio.wait_for(future, timeout)
+            return answer
         except TimeoutError:
             return None
         finally:
             del self.open[bubble_id]
-            await self.bus.emit(island_id, bubble_resolved(bubble_id))
+            await self.bus.emit(island_id, bubble_resolved(bubble_id, answer))
 
     def answer(self, bubble_id: str, response: str) -> bool:
         """Deliver an answer. Returns False if the bubble is unknown or already closed."""
@@ -156,7 +164,8 @@ class Bubbles:
     def for_island(self, island_id: str) -> list[dict]:
         """Open bubbles, in the shape the snapshot uses."""
         return [
-            {"id": b.id, "agent": b.agent, "kind": b.kind, "text": b.text, "options": b.options}
+            {"id": b.id, "agent": b.agent, "kind": b.kind, "text": b.text, "options": b.options,
+             "task": b.task, "detail": b.detail}
             for b in self.open.values()
             if b.island_id == island_id
         ]

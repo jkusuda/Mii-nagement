@@ -34,8 +34,8 @@ Backend design: [docs/architecture.md](docs/architecture.md).
 - [x] **Insights** (`insights.py`): per resident, per brain, per building stats.
 - [x] **Insights screen** (Godot): stat cards, packages per day, where packages
       wait, comfort report. Shows dashes until the backend sends the fields.
-- [ ] **Insights backend, rest of the payload** ([docs/architecture.md](docs/architecture.md)
-      "Insights payload"): per-day counts, answer time, test pass rate, previous-range numbers, tip.
+- [x] **Insights backend, rest of the payload** ([docs/architecture.md](docs/architecture.md)
+      "Insights payload"): ranges, per-day counts, answer time, test pass rate, previous-range numbers, tip.
 - [x] **Replay** (`replay.py`): re-play a recorded good run if anything fails on stage.
 - [x] **Game: live island**: residents on the 3D island walking the roads, states
       (working / idle / sleeping), bubble icons, station counts, the Bubbles
@@ -49,19 +49,23 @@ Backend design: [docs/architecture.md](docs/architecture.md).
 - [x] **ACP honours house keys**: `yes` / `ask` / `no` per tool kind in `AcpRunner`.
 - [ ] **Gifts as MCP servers** (a `GIFTS` table next to `BRAINS`), and giving new
       residents a building ([docs/mii-customization.md](docs/mii-customization.md)).
-- [ ] **Game: `openrouter` brain** in the creator's brain list (backend supports it).
+- [x] **Game: `openrouter` brain** in the creator's brain list, with a model picker (GET /models).
+- [x] **Game: send a package** (POST /islands/{id}/tasks): title + details, or a GitHub issue number.
+- [x] **Game: click a building**: the camera glides to it and a panel opens (Mailbox: open issues +
+      send a new one; other buildings: packages at that stage, residents there and their activity).
 - [ ] **Build mode**: place the 5 building types and draw pass/fail roads.
 
 ## 🌈 Stretch
 
 - [x] Island News tab (Godot): stories from live events, headline, unread badge, daily digest
-- [ ] `GET /islands/{id}/events` so News shows history from before the game started
-      ([docs/architecture.md](docs/architecture.md), "Events history"); `prs_merged`
-      and `keys_lent` in the insights payload for News' "This week"
+- [x] `GET /islands/{id}/events` so News shows history from before the game started
+- [x] Settings popup (GET/PUT /settings, /health, /brains/detail) and Replay on shipped News stories
+- [x] `keys_lent` in the insights payload for News' "This week"
+- [ ] `prs_merged` (watch PRs on GitHub) and `flaky_tests` (needs re-runs in the Lab)
 - [x] Archipelago home screen + island switcher (GET /islands, per-island events)
 - [x] Island creator: name, repo (via gh), branch, town plan, residents, house rules;
       every island gets its own git repository (`islands.py`)
-- [ ] Island looks (seasons), Caretaker, Settings
+- [ ] Island looks (seasons), Caretaker
 - [ ] ACP runner honours island `branch` and house `rules`
 - [ ] "Celebrating" island status (needs recent shipped tasks: the events endpoint)
 - [ ] Run several tasks at once (one per free resident)

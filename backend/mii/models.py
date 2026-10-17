@@ -176,6 +176,7 @@ def task_to_dict(t: Task) -> dict:
         "building": t.building_id,
         "agent": t.agent_id,
         "pr_url": t.pr_url,
+        "issue": t.issue_number,
     }
 
 

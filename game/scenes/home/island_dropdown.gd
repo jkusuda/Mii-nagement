@@ -9,6 +9,7 @@ extends PopupPanel
 
 signal visit(island_id: String)
 signal go_home
+signal new_island
 
 const CHECK := preload("res://assets/icons/check.svg")
 const MAP := preload("res://assets/icons/map.svg")
@@ -42,14 +43,15 @@ func _init() -> void:
 
 	var buttons := HBoxContainer.new()
 	buttons.add_theme_constant_override("separation", 8)
-	var new_island := _button("New island", PLUS, &"SelectorButton")
-	new_island.disabled = true
-	new_island.tooltip_text = "Island creation is coming next"
+	var found := _button("New island", PLUS, &"SelectorButton")
+	found.pressed.connect(func():
+		hide()
+		new_island.emit())
 	var home := _button("Archipelago", MAP, &"OutlineButton")
 	home.pressed.connect(func():
 		hide()
 		go_home.emit())
-	buttons.add_child(new_island)
+	buttons.add_child(found)
 	buttons.add_child(home)
 	box.add_child(buttons)
 

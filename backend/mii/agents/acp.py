@@ -97,14 +97,18 @@ KEY_FOR_KIND = {
 REPORT_EVERY = 1.0  # seconds between `activity` events, so the game isn't flooded
 
 
-def available_brains(openrouter_api_key: str | None = None) -> dict[str, dict]:
-    """Which brains can run on this machine. Best effort: `logged_in` is None when we can't tell."""
+def available_brains(openrouter_api_key: str | None = None, saved_keys: dict[str, str] | None = None) -> dict[str, dict]:
+    """Which brains can run on this machine. Best effort: `logged_in` is None when we can't tell.
+
+    `saved_keys`: API keys saved in Settings, by environment variable (prefs.secrets_env()).
+    """
+    saved_keys = saved_keys or {}
     result: dict[str, dict] = {"mock": {"ok": True, "hint": "free fake work"}}
     for brain, spec in BRAINS.items():
         installed = shutil.which(spec["needs"]) is not None
         marker = spec["login_marker"]
         logged_in = Path(marker).expanduser().exists() if marker else None
-        api_key = bool(os.getenv(spec["api_key_env"]))
+        api_key = bool(os.getenv(spec["api_key_env"]) or saved_keys.get(spec["api_key_env"]))
         result[brain] = {
             "ok": installed and (logged_in is not False or api_key),
             "installed": installed,
@@ -114,7 +118,7 @@ def available_brains(openrouter_api_key: str | None = None) -> dict[str, dict]:
         }
     result["openrouter"] = {
         "ok": bool(openrouter_api_key),
-        "hint": "any OpenRouter model, no CLI needed" if openrouter_api_key else "set OPENROUTER_API_KEY in .env",
+        "hint": "any OpenRouter model, no CLI needed" if openrouter_api_key else "save an OpenRouter API key in Settings",
     }
     return result
 
@@ -171,7 +175,7 @@ class MiiClient(Client):
             label = o.name if o.name not in labels else f"{o.name} [{o.option_id}]"
             labels[label] = o.option_id
         text = tool_call.title or "May I do this?"
-        self.pending = asyncio.create_task(self.job.ask("permission", text, list(labels)))
+        self.pending = asyncio.create_task(self.job.ask("permission", text, list(labels), _detail(tool_call)))
         try:
             answer = await self.pending
         finally:
@@ -219,6 +223,18 @@ class MiiClient(Client):
 
     async def ext_notification(self, method: str, params: dict) -> None:
         pass
+
+
+def _detail(tool_call: ToolCallUpdate) -> str | None:
+    """What exactly the agent wants to do (the command or file), for the permission popup."""
+    raw = tool_call.raw_input if isinstance(tool_call.raw_input, dict) else {}
+    for field in ("command", "file_path", "path", "url"):
+        value = raw.get(field)
+        if isinstance(value, list):
+            value = " ".join(str(v) for v in value)
+        if value:
+            return str(value)[:500]
+    return None
 
 
 def _allow(option_id: str) -> RequestPermissionResponse:

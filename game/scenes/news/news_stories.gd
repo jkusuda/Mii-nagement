@@ -9,7 +9,7 @@ extends RefCounted
 ## A story is a Dictionary:
 ##   {"when": unix seconds, "agent": resident id or "", "text": "...",
 ##    "tag": "Confused", "color": Color, "section": "shipped" | "packages" | "residents",
-##    "pr_url": "..." (only for shipped tasks), "key": "..." (to skip duplicates)}
+##    "pr_url": "..." and "task": task id (only for shipped tasks), "key": "..." (to skip duplicates)}
 
 const SECTION_COLORS := {
 	"shipped": Color("2E8B57"), "packages": Color("3E7FCB"), "residents": Color("7553DF"),
@@ -61,6 +61,7 @@ func _story_for(e: Dictionary) -> Dictionary:
 					var story := _make(str(e.get("agent", "")), "“%s” is done!" % title,
 						"PR" if e.get("pr_url") else "Done", SECTION_COLORS["shipped"], "shipped")
 					story["title"] = title
+					story["task"] = id
 					if e.get("pr_url"):
 						story["pr_url"] = str(e["pr_url"])
 					return story

@@ -58,7 +58,8 @@ class FakeAgent(Agent):
 
         answer = await self._conn.request_permission(
             session_id=session_id,
-            tool_call=ToolCallUpdate(tool_call_id="tc2", title="Run `npm test`", kind="execute"),
+            tool_call=ToolCallUpdate(tool_call_id="tc2", title="Run `npm test`", kind="execute",
+                                     raw_input={"command": "npm test"}),
             options=[
                 PermissionOption(option_id="allow", name="Allow once", kind="allow_once"),
                 PermissionOption(option_id="reject", name="Reject", kind="reject_once"),

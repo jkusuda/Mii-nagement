@@ -257,11 +257,11 @@ text = "Caretaker"
 icon = ExtResource("5_user")
 
 [node name="Settings" type="Button" parent="Margin/Columns/Left/NavRow/NavTray/Buttons"]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(180, 50)
 layout_mode = 2
-tooltip_text = "Coming soon"
+tooltip_text = "Agents, API keys, test command"
 theme_type_variation = &"NavButton"
-disabled = true
 text = "Settings"
 icon = ExtResource("6_settings")
 

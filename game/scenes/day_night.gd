@@ -70,7 +70,8 @@ const SWING := deg_to_rad(70.0)
 
 @onready var sun: DirectionalLight3D = $"../Sun"
 @onready var env: Environment = $"../WorldEnvironment".environment
-@onready var water: MeshInstance3D = $"../Water"
+## Null in island thumbnails (islands.gd), which drop the water.
+@onready var water: MeshInstance3D = get_node_or_null("../Water")
 
 var _noon_elevation := 0.0
 var _noon_azimuth := 0.0
@@ -113,7 +114,7 @@ func _process(_delta: float) -> void:
 	env.background_color = look["background"]
 	# The home screen's sea swaps in its own copy of the water material
 	# (material_override), so color whichever one is showing.
-	var material := water.get_active_material(0) as ShaderMaterial
+	var material := water.get_active_material(0) as ShaderMaterial if water else null
 	if material:
 		material.set_shader_parameter("deep_color", look["deep"])
 		material.set_shader_parameter("shallow_color", look["shallow"])

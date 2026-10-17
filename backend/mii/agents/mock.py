@@ -24,10 +24,17 @@ class MockRunner:
     BUBBLE_LINES = {
         "confused": ["Should this handle empty input too?", "Which file is this about?"],
         "struggling": ["This test keeps failing and I'm not sure why...", "I've tried three fixes. Hint?"],
-        "permission": ["May I run `npm install`?", "Okay to delete the old helper file?"],
+        "permission": ["May I borrow the toolbox key? I'd like to install a package.", "Okay to delete the old helper file?"],
         "tired": ["I've used a lot of my budget on this one. Keep going?"],
-        "ready": ["The PR description is ready. Want to take a look?"],
+        "ready": ["All clear! I checked it and it looks good to me. Want a look?"],
     }
+    # What each permission line asks for, shown in the popup's dark box.
+    PERMISSION_DETAILS = {
+        "May I borrow the toolbox key? I'd like to install a package.": "npm install zod@3.23.8",
+        "Okay to delete the old helper file?": "rm src/old_helpers.js",
+    }
+    # Options per bubble kind. A "ready" answer may carry a note: "Send back: also test IPv6".
+    OPTIONS = {"permission": ["Allow once", "Always allow", "Reject"], "ready": ["Approve", "Send back"]}
 
     def __init__(self, work_seconds=(1.5, 4.0), bubble_chance=0.25, rng: random.Random | None = None):
         self.work_seconds = work_seconds
@@ -40,13 +47,15 @@ class MockRunner:
 
         note = ""
         if self.rng.random() < self.bubble_chance:
-            if job.building.type == "post_office":
+            if job.building.type in ("courthouse", "post_office"):
                 kind = "ready"
             else:
                 kind = self.rng.choice(["confused", "struggling", "permission", "tired"])
-            options = ["Allow", "Deny"] if kind == "permission" else None
-            answer = await job.ask(kind, self.rng.choice(self.BUBBLE_LINES[kind]), options)
+            text = self.rng.choice(self.BUBBLE_LINES[kind])
+            answer = await job.ask(kind, text, self.OPTIONS.get(kind), self.PERMISSION_DETAILS.get(text))
             note = f" You said: {answer!r}." if answer else " Nobody answered, so I guessed."
+            if kind == "ready" and answer and answer.startswith("Send back"):
+                return StepResult("fail", f"(mock) Sent back from the {job.building.name}.{note}")
 
         fail_chance = self.FAIL_CHANCE.get(job.building.type, 0.0) / job.attempt
         if self.rng.random() < fail_chance:

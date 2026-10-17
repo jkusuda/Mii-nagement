@@ -6,10 +6,11 @@ extends Control
 ## island, grouped by island. Click an island, its plate, or "Visit" to go there.
 ##
 ## Everything comes from the Islands autoload (GET /islands + each island's
-## snapshot). Caretaker / Settings aren't built yet.
+## snapshot). Settings opens SettingsPopup (game.gd); Caretaker isn't built yet.
 
 signal visit(island_id: String)
 signal new_island_requested
+signal settings_requested
 
 const AnswerButtonScript := preload("res://scenes/ui/answer_button.gd")
 
@@ -28,6 +29,7 @@ func _ready() -> void:
 	sea.island_clicked.connect(visit.emit)
 	%NewIsland.pressed.connect(new_island_requested.emit)
 	%NewIslandNav.pressed.connect(new_island_requested.emit)
+	%Settings.pressed.connect(settings_requested.emit)
 	Islands.changed.connect(func(): if is_visible_in_tree(): _show())
 	Clock.ticked.connect(_show_time)
 	_show_time()

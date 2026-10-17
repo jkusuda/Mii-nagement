@@ -15,12 +15,14 @@ const JOBS := ["planner", "coder", "reviewer"]
 ## Where each job starts working (building id -> label), for the creator footer.
 const JOB_HOMES := {"planner": "Mailbox", "coder": "Workshop", "reviewer": "Courthouse"}
 
-## Brain id -> label. Must match BRAINS in backend/mii/agents/acp.py, plus `mock`.
+## Brain id -> label. Must match BRAINS in backend/mii/agents/acp.py, plus
+## `mock` and `openrouter` (backend/mii/agents/openrouter.py).
 const BRAINS := {
 	"mock": "Mock · free",
 	"claude-code": "Claude Code",
 	"codex": "Codex",
 	"gemini": "Gemini CLI",
+	"openrouter": "OpenRouter",
 }
 
 ## The four personality sliders (backend/mii/personality.py TRAITS):

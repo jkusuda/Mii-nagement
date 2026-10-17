@@ -59,7 +59,7 @@ class OpenRouterRunner:
 
     async def run(self, job: AgentJob) -> StepResult:
         if not self.api_key:
-            return StepResult("fail", "The openrouter brain needs OPENROUTER_API_KEY in .env.")
+            return StepResult("fail", "The openrouter brain needs an OpenRouter API key (Settings, or OPENROUTER_API_KEY).")
         if job.sandbox is None or job.workdir is None:
             return StepResult("fail", "The openrouter brain needs a worktree (MOCK_AGENTS=0 and an island repository).")
         try:
@@ -135,7 +135,7 @@ class OpenRouterRunner:
                 return f"wrote {path.relative_to(workdir)}"
             if name == "run_command":
                 command = args.get("command", "")
-                answer = await job.ask("permission", f"May I run `{command}`?", ["Allow", "Deny"])
+                answer = await job.ask("permission", f"May I run `{command}`?", ["Allow", "Deny"], command)
                 if answer != "Allow":
                     return "denied: the user did not allow this command"
                 return await _run(command, workdir)

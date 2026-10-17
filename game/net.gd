@@ -120,6 +120,31 @@ func http_url(path: String) -> String:
 	return url.replace("ws://", "http://").trim_suffix("/ws") + path
 
 
+## One HTTP call to the backend: `done` is called later with (ok, data), where
+## `data` is the JSON reply (a Dictionary). When it fails, data["error"] says why
+## (the backend's own message when it sent one). `body` is sent as JSON.
+##
+## Godot concept: HTTPRequest is a node; request() returns right away and the
+## `request_completed` signal fires later. This makes a throwaway one per call.
+func request_json(path: String, done: Callable, method := HTTPClient.METHOD_GET, body = null) -> void:
+	var http := HTTPRequest.new()
+	add_child(http)
+	http.request_completed.connect(func(result: int, code: int, _headers, raw: PackedByteArray):
+		http.queue_free()
+		var data = JSON.parse_string(raw.get_string_from_utf8())
+		if typeof(data) != TYPE_DICTIONARY:
+			data = {}
+		var ok := result == HTTPRequest.RESULT_SUCCESS and code == 200
+		if not ok and not data.has("error"):
+			data["error"] = "the backend is offline" if result != HTTPRequest.RESULT_SUCCESS else "HTTP %d" % code
+		done.call(ok, data))
+	var headers := PackedStringArray(["Content-Type: application/json"] if body != null else [])
+	var error := http.request(http_url(path), headers, method, JSON.stringify(body) if body != null else "")
+	if error != OK:
+		http.queue_free()
+		done.call(false, {"error": "could not start the request (error %d)" % error})
+
+
 ## Answer a resident's bubble. The server replies with `bubble_resolved`.
 func send_answer(bubble_id: String, text: String) -> void:
 	if not is_online:
@@ -168,6 +193,7 @@ func _handle_message(text: String) -> void:
 			var bubble := {
 				"id": str(event["id"]), "agent": str(event["agent"]), "kind": str(event["kind"]),
 				"text": str(event["text"]), "options": event.get("options"),
+				"task": event.get("task"), "detail": event.get("detail"),
 				"since": Time.get_unix_time_from_system(),
 			}
 			_bubbles().append(bubble)

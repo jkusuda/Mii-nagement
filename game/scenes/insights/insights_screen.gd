@@ -58,9 +58,8 @@ func refresh() -> void:
 	if _loading or Net.island.is_empty():
 		return
 	_loading = true
-	var base := Net.url.replace("ws://", "http://").trim_suffix("/ws")
-	var url := "%s/islands/%s/insights?range=%s" % [base, Net.island["id"], _range]
-	if _http.request(url) != OK:
+	var path := "/islands/%s/insights?range=%s" % [str(Net.island["id"]).uri_encode(), _range]
+	if _http.request(Net.http_url(path)) != OK:
 		_loading = false
 
 
@@ -111,7 +110,10 @@ func _show_stats() -> void:
 	var flaky = island.get("flaky_tests")
 	var tests_note := "Not tracked yet"
 	if rate != null:
-		tests_note = "%d flaky in the Lab" % flaky if flaky else "No flaky tests"
+		if flaky == null:
+			tests_note = "Lab test runs that pass"
+		else:
+			tests_note = "%d flaky in the Lab" % flaky if flaky else "No flaky tests"
 	_set_stat("tests", "%d%%" % roundi(rate * 100.0) if rate != null else "—", tests_note)
 
 

@@ -9,9 +9,11 @@ extends PanelContainer
 ## re-applies them so the editor preview updates as you type.
 ##
 ## In the game, bubbles_sidebar.gd makes one card per open bubble and calls
-## setup(). Answer opens the reply box: one button per option when the bubble
-## has `options`, otherwise a text field. The reply goes to Net.send_answer();
-## the card disappears when the server sends `bubble_resolved`.
+## setup(). Answer emits `answer_requested`; the sidebar opens the AnswerPopup
+## (answer_popup.gd), which sends the reply. The card disappears when the server
+## sends `bubble_resolved`.
+
+signal answer_requested(bubble: Dictionary)
 
 ## bubble kind -> tag color
 const KIND_COLORS := {
@@ -20,6 +22,7 @@ const KIND_COLORS := {
 }
 
 var bubble_id := ""
+var bubble := {}  # the bubble from Net.island this card shows
 var _since := 0.0
 var _place := ""
 
@@ -62,12 +65,11 @@ func _ready() -> void:
 	if Engine.is_editor_hint():
 		return  # in the editor, only the preview
 	%AnswerButton.pressed.connect(open_reply)
-	%Send.pressed.connect(func(): _send(%ReplyEdit.text))
-	%ReplyEdit.text_submitted.connect(_send)
 
 
 ## Fill the card from a bubble and its resident (dictionaries from Net.island).
-func setup(bubble: Dictionary, resident: Dictionary, place: String) -> void:
+func setup(data: Dictionary, resident: Dictionary, place: String) -> void:
+	bubble = data
 	bubble_id = str(bubble["id"])
 	_since = float(bubble.get("since", Time.get_unix_time_from_system()))
 	_place = place
@@ -80,21 +82,8 @@ func setup(bubble: Dictionary, resident: Dictionary, place: String) -> void:
 	tag_color = KIND_COLORS.get(kind, Color("7553DF"))
 	quote = "“%s”" % bubble["text"]
 	card_color = Color(str(resident.get("color", "#FFFFFF"))).lerp(Color.WHITE, 0.86)
-	%AnswerButton.text = tag[2]
-
-	# Options become buttons; without options you type a reply.
-	var options = bubble.get("options")
-	%InputRow.visible = not options
-	for child in %Options.get_children():
-		child.queue_free()
-	if options:
-		for option in options:
-			var button := Button.new()
-			button.text = str(option)
-			button.theme_type_variation = &"OutlineButton"
-			button.add_theme_font_size_override("font_size", 13)
-			button.pressed.connect(_send.bind(str(option)))
-			%Options.add_child(button)
+	if not %AnswerButton.disabled:
+		%AnswerButton.text = tag[2]
 	refresh_age()
 
 
@@ -105,16 +94,11 @@ func refresh_age() -> void:
 
 
 func open_reply() -> void:
-	%ReplyBox.visible = true
-	if %InputRow.visible:
-		%ReplyEdit.grab_focus()
+	answer_requested.emit(bubble)
 
 
-func _send(text: String) -> void:
-	if text.strip_edges() == "":
-		return
-	Net.send_answer(bubble_id, text.strip_edges())
-	%ReplyBox.visible = false
+## The popup sent an answer: wait for the server's `bubble_resolved`.
+func mark_sent() -> void:
 	%AnswerButton.disabled = true
 	%AnswerButton.text = "Sent!"
 

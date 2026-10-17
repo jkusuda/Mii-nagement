@@ -148,17 +148,18 @@ After changing a model: `uv run python manage.py makemigrations mii`, then
 | `GET /islands/{id}/insights` | stats for the Insights screen |
 | `GET /settings` | effective settings, what `.env` locks, which API keys are set |
 | `PUT /settings` | `{"settings": {...}, "secrets": {"openrouter_api_key": "sk-..." \| null}}`; keys go to the keychain and are never echoed |
-| `GET /islands/{id}/events` | stored events for the News tab (planned, see below) |
+| `GET /islands/{id}/events?limit=200` | stored events for the News tab (see below) |
 | `POST /replay/{task_id}?speed=4` | replay a recorded task (demo safety net) |
 
 ## Insights payload
 
-`GET /islands/{id}/insights?range=today|week|month` feeds the game's Insights
-screen (`game/scenes/insights/`). The game shows whatever is there and puts a
-dash on anything missing, so fields can be added one at a time. **Today the
-`island` section has `tasks_done`, `tasks_failed`, `prs_opened` and
-`avg_issue_to_pr_seconds`, and `residents` / `brains` / `buildings` are filled
-from the Step table**; the rest is the shape the screen expects.
+`GET /islands/{id}/insights?range=today|week|month` (default `week`) feeds the
+game's Insights screen (`game/scenes/insights/`) and News' "This week". The game
+shows whatever is there and puts a dash on anything missing. A range ends now
+and starts at local midnight (today, the last 7 days, the last 30 days);
+`residents` / `brains` / `buildings` cover the steps started in it.
+**Everything below is filled in except `flaky_tests` and `prs_merged`** (merges
+happen on GitHub, which we don't watch yet).
 
 ```json
 {
@@ -168,7 +169,7 @@ from the Step table**; the rest is the shape the screen expects.
     "tasks_done_before": 8, "prs_opened_before": 6,
     "answer_seconds": 360, "answer_seconds_before": 420,
     "tests_pass_rate": 0.96, "flaky_tests": 2,
-    "bubbles_answered": 11
+    "bubbles_answered": 11, "keys_lent": 4, "avg_issue_to_pr_seconds": 1840
   },
   "per_day": [{"day": "2026-10-12", "done": 3}, {"day": "2026-10-13", "done": 5}],
   "tip": "The Mailbox is looking busy. Another Planner could sort some letters.",
@@ -177,19 +178,22 @@ from the Step table**; the rest is the shape the screen expects.
 ```
 
 - `*_before`: the same number for the previous range ("↑ 4 on last week").
-- `answer_seconds`: average time from a bubble appearing to your answer.
-- `tests_pass_rate` (0-1) and `flaky_tests`: from the lab's test runs.
+- `answer_seconds`: average time from a bubble appearing to your answer
+  (`bubble` → `bubble_resolved` events with an `answer`; timed-out bubbles don't count).
+- `keys_lent`: ✋ permission bubbles you answered with an allow option.
+- `tests_pass_rate` (0-1): the Lab's passing steps. `flaky_tests`: not tracked yet.
+- Finish times come from the stored `task` events (falling back to the last step).
 - `per_day`: tasks finished per day in the range, oldest first, today last.
-- `tip`: one friendly suggestion. Without it, the game words a simple one itself.
+- `tip`: one friendly suggestion (a building where packages bounce, slow answers,
+  a better week), or `null`; then the game words a simple one itself.
 - "Where packages are waiting" doesn't need anything here: the game counts the
   open tasks in the live snapshot by `building`.
 
 ## Events history (for Island News)
 
 `GET /islands/{id}/events?limit=200` lets the game's News tab
-(`game/scenes/news/`) show what happened before it connected. **Not built
-yet**: until it exists, the News tab only shows events from the current game
-session. It's one query on the `Event` table:
+(`game/scenes/news/`) show what happened before it connected. It's one query
+on the `Event` table (`limit` defaults to 200, at most 1000):
 
 ```json
 {"events": [

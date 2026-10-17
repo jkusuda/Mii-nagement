@@ -23,7 +23,9 @@ class StepResult:
     summary: str = ""
 
 
-# ask(kind, text, options) shows a bubble and waits. Returns your answer, or None on timeout.
+# ask(kind, text, options, detail) shows a bubble and waits. `detail` is extra context the
+# popup shows as-is, such as the exact command a permission bubble asks about.
+# Returns your answer, or None on timeout.
 AskFn = Callable[..., Awaitable[str | None]]
 # report(text) sends an `activity` event: what the resident is doing right now.
 ReportFn = Callable[[str], Awaitable[None]]

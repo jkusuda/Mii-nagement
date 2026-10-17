@@ -25,6 +25,11 @@ def test_brains_table_has_the_three_vendors():
     assert {"ok", "installed", "logged_in", "api_key", "hint"} <= set(brains["codex"])
 
 
+def test_brains_count_api_keys_saved_in_settings(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    assert available_brains(saved_keys={"OPENAI_API_KEY": "sk-1"})["codex"]["api_key"] is True
+
+
 def test_mock_mode_puts_everyone_on_the_mock_brain():
     assert isinstance(make_runner(mock=True), MockRunner)
 
@@ -62,6 +67,7 @@ async def test_acp_runner_against_fake_agent(sandbox):
     assert (workdir / "hello.txt").read_text() == "hi\n"
     assert "Reading hello.py" in report.lines
     assert ask.asked == [("permission", "Run `npm test`", ["Allow once", "Reject"])]
+    assert ask.details == ["npm test"]  # the exact command, for the permission popup
 
 
 async def test_house_keys_answer_permissions_without_a_bubble(sandbox):

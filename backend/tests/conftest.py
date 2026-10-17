@@ -55,9 +55,11 @@ class RecordingAsk:
     def __init__(self, answer: str | None = None):
         self.answer = answer
         self.asked: list[tuple[str, str, list[str] | None]] = []
+        self.details: list[str | None] = []
 
-    async def __call__(self, kind: str, text: str, options: list[str] | None = None) -> str | None:
+    async def __call__(self, kind: str, text: str, options: list[str] | None = None, detail: str | None = None) -> str | None:
         self.asked.append((kind, text, options))
+        self.details.append(detail)
         if self.answer is not None:
             return self.answer
         return options[0] if options else "ok"

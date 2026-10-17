@@ -18,7 +18,7 @@ A Tomodachi Life-style manager for teams of coding agents doing real software wo
 
 > **Status:** the backend MVP is done (Django + Channels, ACP brains, OpenRouter
 > brain, GitHub in/out, insights, replay) and runs end to end in **mock mode**
-> (fake agents, no API cost). The game is still mostly a mockup. Open work is
+> (fake agents, no API cost). The game is wired to every backend endpoint. Open work is
 > marked `TODO(mvp)` / `TODO(stretch)` in the code; the roadmap is in [TODO.md](TODO.md).
 
 ## How it fits together
@@ -123,15 +123,16 @@ After changing a table in `models.py`: `uv run python manage.py makemigrations m
 
 ## What you should see
 
-The main screen is a **UI mockup**: a top bar, the 3D island in a rounded frame,
-the bottom nav (Build / Residents / News / Insights), and the Bubbles sidebar.
-Most of it is static placeholder data for now. Live so far:
+The game opens on the **Archipelago** (every island in one sea, plus everything
+"Waiting on you"). From there:
+- **Settings** (bottom nav): mock mode on/off, test command, islands folder, API
+  keys (saved to your OS keychain), and which brains this computer can run.
+- **New island**: name, GitHub repo, branch, town plan, residents, house rules.
+- Click an island to visit it. **Send a package** (top right) drops a task in the
+  Mailbox; residents walk it along the roads. Answer their bubbles in the sidebar.
+- **Residents** (create / edit, including OpenRouter models), **News** (stories
+  from stored events; ↻ replays a shipped package), **Insights** (stats).
 - **Scroll / pinch / − + buttons** zoom the island. **Click and drag** pans it.
-- Building name pills follow their buildings.
-- The connection pill turns green when the backend is running.
-
-Residents, live bubbles in the sidebar, and activity text aren't connected yet;
-see TODO.md.
 
 New to Godot? Read [docs/godot-tour.md](docs/godot-tour.md).
 
@@ -174,7 +175,8 @@ API keys (`openrouter_api_key`, `anthropic_api_key`, `openai_api_key`,
 Manager, or Linux Secret Service, with an owner-only file as the fallback. Keys
 are never sent back. Changes apply from the next task.
 
-Check which brains the backend can see: http://localhost:8000/brains
+The game's Settings popup does all of this for you. Check which brains the
+backend can see: http://localhost:8000/brains/detail
 
 While a real resident works you'll see `activity` events and ✋ permission
 bubbles (the agent's own options as buttons). No answer within

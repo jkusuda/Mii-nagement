@@ -370,12 +370,12 @@ class WorkflowEngine:
         )
         bubbles_raised = 0
 
-        async def ask(kind: str, text: str, options: list[str] | None = None) -> str | None:
+        async def ask(kind: str, text: str, options: list[str] | None = None, detail: str | None = None) -> str | None:
             nonlocal bubbles_raised
             bubbles_raised += 1
             timeout = self.permission_timeout if kind == "permission" else self.bubble_timeout
             await self._set_mood(resident, BUBBLE_MOODS.get(kind, "confused"))
-            answer = await self.bubbles.ask(task.island_id, resident.id, kind, text, timeout, options)
+            answer = await self.bubbles.ask(task.island_id, resident.id, kind, text, timeout, options, task.id, detail)
             await self._set_mood(resident, "focused")
             return answer
 

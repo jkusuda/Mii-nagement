@@ -1,6 +1,8 @@
 class_name CameraRig
 extends Node3D
 ## Camera rig: mouse-wheel / trackpad / button zoom, and click-and-drag panning.
+## A click that doesn't drag is reported as `clicked` (game.gd uses it to open
+## buildings), and focus_on() glides the camera to a spot, unfocus() back.
 ##
 ## The rig sits on the ground in the middle of the island, and the Camera3D is
 ## its child, pulled back and tilted down. Because a child moves with its
@@ -9,12 +11,17 @@ extends Node3D
 ##   - pan by sliding the whole rig across the ground.
 
 signal zoom_changed(percent: int)
+## A left click that didn't drag, at this point in the island's viewport.
+signal clicked(screen_position: Vector2)
+## The mouse moved over the island without dragging (for a hover cursor).
+signal hovered(screen_position: Vector2)
 
 const MIN_ZOOM := 0.6
 const MAX_ZOOM := 2.0
 const ZOOM_STEP := 0.1
 const SMOOTHING := 12.0  # higher = snappier, lower = floatier
 const PAN_LIMIT := Vector2(14.0, 10.0)  # how far (x, z) you can drag from the start
+const CLICK_SLOP := 6.0  # pixels the mouse may move and still count as a click
 
 var zoom := 1.0  # 1.0 = 100%
 
@@ -23,6 +30,8 @@ var _home_offset := Vector3.ZERO  # the camera's position at 100% zoom
 var _home_position := Vector3.ZERO  # the rig's starting position
 var _target_position := Vector3.ZERO
 var _dragging := false
+var _drag_distance := 0.0
+var _before_focus := {}  # zoom + position to go back to after focus_on()
 
 @onready var camera: Camera3D = $Camera3D
 
@@ -48,20 +57,52 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN and event.pressed:
 			zoom_by(-ZOOM_STEP)
 		elif event.button_index == MOUSE_BUTTON_LEFT:
+			if event.pressed:
+				_drag_distance = 0.0
+			elif _dragging and _drag_distance < CLICK_SLOP:
+				clicked.emit(event.position)
 			_dragging = event.pressed
 	elif event is InputEventMouseMotion and _dragging:
+		_drag_distance += event.relative.length()
 		_pan(event.relative)
+	elif event is InputEventMouseMotion:
+		hovered.emit(event.position)
 	elif event is InputEventMagnifyGesture:  # trackpad pinch
 		zoom_by((event.factor - 1.0) * 2.0)
 	elif event is InputEventPanGesture:  # trackpad two-finger scroll
 		zoom_by(-event.delta.y * 0.05)
 
 
+## Glide to `point` (on the ground) at `to_zoom`. `shift` (-0.5..0.5, a fraction
+## of the view's width) puts the point left (negative) or right of the middle,
+## so a panel can sit beside it. unfocus() goes back to where you were.
+func focus_on(point: Vector3, to_zoom: float, shift := 0.0) -> void:
+	if _before_focus.is_empty():
+		_before_focus = {"zoom": _target_zoom, "position": _target_position}
+	_target_zoom = clampf(to_zoom, MIN_ZOOM, MAX_ZOOM)
+	var view_size := get_viewport().get_visible_rect().size
+	var view_width := _view_height(_target_zoom) * view_size.x / view_size.y
+	_target_position = Vector3(point.x - shift * view_width, position.y, point.z)
+	zoom_changed.emit(roundi(_target_zoom * 100.0))
+
+
+func unfocus() -> void:
+	if _before_focus.is_empty():
+		return
+	_target_zoom = _before_focus["zoom"]
+	_target_position = _before_focus["position"]
+	_before_focus = {}
+	zoom_changed.emit(roundi(_target_zoom * 100.0))
+
+
+## How many meters of ground the view covers top to bottom (at the focus point).
+func _view_height(at_zoom: float) -> float:
+	return 2.0 * (_home_offset / at_zoom).length() * tan(deg_to_rad(camera.fov / 2.0))
+
+
 func _pan(screen_delta: Vector2) -> void:
 	# How many meters on the ground one screen pixel covers right now.
-	var distance := (_home_offset / _target_zoom).length()
-	var view_height := 2.0 * distance * tan(deg_to_rad(camera.fov / 2.0))
-	var meters_per_pixel := view_height / get_viewport().get_visible_rect().size.y
+	var meters_per_pixel := _view_height(_target_zoom) / get_viewport().get_visible_rect().size.y
 	# The ground is tilted away from us, so vertical mouse movement covers more ground.
 	var tilt := 1.0 / sin(-camera.rotation.x)
 

@@ -15,7 +15,6 @@ extends PanelContainer
 signal saved(resident: Dictionary)
 signal cancelled
 
-var brains_url := Net.url.replace("ws://", "http://").replace("/ws", "/brains")
 const ARROW := preload("res://assets/ui/dropdown_arrow.svg")
 
 const SURPRISE_NAMES := ["Mo", "Bea", "Otto", "Pip", "Juniper", "Rory", "Tess", "Kai", "Nell", "Ivy", "Sol", "Wren"]
@@ -39,6 +38,10 @@ var _sliders := {}
 var _gift_buttons := {}
 var _key_pickers := {}
 var _brain_ids: Array = ResidentData.BRAINS.keys()
+## OpenRouter model ids for the model picker (GET /models), loaded the first
+## time the openrouter brain is picked.
+var _model_ids: Array = []
+var _model_picker := OptionButton.new()
 
 @onready var preview: MiiPreview = %Preview
 
@@ -86,6 +89,7 @@ func _load_widgets() -> void:
 	%NameEdit.text = str(_data["name"])
 	%CatchphraseEdit.text = str(_data["catchphrase"])
 	%ModelEdit.text = str(_data["model"]) if _data["model"] else ""
+	_show_model_picker()
 	_job_buttons.get(_data["job"], _job_buttons["coder"]).button_pressed = true
 	%BrainPicker.select(maxi(_brain_ids.find(_data["brain"]), 0))
 	for trait_name in _sliders:
@@ -207,7 +211,50 @@ func _build_brains() -> void:
 	%BrainPicker.add_theme_icon_override("arrow", ARROW)
 	for id in _brain_ids:
 		%BrainPicker.add_item(ResidentData.BRAINS[id])
-	%BrainPicker.item_selected.connect(func(index: int): _data["brain"] = _brain_ids[index])
+	%BrainPicker.item_selected.connect(func(index: int):
+		_data["brain"] = _brain_ids[index]
+		_show_model_picker())
+
+	# The OpenRouter catalogue, next to the model field (only for that brain).
+	_model_picker.theme_type_variation = &"OutlineButton"
+	_model_picker.add_theme_icon_override("arrow", ARROW)
+	_model_picker.custom_minimum_size = Vector2(0, 34)
+	_model_picker.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_model_picker.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_model_picker.focus_mode = Control.FOCUS_NONE
+	_model_picker.tooltip_text = "Pick any model from OpenRouter's catalogue"
+	_model_picker.visible = false
+	_model_picker.item_selected.connect(func(index: int):
+		if index > 0:
+			%ModelEdit.text = _model_ids[index - 1]
+			_data["model"] = _model_ids[index - 1])
+	%ModelEdit.add_sibling(_model_picker)
+
+
+## Show the OpenRouter model picker when that brain is picked (loading the
+## catalogue from GET /models the first time).
+func _show_model_picker() -> void:
+	_model_picker.visible = _data["brain"] == "openrouter"
+	if not _model_picker.visible:
+		return
+	if not _model_ids.is_empty():
+		_model_picker.select(_model_ids.find(%ModelEdit.text) + 1)
+		return
+	if _model_picker.item_count > 0 and _model_picker.get_item_text(0) == "Loading models…":
+		return
+	_model_picker.clear()
+	_model_picker.add_item("Loading models…")
+	Net.request_json("/models", func(ok: bool, data: Dictionary):
+		_model_picker.clear()
+		if not ok:  # e.g. no OpenRouter key yet: tried again next time
+			_model_picker.add_item("No catalogue: %s" % data["error"])
+			_model_picker.tooltip_text = str(data["error"])
+			return
+		_model_picker.add_item("Choose a model…")
+		for model in data.get("models", []):
+			_model_ids.append(str(model["id"]))
+			_model_picker.add_item(str(model.get("name", model["id"])))
+		_model_picker.select(_model_ids.find(%ModelEdit.text) + 1))
 
 
 func _build_sliders() -> void:
@@ -281,24 +328,20 @@ func _build_keys() -> void:
 		_key_pickers[k[0]] = picker
 
 
-## Ask the backend which brains are installed, and grey out the rest.
-## Godot concept: HTTPRequest is a node; request() returns right away and the
-## `request_completed` signal fires later with the response.
+## Ask the backend which brains can run here (GET /brains/detail), grey out
+## the rest, and say why in their tooltip ("run `codex login`").
 func _check_brains() -> void:
-	var http := HTTPRequest.new()
-	add_child(http)
-	http.request_completed.connect(func(result: int, code: int, _headers, body: PackedByteArray):
-		http.queue_free()
-		if result != HTTPRequest.RESULT_SUCCESS or code != 200:
+	Net.request_json("/brains/detail", func(ok: bool, brains: Dictionary):
+		if not ok:
 			return  # backend offline: leave every brain selectable
-		var installed = JSON.parse_string(body.get_string_from_utf8())
-		if typeof(installed) != TYPE_DICTIONARY:
-			return
+		var tips := []
 		for i in _brain_ids.size():
-			var ok: bool = installed.get(_brain_ids[i], false)
-			%BrainPicker.set_item_disabled(i, not ok)
-			%BrainPicker.set_item_text(i, ResidentData.BRAINS[_brain_ids[i]] + ("" if ok else " (not installed)")))
-	http.request(brains_url)
+			var info: Dictionary = brains.get(_brain_ids[i], {})
+			var ready: bool = info.get("ok", false)
+			%BrainPicker.set_item_disabled(i, not ready)
+			%BrainPicker.set_item_text(i, ResidentData.BRAINS[_brain_ids[i]] + ("" if ready else " (not set up)"))
+			tips.append("%s: %s" % [ResidentData.BRAINS[_brain_ids[i]], info.get("hint", "unknown")])
+		%BrainPicker.tooltip_text = "\n".join(tips))
 
 
 func _tint(node: Control, theme_type: String, color: Color) -> void:

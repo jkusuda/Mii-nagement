@@ -34,7 +34,7 @@ backend/mii/      one package = Django project + app
   config.py       developer overrides from the optional root .env (`config`) + defaults
   prefs.py        user settings (Setting table) + API keys (OS keychain via `keyring`); env > saved > default
   asgi.py         ASGI entry: HTTP + WebSocket + lifespan (starts the engine worker)
-  urls.py / views.py   async JSON endpoints: /health, /brains, /models, /islands/{id}, tasks, insights, replay
+  urls.py / views.py   async JSON endpoints: /health, /brains, /models, /settings, /islands/{id}, tasks, insights, events, replay
   consumers.py    the /ws WebSocket consumer (Channels, no channel layer)
   runtime.py      one sandbox / event bus / bubbles / engine per process (get_runtime())
   models.py       tables (Island, Resident, Building, Road, Task, Step, Event) + snapshot
@@ -56,7 +56,8 @@ backend/mii/      one package = Django project + app
   management/commands/   seed, watch
 backend/tests/    pytest (pytest-django; fake_acp_agent.py is a mini ACP agent)
 game/
-  net.gd          autoload singleton `Net`: WebSocket -> signals, send_answer(), visit_island()
+  net.gd          autoload singleton `Net`: WebSocket -> signals, send_answer(), visit_island(),
+                  http_url() + request_json() for the HTTP endpoints
   islands.gd      autoload `Islands`: every island (GET /islands + snapshots) + 3D thumbnails
   clock.gd        autoload `Clock`: real time of day (+ dev override), Day N from created_at, daily weather
   scenes/game.tscn     MAIN SCENE: top bar, framed 3D island, nav, Bubbles sidebar. Driven by
@@ -64,7 +65,7 @@ game/
   scenes/island_3d.tscn  3D world (models, sun, water); rendered inside game.tscn's SubViewport
   scenes/day_night.gd    `DayNight`: the time-of-day table; moves the sun, recolors light and water in
                          every copy of island_3d.tscn (island view, home sea, the window background)
-  scenes/camera_rig.gd   zoom (wheel/trackpad/buttons) + drag-to-pan
+  scenes/camera_rig.gd   zoom (wheel/trackpad/buttons) + drag-to-pan, click vs. drag, focus_on()/unfocus()
   scenes/apple_tree.tscn, bush.tscn  plants (origin at their base), instanced under Trees/Bushes in
                        island_3d.tscn; both use swaying_plant.gd. Bushes cover the patches left where
                        the trees baked into base_island.glb were removed: keep those spots covered
@@ -76,15 +77,21 @@ game/
                        island_dropdown (switcher in the top bar), island_creator (found an island)
   scenes/sea/          sea_view: a 3D sea with any number of islands (water shader, sun, camera fit);
                        with none it's open sea, used as game.tscn's full-window Background
-  scenes/news/         News tab: news_stories turns Net events (+ GET /islands/{id}/events, planned)
-                       into stories; unread count drives the nav badge; daily digest setting
+  scenes/news/         News tab: news_stories turns Net events (+ GET /islands/{id}/events)
+                       into stories; unread count drives the nav badge; daily digest setting;
+                       Replay on shipped stories (POST /replay/{task_id})
   scenes/insights/     Insights tab: GET /islands/{id}/insights (shape in architecture.md) + live
                        waiting packages and moods from Net.island
   scenes/mii/          mii (the 3D Mii: tint + idle/walk/run), mii_preview (creator's 3D stage)
   scenes/island/       residents on the 3D island: island_residents (follows Net events, routes
-                       along roads), island_resident (one walker + tags), island_paths (sand path)
+                       along roads), island_resident (one walker + tags), island_paths (sand path);
+                       building_data (per-type name/icon/color/stage words), building_picker
+                       (which building is under the mouse: ray vs. bounding boxes)
   scenes/ui/           building_label (follows a 3D building, resident count), bubbles_sidebar,
-                       bubble_card (with reply box), answer_button, dashed_button
+                       bubble_card, answer_popup (answer a bubble: review, key request, question), answer_button, dashed_button,
+                       building_panel (click a building: Mailbox issues + send, or what's at
+                       that stage), package_form (POST /islands/{id}/tasks),
+                       settings_popup (GET/PUT /settings, /health, /brains/detail)
   ui/theme.tres        every color, font weight, and pill/button style (theme type variations)
   shaders/water.gdshader stylized water
   shaders/pond.gdshader  additive shimmer + ripple rings over the pond painted into the island model

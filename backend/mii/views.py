@@ -10,7 +10,8 @@
     GET  /github/branches?repo=        a repo's branches (via gh)
     GET  /islands/{id}                 the island snapshot
     POST /islands/{id}/tasks           {"title": "...", "description": "..."} or {"issue": 42}
-    GET  /islands/{id}/insights        stats for the Insights screen
+    GET  /islands/{id}/insights?range= stats for the Insights screen (today | week | month)
+    GET  /islands/{id}/events?limit=   the newest stored events, oldest first (Island News history)
     GET  /settings                     settings + which API keys are set (never the keys themselves)
     PUT  /settings                     {"settings": {...}, "secrets": {"openrouter_api_key": "sk-..."|null}}
     POST /replay/{task_id}?speed=4     replay a recorded task into the game
@@ -26,8 +27,8 @@ from django.views.decorators.http import require_GET, require_POST
 from mii import github, islands, prefs
 from mii.agents.acp import available_brains
 from mii.agents.openrouter import list_models
-from mii.insights import island_insights
-from mii.models import Island, island_snapshot, task_to_dict
+from mii.insights import InsightsError, island_insights
+from mii.models import Event, Island, island_snapshot, task_to_dict
 from mii.replay import ReplayError, replay_task
 from mii.runtime import get_runtime
 
@@ -45,19 +46,24 @@ async def health(request: HttpRequest) -> JsonResponse:
     return JsonResponse({"ok": True, "mock_agents": get_runtime().mock_agents})
 
 
+def _brains() -> dict[str, dict]:
+    """available_brains() with the API keys saved in Settings (keychain reads: run in a thread)."""
+    return available_brains(prefs.secret("openrouter_api_key"), prefs.secrets_env())
+
+
 @require_GET
 async def brains(request: HttpRequest) -> JsonResponse:
-    return JsonResponse({brain: info["ok"] for brain, info in available_brains(prefs.secret("openrouter_api_key")).items()})
+    return JsonResponse({brain: info["ok"] for brain, info in (await asyncio.to_thread(_brains)).items()})
 
 
 @require_GET
 async def brains_detail(request: HttpRequest) -> JsonResponse:
-    return JsonResponse(available_brains(prefs.secret("openrouter_api_key")))
+    return JsonResponse(await asyncio.to_thread(_brains))
 
 
 @require_GET
 async def models_list(request: HttpRequest) -> JsonResponse:
-    api_key = prefs.secret("openrouter_api_key")
+    api_key = await asyncio.to_thread(prefs.secret, "openrouter_api_key")
     if not api_key:
         return _error("no OpenRouter API key: save one with PUT /settings or set OPENROUTER_API_KEY", 503)
     try:
@@ -152,7 +158,23 @@ async def create_task(request: HttpRequest, island_id: str) -> JsonResponse:
 async def get_insights(request: HttpRequest, island_id: str) -> JsonResponse:
     if await _island_or_none(island_id) is None:
         return _error(f"no island {island_id!r}", 404)
-    return JsonResponse(await island_insights(island_id))
+    try:
+        return JsonResponse(await island_insights(island_id, request.GET.get("range", "week")))
+    except InsightsError as e:
+        return _error(str(e), 400)
+
+
+@require_GET
+async def get_events(request: HttpRequest, island_id: str) -> JsonResponse:
+    """The island's newest `limit` events (default 200, at most 1000), oldest first, as broadcast plus `event_id`."""
+    if await _island_or_none(island_id) is None:
+        return _error(f"no island {island_id!r}", 404)
+    try:
+        limit = min(max(int(request.GET.get("limit", "200")), 1), 1000)
+    except ValueError:
+        return _error("limit must be a number", 400)
+    rows = [e async for e in Event.objects.filter(island_id=island_id).order_by("-id")[:limit]]
+    return JsonResponse({"events": [{**e.payload, "event_id": e.id} for e in reversed(rows)]})
 
 
 @csrf_exempt

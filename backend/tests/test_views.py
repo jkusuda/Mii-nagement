@@ -54,8 +54,20 @@ async def test_create_task_validates_and_queues(island, fake_runtime):
 
 async def test_insights_and_replay_endpoints(island, fake_runtime):
     client = AsyncClient()
-    assert set((await client.get("/islands/sunny/insights")).json()) == {"island", "residents", "brains", "buildings"}
+    assert {"island", "per_day", "residents", "brains", "buildings"} <= set((await client.get("/islands/sunny/insights")).json())
     assert (await client.post("/replay/t_nope")).status_code == 404
+
+
+async def test_events_history_is_newest_last_and_per_island(island, fake_runtime):
+    for i in range(3):
+        await fake_runtime.bus.emit("sunny", {"type": "activity", "agent": "jun", "text": f"step {i}"})
+    await fake_runtime.bus.emit("elsewhere", {"type": "activity", "agent": "x", "text": "not ours"})
+    client = AsyncClient()
+    events = (await client.get("/islands/sunny/events?limit=2")).json()["events"]
+    assert [e["text"] for e in events] == ["step 1", "step 2"]
+    assert events[0]["event_id"] < events[1]["event_id"] and events[0]["ts"]
+    assert (await client.get("/islands/sunny/events?limit=x")).status_code == 400
+    assert (await client.get("/islands/nowhere/events")).status_code == 404
 
 
 async def test_list_and_found_islands(island, fake_runtime, tmp_path, monkeypatch):

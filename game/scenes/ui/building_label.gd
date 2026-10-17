@@ -4,7 +4,10 @@ extends PanelContainer
 ##
 ## Every frame we ask the 3D camera "where on screen is this point in the
 ## world?" with unproject_position(), and move the pill there. So the pill
-## sticks to its building while you drag and zoom.
+## sticks to its building while you drag and zoom. Clicking the pill opens the
+## building, like clicking the building itself.
+
+signal pressed
 
 ## Where the pill sits relative to the building's center: just above the roof,
 ## so residents standing in front of the building stay visible.
@@ -30,6 +33,11 @@ func setup(building: Node3D, view_camera: Camera3D, title: String, icon: Texture
 	var style: StyleBoxFlat = get_theme_stylebox("panel", "BadgeCircle").duplicate()
 	style.bg_color = color
 	badge.add_theme_stylebox_override("panel", style)
+	mouse_filter = Control.MOUSE_FILTER_STOP
+	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	gui_input.connect(func(event: InputEvent):
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			pressed.emit())
 
 
 ## How many residents are here (0 included). `title` renames the pill (the
