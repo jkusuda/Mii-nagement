@@ -73,6 +73,10 @@ class Resident(models.Model):
     mood = models.CharField(max_length=20, default="happy")
     # How full the agent's context window is, 0.0-1.0 (from ACP usage updates). None = unknown.
     notebook = models.FloatField(null=True, blank=True)
+    # The last `activity` line the agent reported, so a client that connects later still sees it.
+    activity = models.TextField(blank=True, default="")
+    # Cosmetics from the resident creator (face, hair, hat...). Stored and echoed, never read by the backend.
+    appearance = models.JSONField(default=dict)
 
 
 class Building(models.Model):
@@ -196,6 +200,22 @@ def resident_to_dict(r: Resident) -> dict:
         "building": r.building_id,
         "mood": r.mood,
         "notebook": r.notebook,
+        "activity": r.activity,
+        "appearance": r.appearance,
+    }
+
+
+def island_to_dict(i: Island) -> dict:
+    """The island's header fields: the top of the snapshot, and the `island` event."""
+    return {
+        "id": i.id,
+        "name": i.name,
+        "repo": i.repo,
+        "path": i.repo_path,
+        "branch": i.branch,
+        "plan": i.plan,
+        "rules": i.rules,
+        "created_at": i.created_at.isoformat(),
     }
 
 
@@ -263,18 +283,14 @@ async def island_layout(island_id: str) -> dict:
 
 async def island_snapshot(island_id: str, open_bubbles: list[dict]) -> dict:
     """Full island state for the `snapshot` event. Raises Island.DoesNotExist."""
-    from mii.islands import default_map  # here, not at the top: islands.py imports this module
+    from mii import weather  # here, not at the top: weather.py imports this module
+    from mii.islands import default_map  # same reason: islands.py imports this module
 
     island = await Island.objects.aget(pk=island_id)
     return {
-        "id": island.id,
-        "name": island.name,
-        "repo": island.repo,
-        "path": island.repo_path,
-        "branch": island.branch,
-        "plan": island.plan,
-        "rules": island.rules,
-        "created_at": island.created_at.isoformat(),
+        **island_to_dict(island),
+        "server_time": utcnow().isoformat(),
+        "weather": await weather.current(island_id),
         "map": island.map or default_map(),
         **await island_layout(island_id),
         "residents": [resident_to_dict(r) async for r in Resident.objects.filter(island_id=island_id).order_by("id")],

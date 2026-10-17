@@ -11,7 +11,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from mii.models import Event, Friendship, Task, friendship_to_dict, resident_to_dict, task_to_dict
+from mii.models import Event, Friendship, Island, Task, friendship_to_dict, island_to_dict, resident_to_dict, task_to_dict
 
 log = logging.getLogger(__name__)
 
@@ -82,8 +82,20 @@ def layout(buildings: list[dict], roads: list[dict]) -> dict:
     return {"type": "layout", "buildings": buildings, "roads": roads}
 
 
-def error(message: str) -> dict:
-    return {"type": "error", "message": message}
+def island(i: Island) -> dict:
+    """The island's header changed (name, repo, branch, rules): same fields as the top of the snapshot."""
+    return {"type": "island", "island": island_to_dict(i)}
+
+
+def weather(kind: str) -> dict:
+    return {"type": "weather", "weather": kind}
+
+
+def error(message: str, request_id: str | None = None) -> dict:
+    event = {"type": "error", "message": message}
+    if request_id is not None:
+        event["request_id"] = request_id
+    return event
 
 
 # --- Event bus -----------------------------------------------------------------
@@ -137,6 +149,7 @@ class OpenBubble:
     answer: asyncio.Future
     task: str | None = None  # the task package the resident is working on
     detail: str | None = None  # e.g. the exact command a permission bubble asks about
+    asked_at: str = ""  # ISO-8601 UTC, so a client that connects later can still say "2m ago"
 
 
 class Bubbles:
@@ -158,7 +171,8 @@ class Bubbles:
         """Show a bubble. Returns your answer, or None if nobody answered in time."""
         bubble_id = "b_" + uuid.uuid4().hex[:6]
         future = asyncio.get_running_loop().create_future()
-        self.open[bubble_id] = OpenBubble(bubble_id, island_id, agent, kind, text, options, future, task, detail)
+        asked_at = datetime.now(timezone.utc).isoformat()
+        self.open[bubble_id] = OpenBubble(bubble_id, island_id, agent, kind, text, options, future, task, detail, asked_at)
         await self.bus.emit(island_id, bubble(agent, kind, bubble_id, text, options, task, detail))
         response: str | None = None
         try:
@@ -182,7 +196,7 @@ class Bubbles:
         """Open bubbles, in the shape the snapshot uses."""
         return [
             {"id": b.id, "agent": b.agent, "kind": b.kind, "text": b.text, "options": b.options,
-             "task": b.task, "detail": b.detail}
+             "task": b.task, "detail": b.detail, "asked_at": b.asked_at}
             for b in self.open.values()
             if b.island_id == island_id
         ]

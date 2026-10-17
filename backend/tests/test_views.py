@@ -199,3 +199,65 @@ async def test_settings_endpoint_saves_and_hides_secrets(fake_runtime, monkeypat
     bad = await client.put("/settings", data=json.dumps({"settings": {"mock_agents": "no"}}), content_type="application/json")
     assert bad.status_code == 400
     assert (await client.post("/settings")).status_code == 405
+
+
+async def test_meta_lists_the_vocabulary():
+    data = (await AsyncClient().get("/meta")).json()
+    assert data["jobs"] == ["planner", "coder", "reviewer"]
+    assert set(data["traits"]) == {"bluntness", "caution", "chattiness", "creativity"} and data["traits"]["caution"]["high"]
+    assert "openrouter" in data["brains"] and "mock" in data["brains"]
+    assert set(data["gifts"]) == {"browser", "github", "docs", "database", "terminal"}
+    assert data["keys"]["values"] == ["yes", "ask", "no"] and data["keys"]["defaults"]["read"] == "yes"
+    assert len(data["plans"]["classic"]["steps"]) == 5 and data["building_types"] == ["mailbox", "workshop", "lab", "courthouse", "post_office"]
+    assert data["bubble_kinds"] == ["confused", "struggling", "permission", "ready", "tired"]
+    assert data["weather"] == ["sunny", "cloudy", "rainy", "night"]
+
+
+async def test_snapshot_has_server_time_weather_and_mode(island, fake_runtime):
+    data = (await AsyncClient().get("/islands/sunny")).json()
+    assert data["server_time"].endswith("+00:00") and data["weather"] == "sunny" and data["mock_agents"] is True
+    assert data["residents"][0]["activity"] == "" and data["residents"][0]["appearance"] == {}
+
+
+async def test_patch_island_links_repo_and_broadcasts(island, fake_runtime, sandbox):
+    import subprocess
+
+    from conftest import FakeClient
+
+    await Island.objects.filter(pk="sunny").aupdate(repo_path=str(sandbox.repo_path))
+    watcher = FakeClient()
+    fake_runtime.bus.add_client(watcher, "sunny")
+    client = AsyncClient()
+
+    changed = await client.patch("/islands/sunny", data=json.dumps({"name": "Sunnier Isle", "repo": "me/sunny", "rules": {"shell": True}}),
+                                 content_type="application/json")
+    assert changed.status_code == 200, changed.content
+    assert changed.json()["name"] == "Sunnier Isle" and changed.json()["repo"] == "me/sunny" and changed.json()["rules"]["shell"] is True
+    assert watcher.of_type("island")[0]["island"]["repo"] == "me/sunny"
+    snap = (await client.get("/islands/sunny")).json()
+    assert snap["name"] == "Sunnier Isle" and snap["repo"] == "me/sunny" and snap["branch"] == "main"
+    origin = subprocess.run(["git", "-C", str(sandbox.repo_path), "remote", "get-url", "origin"], capture_output=True, text=True)
+    assert origin.stdout.strip() == "https://github.com/me/sunny.git"
+
+    assert (await client.patch("/islands/sunny", data=json.dumps({"repo": "nope"}), content_type="application/json")).status_code == 400
+    assert (await client.patch("/islands/sunny", data=json.dumps({}), content_type="application/json")).status_code == 400
+    assert (await client.patch("/islands/nowhere", data=json.dumps({"name": "x"}), content_type="application/json")).status_code == 404
+
+
+async def test_island_issues_endpoint(island, fake_runtime, monkeypatch):
+    from mii import github
+
+    client = AsyncClient()
+    assert (await client.get("/islands/sunny/issues")).status_code == 400  # no repo linked
+    await Island.objects.filter(pk="sunny").aupdate(repo="me/sunny")
+    monkeypatch.setattr(github, "list_issues", lambda repo, limit: [{"number": 7, "title": "Typo", "labels": ["bug"], "updated_at": None, "repo": repo, "limit": limit}])
+    data = (await client.get("/islands/sunny/issues?limit=5")).json()
+    assert data["issues"][0]["number"] == 7 and data["issues"][0]["limit"] == 5
+    assert (await client.get("/islands/sunny/issues?limit=x")).status_code == 400
+    assert (await client.get("/islands/nowhere/issues")).status_code == 404
+
+    def boom(repo, limit):
+        raise github.GitHubError("not logged in")
+
+    monkeypatch.setattr(github, "list_issues", boom)
+    assert (await client.get("/islands/sunny/issues")).status_code == 503

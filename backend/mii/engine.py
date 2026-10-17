@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
 
-from mii import events, github
+from mii import events, github, weather
 from mii.agents import AgentJob, StepResult
 from mii.models import Building, Friendship, Island, Resident, Road, Step, Task, utcnow
 from mii.sandbox import Sandbox, SandboxError, Sandboxes
@@ -310,6 +310,7 @@ class WorkflowEngine:
         self.lanes: dict[str, Lane] = {}  # island id -> its line of packages (run_forever)
         self._cancelling: set[str] = set()  # task ids that cancel() is stopping
         self._approved: set[str] = set()  # task ids you approved at the Courthouse (merge at the Post Office)
+        self._weather: dict[str, str] = {}  # island id -> the last weather we announced
 
     # --- Public API -----------------------------------------------------------
 
@@ -478,6 +479,7 @@ class WorkflowEngine:
             )
             history.append(f"{resident.name} at the {building.name}: {result.outcome.upper()}. {result.summary}")
             task = await self._get(Task, task.id)  # a handler may have set pr_url
+            await self._update_weather(task.island_id)
 
             # 4. React, then follow the road that matches the outcome.
             resident = await self._set_mood(resident, "happy" if result.outcome == "pass" else "frustrated")
@@ -548,7 +550,15 @@ class WorkflowEngine:
         await self.bus.emit(island_id, events.friendship(friendship))
 
     async def _report(self, task: Task, resident: Resident, text: str) -> None:
+        await Resident.objects.filter(pk=resident.id).aupdate(activity=text[:500])  # so late joiners see it too
         await self._emit(task, events.activity(resident.id, text))
+
+    async def _update_weather(self, island_id: str) -> None:
+        """Announce the island's weather when it changes (after a step, or when everyone sleeps / wakes)."""
+        kind = await weather.current(island_id)
+        if self._weather.get(island_id) != kind:
+            self._weather[island_id] = kind
+            await self.bus.emit(island_id, events.weather(kind))
 
     async def _set_notebook(self, resident: Resident, value: float) -> None:
         """How full the resident's context window is (0-1), from the agent's usage updates."""
@@ -569,6 +579,8 @@ class WorkflowEngine:
     async def _set_state(self, resident: Resident, state: str) -> Resident:
         resident = await self._update(Resident, resident.id, state=state)
         await self.bus.emit(resident.island_id, events.agent_state(resident.id, state, resident.building_id))
+        if state in ("sleeping", "working"):  # night falls when everyone sleeps; day breaks when someone works
+            await self._update_weather(resident.island_id)
         return resident
 
     async def _set_mood(self, resident: Resident, mood: str) -> Resident:

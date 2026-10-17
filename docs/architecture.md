@@ -65,6 +65,7 @@ backend/mii/
   residents.py     create / edit residents (from the game's resident creator); a new
                    resident takes over their island's empty buildings for their job
   layout.py        build mode: validate + save a whole layout (set_layout / PUT layout), assign buildings
+  weather.py       the island's weather (sunny / cloudy / rainy / night) from its last steps + who's asleep
   sandbox.py       Sandboxes (one Sandbox per island repo): worktree per task, commit_all(), diff_stat(), is_inside()
   agents/
     __init__.py    AgentJob, StepResult, BrainRunner, make_runner(), parse_verdict(), build_prompt()
@@ -157,8 +158,9 @@ the same keys and rules to its `run_command` tool.
 
 | Endpoint | Purpose |
 |---|---|
-| `WS /ws?island=<id>` | snapshot + live events; the game sends `answer_bubble`, `create_resident`, `update_resident`, `delete_resident`, `create_task`, `cancel_task`, `set_layout` |
+| `WS /ws?island=<id>` | snapshot + live events; the game sends `answer_bubble`, `create_resident`, `update_resident`, `delete_resident`, `create_task`, `cancel_task`, `set_layout`, `update_island` |
 | `GET /health` | is the server up, which mode |
+| `GET /meta` | the vocabulary the game shows pickers for: jobs, traits, brains, gifts, keys, building types, road conditions, town plans, house rules, bubble kinds, moods, states, task statuses, weather kinds |
 | `GET /brains` | `{brain: true/false}`: which brains can run here (the creator greys out the rest) |
 | `GET /brains/detail` | per brain: `ok`, `installed`, `logged_in` (best effort), `api_key`, `hint` |
 | `GET /gifts` | per gift (MCP server): `ok`, `label`, `hint` (the creator greys out the rest) |
@@ -167,7 +169,9 @@ the same keys and rules to its `run_command` tool.
 | `POST /islands` | found an island: `{"name", "repo"?, "branch"?, "shape"?, "steps"? \| "plan"?: "classic" \| "quick_fixes", "season"?, "rules"?, "folder"?, "existing_repo"?}` → its snapshot (400 `{"error"}` with a readable reason). The repository comes one of three ways: no `repo` → a new repo with a README in `<folder>/<id>`; `repo` → `gh repo clone owner/name <folder>/<id>` (needs `gh` installed and logged in; the folder must be empty or missing; checks out `branch`, default the repo's default branch; an empty GitHub repo gets a first README commit); `existing_repo` → that git folder as is (needs a commit; `repo` is read from its GitHub `origin` when not given, `branch` defaults to its checked-out branch). Then it lays out the shape's lots and the roads for the steps. Cloning runs in a worker thread and can take a while |
 | `GET /github/repos?q=` | the user's repos, through their logged-in `gh` (island creator) |
 | `GET /github/branches?repo=` | a repo's branches, through `gh` |
-| `GET /islands/{id}` | the island snapshot |
+| `GET /islands/{id}` | the island snapshot (plus `mock_agents`) |
+| `PATCH /islands/{id}` | `{"name"?, "repo"?, "branch"?, "rules"?}`: rename, link a repo (also sets the repository's `origin`), change the branch or house rules → the island header, and an `island` event to every client |
+| `GET /islands/{id}/issues?limit=50` | the linked repo's open GitHub issues through `gh` (400 without a repo), to start a task from one |
 | `DELETE /islands/{id}` | abandon the island (rows go, the git repository stays on disk). 409 while a task runs there or if it is the last island |
 | `DELETE /islands/{id}/residents/{resident_id}` | the resident moves away (409 if a building still counts on them) |
 | `GET /islands/{id}/tasks` | the island's tasks, newest first, each with its `steps` (`?status=done,failed&limit=50`) |

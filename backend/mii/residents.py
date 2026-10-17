@@ -7,6 +7,7 @@ them the worker at those buildings outright, taking over from whoever was there:
 the engine always uses the resident each building points at (Building.resident).
 """
 
+import json
 import re
 import uuid
 
@@ -24,6 +25,7 @@ JOB_BUILDINGS = {"planner": ["mailbox", "post_office"], "coder": ["workshop", "l
 SLIDERS = ("bluntness", "caution", "chattiness", "creativity")
 KEY_VALUES = ("yes", "ask", "no")
 MAX_NAME = 20
+MAX_APPEARANCE = 4000  # characters of JSON; the backend stores it, the game gives it meaning
 HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 
@@ -79,6 +81,11 @@ def clean_fields(data: dict, partial: bool) -> dict:
         if not isinstance(gifts, list) or any(g not in GIFTS for g in gifts):
             raise ResidentError(f"gifts must be a list of {list(GIFTS)}")
         out["gifts"] = list(dict.fromkeys(gifts))  # drop duplicates, keep order
+    if "appearance" in data:
+        appearance = data["appearance"]
+        if not isinstance(appearance, dict) or len(json.dumps(appearance)) > MAX_APPEARANCE:
+            raise ResidentError(f"appearance must be a small JSON object (under {MAX_APPEARANCE} characters)")
+        out["appearance"] = appearance
     return out
 
 

@@ -105,3 +105,28 @@ async def test_bus_sends_events_only_to_that_islands_clients(island):
     bus.add_client(everything)
     await bus.emit("sunny", events.mood("jun", "proud"))
     assert len(sunny.sent) == 1 and other.sent == [] and len(everything.sent) == 1
+
+
+async def test_appearance_is_stored_and_echoed(island):
+    look = {"eyes": 2, "hair": "bob", "hair_color": "#4A3426"}
+    r = await residents.create_resident("sunny", {"name": "Mo", "appearance": look})
+    assert (await Resident.objects.aget(pk=r.id)).appearance == look
+    sent = next(x for x in (await island_snapshot("sunny", []))["residents"] if x["id"] == r.id)
+    assert sent["appearance"] == look and sent["activity"] == ""
+    with pytest.raises(residents.ResidentError):
+        await residents.create_resident("sunny", {"name": "Bea", "appearance": ["not", "a", "dict"]})
+
+
+async def test_update_island_message_and_request_id_echo(island):
+    workflow, watcher = make_workflow(ScriptedRunner())
+    runtime = type("Runtime", (), {"bus": workflow.bus, "bubbles": workflow.bubbles})()
+
+    msg = {"type": "update_island", "island": {"name": "Sunnier", "branch": "dev"}, "request_id": "r1"}
+    assert await handle_message(runtime, "sunny", msg) is None
+    [event] = watcher.sent
+    assert event["type"] == "island" and event["island"]["name"] == "Sunnier" and event["island"]["branch"] == "dev"
+
+    reply = await handle_message(runtime, "sunny", {"type": "update_island", "island": {"repo": "bad"}, "request_id": "r2"})
+    assert reply["type"] == "error" and reply["request_id"] == "r2" and len(watcher.sent) == 1
+    reply = await handle_message(runtime, "sunny", {"type": "answer_bubble", "id": "b_x"})
+    assert reply["type"] == "error" and "request_id" not in reply

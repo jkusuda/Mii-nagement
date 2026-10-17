@@ -2,6 +2,7 @@
 
     repos:     gh repo list --limit 100 --json nameWithOwner,isPrivate,updatedAt   (island creator)
     branches:  gh api repos/<owner/name>/branches --jq '.[].name'                (island creator)
+    issues:    gh issue list --repo <owner/name> --state open --json number,title,labels,updatedAt  (pick a task)
     issue in:  gh issue view <number> --repo <owner/name> --json title,body
     PR out:    git push -u origin mii/<task_id>   (from the task's worktree)
                gh pr create --repo <owner/name> --head mii/<task_id> --base <island branch> --title ... --body ...
@@ -50,6 +51,21 @@ def list_repos(query: str = "", limit: int = 100) -> list[dict]:
 def list_branches(repo: str) -> list[str]:
     """Branch names of `owner/name`."""
     return [line for line in _run(["gh", "api", f"repos/{repo}/branches", "--jq", ".[].name"]).splitlines() if line]
+
+
+def list_issues(repo: str, limit: int = 50) -> list[dict]:
+    """Open issues of `owner/name`, newest first: number, title, labels, updated_at (GET /islands/{id}/issues)."""
+    raw = _run(["gh", "issue", "list", "--repo", repo, "--state", "open", "--limit", str(limit),
+                "--json", "number,title,labels,updatedAt"])
+    try:
+        issues = json.loads(raw)
+    except json.JSONDecodeError:
+        raise GitHubError("gh returned something that isn't JSON")
+    return [
+        {"number": i["number"], "title": i["title"], "labels": [l["name"] for l in i.get("labels", [])],
+         "updated_at": i.get("updatedAt")}
+        for i in issues
+    ]
 
 
 def fetch_issue(repo: str, number: int) -> tuple[str, str]:

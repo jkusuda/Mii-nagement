@@ -59,6 +59,12 @@ Backend design: [docs/architecture.md](docs/architecture.md).
 - [x] **Game: send a package** (POST /islands/{id}/tasks): title + details, or a GitHub issue number.
 - [x] **Game: click a building**: the camera glides to it and a panel opens (Mailbox: open issues +
       send a new one; other buildings: packages at that stage, residents there and their activity).
+- [x] **Island after founding**: `PATCH /islands/{id}` / `update_island` (rename, link a repo, branch,
+      rules) + the `island` event; `GET /islands/{id}/issues` to start a task from a GitHub issue;
+      `GET /meta` so the game stops hard-coding backend lists; `weather` in the snapshot and as an
+      event; `activity`, `appearance` and bubble `asked_at` in the snapshot; `request_id` on errors.
+- [ ] **Game: use them**: island settings (rename / link repo), issue picker in the Mailbox, read
+      `/meta` instead of `ResidentData` constants, show the backend `weather`, send `appearance`.
 - [ ] **Build mode**: place the 5 building types and draw pass/fail roads.
       Backend done: `set_layout` / `PUT /islands/{id}/layout` + the `layout` event (protocol.md).
       The game still needs the editing UI.

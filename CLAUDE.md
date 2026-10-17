@@ -49,6 +49,7 @@ backend/mii/      one package = Django project + app
   residents.py    create_resident / update_resident / delete_resident (the resident creator; `buildings` = works at)
   layout.py       workflow editing by hand: validate + save buildings/roads (set_layout,
                   PUT /islands/{id}/layout without a "map")
+  weather.py      island weather (sunny/cloudy/rainy/night) from recent steps; snapshot field + `weather` event
   sandbox.py      Sandboxes (one per island repo) + worktree per task + commit_all/diff_stat + is_inside()
   agents/         __init__ (AgentJob, BrainRunner, make_runner, parse_verdict, permission_for), mock.py,
                   acp.py (AcpRunner + BRAINS + GIFTS tables), openrouter.py (OpenRouterRunner)
