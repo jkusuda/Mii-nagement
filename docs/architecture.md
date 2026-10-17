@@ -131,7 +131,7 @@ Bubbles sidebar, and every screen (`show_screen()` shows one).
 | `scenes/residents/` | Residents tab, resident cards, the resident creator, `resident_data.gd` (jobs, brains, gifts, vibes) |
 | `scenes/mii/` | the 3D Mii (`mii.gd`), its parts (`mii_parts.gd`), the creator's preview stage |
 | `scenes/news/`, `scenes/insights/` | the News tab (`news_stories.gd` writes the stories) and the Insights tab |
-| `scenes/ui/` | sidebar, bubble cards, the answer popup, building panel, the talk popup (`talk_popup.gd` + `talk_room.gd`), settings, toasts, `ui.gd` (`UI.label`) |
+| `scenes/ui/` | sidebar, bubble cards, the answer popup, building panel, the talk popup (`talk_popup.gd` + `talk_room.gd`; the bubble types its text in via `visible_characters`, a click skips), settings, toasts, `ui.gd` (`UI.label`) |
 | `ui/theme.tres`, `shaders/`, `assets/` | every colour and style, the GPU shaders, models / icons / fonts / Mii parts |
 
 **`Net` signals and who listens** (every screen also redraws on `island_changed`):
