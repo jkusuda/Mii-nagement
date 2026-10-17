@@ -561,13 +561,13 @@ size_flags_horizontal = 3
 theme_type_variation = &"TabInactive"
 text = "Questions"
 
-[node name="TabReviews" type="Button" parent="Margin/Columns/Sidebar/Rows/Tabs/Row" unique_id=1570456168]
+[node name="TabStatus" type="Button" parent="Margin/Columns/Sidebar/Rows/Tabs/Row" unique_id=1570456168]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 30)
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"TabInactive"
-text = "Reviews"
+text = "Status"
 
 [node name="Scroll" type="ScrollContainer" parent="Margin/Columns/Sidebar/Rows" unique_id=1523967312]
 unique_name_in_owner = true
