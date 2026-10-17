@@ -2,7 +2,7 @@
 #
 #   make           same as `make up`: backend (no reload, no simulator) + the game, for real agents
 #   make setup     install deps (first time; also run by `make up`). No .env needed.
-#   make up        backend + game (real agents: toggle mock mode off in the game's settings)
+#   make up        backend + game with real agents (sets MOCK_AGENTS=0, whatever .env or the settings say)
 #   make dev       backend (--reload) + simulator (fake tasks) + game: mock-mode development
 #   make server    just the backend (http://localhost:8000)
 #   make sim       just the simulator (fake tasks; needs the backend)

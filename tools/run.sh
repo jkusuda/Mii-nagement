@@ -2,8 +2,8 @@
 # Run the whole stack and stop it as one: the backend (and, with --sim, the simulator)
 # in the background, the game in front. Used by `make` (real agents) and `make dev`.
 #
-#   tools/run.sh            backend + game
-#   tools/run.sh --sim      backend (--reload) + simulator (fake tasks) + game
+#   tools/run.sh            backend + game, real agents (MOCK_AGENTS=0)
+#   tools/run.sh --sim      backend (--reload) + simulator (fake tasks) + game, mock brains (MOCK_AGENTS=1)
 #
 # Whichever ends first takes the rest down: Ctrl+C, closing the game window, the backend
 # dying, or the terminal going away (SIGHUP). Shutdown is graceful first: the backend gets
@@ -56,6 +56,10 @@ stop() {
 }
 trap stop EXIT
 trap 'stop; exit 130' INT TERM HUP
+
+# Real agents by default, mock brains with --sim. Exported before the backend starts, so it
+# wins over a root .env and over the saved setting (the environment locks it; see prefs.py).
+if [ $SIM = 1 ]; then export MOCK_AGENTS=1; else export MOCK_AGENTS=0; fi
 
 RELOAD=""
 [ $SIM = 1 ] && RELOAD="--reload"

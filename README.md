@@ -52,8 +52,9 @@ make
 That installs everything, starts the backend, and opens the game. No
 configuration file is needed. Ctrl+C stops both. This is the real-agents setup:
 no simulator (its fake tasks would become real agent work) and no `--reload`
-(editing the code would restart the server mid-task). Mock mode is still on by
-default; turn it off in the game's settings to let residents use real brains.
+(editing the code would restart the server mid-task). It forces mock mode off
+(`MOCK_AGENTS=0`), whatever a `.env` or the saved settings say, so residents use
+their real brains.
 
 For development, `make dev` runs the backend with `--reload` plus the simulator,
 which keeps posting fake tasks so the island is always busy in mock mode.
