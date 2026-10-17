@@ -1,7 +1,7 @@
 class_name BubblesSidebar
 extends PanelContainer
 ## The Bubbles sidebar: one card per open bubble in Net.island, the "N need you"
-## pill, and the All / Questions / Status tabs.
+## pill, and the Questions / Status tabs.
 ## Status lists every open task and where it is, instead of bubbles.
 ##
 ## Cards are kept by bubble id and only added or removed when bubbles come and
@@ -9,17 +9,16 @@ extends PanelContainer
 
 const CardScene := preload("res://scenes/ui/bubble_card.tscn")
 
-## tab -> bubble kinds it shows ("all" shows everything)
-const TABS := {"all": [], "questions": ["confused", "struggling", "permission"], "status": []}
+## tab -> bubble kinds it shows
+const TABS := {"questions": ["confused", "struggling", "permission"], "status": []}
 
-var _tab := "all"
+var _tab := "questions"
 var _cards := {}  # bubble id -> BubbleCard
 var _popup := AnswerPopup.new()  # one popup, reused for every bubble
 var _task_rows := VBoxContainer.new()  # the Status tab's rows, rebuilt on every refresh
 
 
 func _ready() -> void:
-	%TabAll.pressed.connect(_set_tab.bind("all"))
 	%TabQuestions.pressed.connect(_set_tab.bind("questions"))
 	%TabStatus.pressed.connect(_set_tab.bind("status"))
 	Net.island_changed.connect(refresh)
@@ -65,7 +64,7 @@ func refresh() -> void:
 		var resident := Net.find_resident(str(bubble["agent"]))
 		var place: String = Net.find_building(str(resident.get("building", ""))).get("name", "Island")
 		_cards[id].setup(bubble, resident, place)
-		_cards[id].visible = _tab == "all" or bubble["kind"] in TABS[_tab]
+		_cards[id].visible = bubble["kind"] in TABS[_tab]
 
 	for id in _cards.keys():
 		if id not in open_ids:
@@ -91,7 +90,7 @@ func refresh() -> void:
 
 func _set_tab(tab: String) -> void:
 	_tab = tab
-	for pair in [["all", %TabAll], ["questions", %TabQuestions], ["status", %TabStatus]]:
+	for pair in [["questions", %TabQuestions], ["status", %TabStatus]]:
 		pair[1].theme_type_variation = &"TabActive" if pair[0] == tab else &"TabInactive"
 	refresh()
 

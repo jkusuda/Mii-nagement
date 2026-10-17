@@ -545,20 +545,12 @@ theme_type_variation = &"TabsPanel"
 layout_mode = 2
 theme_override_constants/separation = 4
 
-[node name="TabAll" type="Button" parent="Margin/Columns/Sidebar/Rows/Tabs/Row" unique_id=1373593581]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 30)
-layout_mode = 2
-size_flags_horizontal = 3
-theme_type_variation = &"TabActive"
-text = "All"
-
 [node name="TabQuestions" type="Button" parent="Margin/Columns/Sidebar/Rows/Tabs/Row" unique_id=1184902810]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 30)
 layout_mode = 2
 size_flags_horizontal = 3
-theme_type_variation = &"TabInactive"
+theme_type_variation = &"TabActive"
 text = "Questions"
 
 [node name="TabStatus" type="Button" parent="Margin/Columns/Sidebar/Rows/Tabs/Row" unique_id=1570456168]
