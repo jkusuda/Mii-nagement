@@ -1,7 +1,7 @@
 class_name IslandResident
 extends Node3D
 ## One resident on the 3D island: their Mii, a name tag, a mood word under it, a
-## bubble icon when they need you, "z z" when they sleep, a speech line when they
+## bubble icon when they need you, "z z" when they sleep, a speech bubble when they
 ## say something, and little emotes (hops, slumps, head turns).
 ##
 ## island_residents.gd decides *where* they go; this script only knows how to
@@ -32,9 +32,8 @@ var _facing := 0.0  # radians around y, 0 = toward the camera
 var _work_tween: Tween
 var _walk_tween: Tween
 var _emote_tween: Tween
-var _speech_tween: Tween
 var _mood_tag: Label3D
-var _speech: Label3D
+var _speech: SpeechBubble
 
 @onready var mii: Mii = %Mii
 @onready var name_tag: Label3D = %NameTag
@@ -48,10 +47,10 @@ func _ready() -> void:
 	# Built in code, not in the .tscn: two more Label3Ds like NameTag.
 	# The mood tag is a small symbol beside the name.
 	_mood_tag = _make_label(Vector3(0, 3.0, 0), 28, 0.016)
-	_speech = _make_label(Vector3(0, 5.1, 0), 36, 0.02)
-	_speech.width = 440.0
-	_speech.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_speech.visible = false
+	# The speech bubble's tail tip sits just above the mood tag.
+	_speech = SpeechBubble.new()
+	_speech.position = Vector3(0, 3.7, 0)
+	add_child(_speech)
 
 
 ## A billboard label in the island's font with a white outline, like NameTag.
@@ -147,21 +146,10 @@ func settle(spot: Vector3, new_state: String, look_at_point: Vector3) -> void:
 			mii.play("idle")
 
 
-## Say something out loud for a few seconds (a chat line, a help request, a thought).
-## Godot concept: a Tween can also wait (tween_interval) and run a function at the
-## end (tween_callback), so one Tween does "show, wait, fade, hide".
+## Say something out loud for a few seconds (a chat line, a help request, a thought),
+## in a speech bubble over their head.
 func say(text: String, seconds := 4.0) -> void:
-	if _speech_tween:
-		_speech_tween.kill()
-	_speech.text = short_line(text)
-	_speech.modulate.a = 1.0
-	_speech.outline_modulate.a = 1.0
-	_speech.visible = true
-	_speech_tween = create_tween()
-	_speech_tween.tween_interval(max(seconds - 0.6, 0.2))
-	_speech_tween.tween_property(_speech, "modulate:a", 0.0, 0.6)
-	_speech_tween.parallel().tween_property(_speech, "outline_modulate:a", 0.0, 0.6)
-	_speech_tween.tween_callback(func(): _speech.visible = false)
+	_speech.say(short_line(text), seconds)
 
 
 ## What fits over a head: the first sentence, cut at a word with "…" past
