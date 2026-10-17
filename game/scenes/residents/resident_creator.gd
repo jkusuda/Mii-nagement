@@ -7,8 +7,8 @@ extends PanelContainer
 ##
 ## The same screen edits an existing resident: open() it with their data.
 ##
-## The fields match the Resident table (backend/mii/models.py). `gifts` and
-## `keys` are new: see docs/mii-customization.md for how they reach ACP.
+## The fields match the Resident table (backend/mii/models.py); see
+## docs/mii-customization.md for how `gifts` and `keys` reach ACP.
 ##
 ## "Move in" / "Save" emits `saved`; game.gd sends it to the backend
 ## (Net.send_resident) and comes back here with show_error() if it's refused.
@@ -25,8 +25,15 @@ signal move_away_requested(resident_id: String)
 const ARROW := preload("res://assets/ui/dropdown_arrow.svg")
 
 const SURPRISE_NAMES := ["Mo", "Bea", "Otto", "Pip", "Juniper", "Rory", "Tess", "Kai", "Nell", "Ivy", "Sol", "Wren"]
-const SURPRISE_PHRASES := ["Let me poke at it!", "Tiny steps!", "Ship it, but safely!", "Hmm, interesting…",
-	"One more test!", "Let's map it out!", "Tidy code, happy island."]
+const SURPRISE_PHRASES := [
+	"Let me poke at it!",
+	"Tiny steps!",
+	"Ship it, but safely!",
+	"Hmm, interesting…",
+	"One more test!",
+	"Let's map it out!",
+	"Tidy code, happy island."
+]
 
 ## Same buckets as level() in backend/mii/personality.py, as short phrases for
 ## the "How Mo will act" box. [low, medium, high]
@@ -36,6 +43,15 @@ const ACT_PHRASES := {
 	"creativity": ["sticks to well-known solutions", "is open to new ideas", "suggests creative alternatives"],
 	"bluntness": ["is gentle with bad news", "is direct but polite", "is blunt about what's wrong"],
 }
+
+## The Look page's tabs: [appearance key, label, the style shown as the tab's icon]. See MiiParts.
+const PART_TABS := [
+	["hair", "Hair", 0], ["eyes", "Eyes", 0], ["brows", "Brows", 1], ["nose", "Nose", 4], ["mouth", "Mouth", 2]
+]
+const ABOUT_ICON := preload("res://assets/icons/user.svg")
+const LOOK_ICON := preload("res://assets/icons/smile.svg")
+const INK := Color("292E50")  # the theme's dark text colour
+const PART_COLUMNS := 14
 
 var _data := ResidentData.blank()
 var _editing := false
@@ -55,12 +71,6 @@ var _part_tiles := {}  # kind -> Array of tile buttons, index = style (hair: ind
 var _part_grids := {}  # kind -> GridContainer
 var _part_tabs := {}  # kind -> tab button
 
-## The Look page's tabs: [appearance key, label, the style shown as the tab's icon]. See MiiParts.
-const PART_TABS := [["hair", "Hair", 0], ["eyes", "Eyes", 0], ["brows", "Brows", 1], ["nose", "Nose", 4], ["mouth", "Mouth", 2]]
-const ABOUT_ICON := preload("res://assets/icons/user.svg")
-const LOOK_ICON := preload("res://assets/icons/smile.svg")
-const INK := Color("292E50")  # the theme's dark text colour
-const PART_COLUMNS := 14
 ## OpenRouter model ids for the model picker (GET /models), loaded the first
 ## time the openrouter brain is picked.
 var _model_ids: Array = []
@@ -82,14 +92,17 @@ func _ready() -> void:
 
 	# Godot concept: text_changed fires on every keystroke, so the preview
 	# updates while you type.
-	%NameEdit.text_changed.connect(func(text: String):
-		_data["name"] = text
-		_refresh())
-	%CatchphraseEdit.text_changed.connect(func(text: String):
-		_data["catchphrase"] = text
-		_refresh())
-	%ModelEdit.text_changed.connect(func(text: String):
-		_data["model"] = text if text.strip_edges() else null)
+	%NameEdit.text_changed.connect(
+		func(text: String):
+			_data["name"] = text
+			_refresh()
+	)
+	%CatchphraseEdit.text_changed.connect(
+		func(text: String):
+			_data["catchphrase"] = text
+			_refresh()
+	)
+	%ModelEdit.text_changed.connect(func(text: String): _data["model"] = text if text.strip_edges() else null)
 	# The page tabs get white Lucide icons, tinted dark like the text.
 	for pair in [[%AboutTab, ABOUT_ICON], [%LookTab, LOOK_ICON]]:
 		_set_tab_icon(pair[0], pair[1], INK, 18)
@@ -108,7 +121,7 @@ func open(resident: Dictionary = {}, island_name := "Pebble Cove", live := true)
 	_editing = not resident.is_empty()
 	_live = live
 	_data = ResidentData.blank().merged(resident, true)
-	# Someone made before faces existed gets the look they already have on the island.
+	# A resident with no saved look keeps the one the island picked for them.
 	_data["appearance"] = MiiParts.for_resident(resident) if _editing else MiiParts.random()
 	_data.erase("buildings")  # only sent when "Works at" changes
 	_move_away.visible = live and _editing and not Net.find_resident(str(resident.get("id", ""))).is_empty()
@@ -235,6 +248,7 @@ func show_error(message: String) -> void:
 
 # --- Building the widgets ------------------------------------------------------
 
+
 func _build_swatches() -> void:
 	for hex in ResidentData.COLORS:
 		_add_swatch(%Swatches, "color", hex)
@@ -254,17 +268,20 @@ func _add_swatch(row: Container, field: String, hex: String) -> void:
 	style.set_corner_radius_all(13)
 	for state in ["normal", "hover", "pressed", "hover_pressed"]:
 		swatch.add_theme_stylebox_override(state, style)
-	swatch.pressed.connect(func():
-		if field == "color":
-			_data["color"] = hex
-		else:
-			_data["appearance"][field] = hex
-		_refresh())
+	swatch.pressed.connect(
+		func():
+			if field == "color":
+				_data["color"] = hex
+			else:
+				_data["appearance"][field] = hex
+			_refresh()
+	)
 	row.add_child(swatch)
 	_swatches.append(swatch)
 
 
 # --- The Look page ---------------------------------------------------------------
+
 
 ## Show the About page (false) or the Look page (true). On the Look page the
 ## preview camera moves in close to the face.
@@ -283,7 +300,9 @@ func _set_tab_icon(button: Button, icon: Texture2D, tint: Color, width: int) -> 
 	button.expand_icon = true
 	button.add_theme_constant_override("icon_max_width", width)
 	button.add_theme_constant_override("h_separation", 6)
-	for state in ["icon_normal_color", "icon_hover_color", "icon_pressed_color", "icon_hover_pressed_color", "icon_focus_color"]:
+	for state in [
+		"icon_normal_color", "icon_hover_color", "icon_pressed_color", "icon_hover_pressed_color", "icon_focus_color"
+	]:
 		button.add_theme_color_override(state, tint)
 
 
@@ -343,15 +362,23 @@ func _build_look() -> void:
 				tile.icon = MiiParts.icon(kind, style)
 				tile.expand_icon = true
 				tile.add_theme_constant_override("icon_max_width", 56)
-				for state in ["icon_normal_color", "icon_hover_color", "icon_pressed_color", "icon_hover_pressed_color", "icon_focus_color"]:
+				for state in [
+					"icon_normal_color",
+					"icon_hover_color",
+					"icon_pressed_color",
+					"icon_hover_pressed_color",
+					"icon_focus_color"
+				]:
 					tile.add_theme_color_override(state, Color.WHITE)
 				tile.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
 				var hat := kind == "hair" and MiiParts.is_hat(style)
 				tile.tooltip_text = "Hat" if hat else "%s %d" % [tab[1], style + 1]
-			tile.toggled.connect(func(on: bool):
-				if on:
-					_data["appearance"][kind] = style
-					_refresh())
+			tile.toggled.connect(
+				func(on: bool):
+					if on:
+						_data["appearance"][kind] = style
+						_refresh()
+			)
 			grid.add_child(tile)
 			tiles.append(tile)
 		_part_tiles[kind] = tiles
@@ -369,10 +396,12 @@ func _build_jobs() -> void:
 		button.theme_type_variation = &"ChoiceButton"
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		button.focus_mode = Control.FOCUS_NONE
-		button.toggled.connect(func(on: bool):
-			if on:
-				_data["job"] = job
-				_refresh())
+		button.toggled.connect(
+			func(on: bool):
+				if on:
+					_data["job"] = job
+					_refresh()
+		)
 		%Jobs.add_child(button)
 		_job_buttons[job] = button
 
@@ -381,9 +410,11 @@ func _build_brains() -> void:
 	%BrainPicker.add_theme_icon_override("arrow", ARROW)
 	for id in _brain_ids:
 		%BrainPicker.add_item(ResidentData.BRAINS[id])
-	%BrainPicker.item_selected.connect(func(index: int):
-		_data["brain"] = _brain_ids[index]
-		_show_model_picker())
+	%BrainPicker.item_selected.connect(
+		func(index: int):
+			_data["brain"] = _brain_ids[index]
+			_show_model_picker()
+	)
 
 	# The OpenRouter catalogue, next to the model field (only for that brain).
 	_model_picker.theme_type_variation = &"OutlineButton"
@@ -394,10 +425,12 @@ func _build_brains() -> void:
 	_model_picker.focus_mode = Control.FOCUS_NONE
 	_model_picker.tooltip_text = "Pick any model from OpenRouter's catalogue"
 	_model_picker.visible = false
-	_model_picker.item_selected.connect(func(index: int):
-		if index > 0:
-			%ModelEdit.text = _model_ids[index - 1]
-			_data["model"] = _model_ids[index - 1])
+	_model_picker.item_selected.connect(
+		func(index: int):
+			if index > 0:
+				%ModelEdit.text = _model_ids[index - 1]
+				_data["model"] = _model_ids[index - 1]
+	)
 	%ModelEdit.add_sibling(_model_picker)
 
 
@@ -414,17 +447,20 @@ func _show_model_picker() -> void:
 		return
 	_model_picker.clear()
 	_model_picker.add_item("Loading models…")
-	Net.request_json("/models", func(ok: bool, data: Dictionary):
-		_model_picker.clear()
-		if not ok:  # e.g. no OpenRouter key yet: tried again next time
-			_model_picker.add_item("No catalogue: %s" % data["error"])
-			_model_picker.tooltip_text = str(data["error"])
-			return
-		_model_picker.add_item("Choose a model…")
-		for model in data.get("models", []):
-			_model_ids.append(str(model["id"]))
-			_model_picker.add_item(str(model.get("name", model["id"])))
-		_model_picker.select(_model_ids.find(%ModelEdit.text) + 1))
+	Net.request_json(
+		"/models",
+		func(ok: bool, data: Dictionary):
+			_model_picker.clear()
+			if not ok:  # e.g. no OpenRouter key yet: tried again next time
+				_model_picker.add_item("No catalogue: %s" % data["error"])
+				_model_picker.tooltip_text = str(data["error"])
+				return
+			_model_picker.add_item("Choose a model…")
+			for model in data.get("models", []):
+				_model_ids.append(str(model["id"]))
+				_model_picker.add_item(str(model.get("name", model["id"])))
+			_model_picker.select(_model_ids.find(%ModelEdit.text) + 1)
+	)
 
 
 func _build_sliders() -> void:
@@ -445,9 +481,11 @@ func _build_sliders() -> void:
 		slider.max_value = 1.0
 		slider.step = 0.01
 		slider.focus_mode = Control.FOCUS_NONE
-		slider.value_changed.connect(func(value: float):
-			_data[t[0]] = value
-			_refresh())
+		slider.value_changed.connect(
+			func(value: float):
+				_data[t[0]] = value
+				_refresh()
+		)
 		%Sliders.add_child(header)
 		%Sliders.add_child(slider)
 		_sliders[t[0]] = slider
@@ -466,12 +504,14 @@ func _build_gifts() -> void:
 		tile.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		tile.focus_mode = Control.FOCUS_NONE
 		tile.tooltip_text = "Hand over the %s MCP server" % g[1]
-		tile.toggled.connect(func(on: bool):
-			if on and g[0] not in _data["gifts"]:
-				_data["gifts"].append(g[0])
-			elif not on:
-				_data["gifts"].erase(g[0])
-			_show_gift(g[0]))
+		tile.toggled.connect(
+			func(on: bool):
+				if on and g[0] not in _data["gifts"]:
+					_data["gifts"].append(g[0])
+				elif not on:
+					_data["gifts"].erase(g[0])
+				_show_gift(g[0])
+		)
 		%Gifts.add_child(tile)
 		_gift_buttons[g[0]] = tile
 
@@ -502,28 +542,34 @@ func _build_keys() -> void:
 ## Ask the backend which brains can run here (GET /brains/detail), grey out
 ## the rest, and say why in their tooltip ("run `codex login`").
 func _check_brains() -> void:
-	Net.request_json("/brains/detail", func(ok: bool, brains: Dictionary):
-		if not ok:
-			return  # backend offline: leave every brain selectable
-		var tips := []
-		for i in _brain_ids.size():
-			var info: Dictionary = brains.get(_brain_ids[i], {})
-			var ready: bool = info.get("ok", false)
-			%BrainPicker.set_item_disabled(i, not ready)
-			%BrainPicker.set_item_text(i, ResidentData.BRAINS[_brain_ids[i]] + ("" if ready else " (not set up)"))
-			tips.append("%s: %s" % [ResidentData.BRAINS[_brain_ids[i]], info.get("hint", "unknown")])
-		%BrainPicker.tooltip_text = "\n".join(tips))
+	Net.request_json(
+		"/brains/detail",
+		func(ok: bool, brains: Dictionary):
+			if not ok:
+				return  # backend offline: leave every brain selectable
+			var tips := []
+			for i in _brain_ids.size():
+				var info: Dictionary = brains.get(_brain_ids[i], {})
+				var ready: bool = info.get("ok", false)
+				%BrainPicker.set_item_disabled(i, not ready)
+				%BrainPicker.set_item_text(i, ResidentData.BRAINS[_brain_ids[i]] + ("" if ready else " (not set up)"))
+				tips.append("%s: %s" % [ResidentData.BRAINS[_brain_ids[i]], info.get("hint", "unknown")])
+			%BrainPicker.tooltip_text = "\n".join(tips)
+	)
 
 
 ## Ask the backend which gifts can run here (GET /gifts) and grey out the rest,
 ## with why in the tooltip ("install `npx` first").
 func _check_gifts() -> void:
-	Net.request_json("/gifts", func(ok: bool, gifts: Dictionary):
-		if not ok:
-			return  # backend offline: leave every gift selectable
-		_gift_info = gifts
-		for gift in _gift_buttons:
-			_show_gift(gift))
+	Net.request_json(
+		"/gifts",
+		func(ok: bool, gifts: Dictionary):
+			if not ok:
+				return  # backend offline: leave every gift selectable
+			_gift_info = gifts
+			for gift in _gift_buttons:
+				_show_gift(gift)
+	)
 
 
 ## A gift that can't run here is greyed out, unless the resident already has
@@ -535,11 +581,15 @@ func _show_gift(gift: String) -> void:
 	var tile: Button = _gift_buttons[gift]
 	var ready: bool = info.get("ok", false)
 	tile.disabled = not ready and not tile.button_pressed
-	tile.tooltip_text = "%s: %s" % [info.get("label", gift), info.get("hint", "")] if ready \
+	tile.tooltip_text = (
+		"%s: %s" % [info.get("label", gift), info.get("hint", "")]
+		if ready
 		else "Can't hand this over yet: %s" % info.get("hint", "not set up")
+	)
 
 
 # --- Works at ---------------------------------------------------------------------
+
 
 func _build_works_at() -> void:
 	var header := HBoxContainer.new()
@@ -575,8 +625,11 @@ func _fill_works_at() -> void:
 	var id := str(_data.get("id", ""))
 	var buildings: Array = Net.island.get("buildings", []) if _live else []
 	_works_at_box.visible = not buildings.is_empty()
-	_works_at_now = buildings.filter(func(b): return id != "" and str(b.get("resident", "")) == id) \
-		.map(func(b): return str(b["id"]))
+	_works_at_now = (
+		buildings
+		. filter(func(b): return id != "" and str(b.get("resident", "")) == id)
+		. map(func(b): return str(b["id"]))
+	)
 	for b in buildings:
 		var bid := str(b["id"])
 		var worker := str(Net.find_resident(str(b.get("resident", ""))).get("name", "nobody"))
@@ -591,8 +644,11 @@ func _fill_works_at() -> void:
 		for state in ["font_pressed_color", "font_hover_pressed_color", "font_disabled_color"]:
 			chip.add_theme_color_override(state, Color("292E50"))  # dark ink on the yellow "on" chip
 		chip.focus_mode = Control.FOCUS_NONE
-		chip.tooltip_text = ("Works here already. To move them, give the %s to someone else." % b.get("name", bid)) if mine \
+		chip.tooltip_text = (
+			("Works here already. To move them, give the %s to someone else." % b.get("name", bid))
+			if mine
 			else "Make them the worker at the %s (instead of %s)" % [b.get("name", bid), worker]
+		)
 		chip.toggled.connect(func(_on): _refresh())
 		chips.add_child(chip)
 		_building_chips[bid] = chip
@@ -604,6 +660,7 @@ func _picked_buildings() -> Array:
 
 # --- Move away --------------------------------------------------------------------
 
+
 func _build_move_away() -> void:
 	_move_away.text = "Move away"
 	_move_away.theme_type_variation = &"OutlineButton"
@@ -611,11 +668,17 @@ func _build_move_away() -> void:
 	_move_away.add_theme_color_override("font_hover_color", Color("C0392B"))
 	_move_away.focus_mode = Control.FOCUS_NONE
 	_move_away.visible = false
-	_move_away.pressed.connect(func():
-		var who := str(_data.get("name", "This resident"))
-		ConfirmPopup.ask(self, "%s is moving away?" % who,
-			"%s leaves the island for good. Their past work stays in Insights and News." % who,
-			"Say goodbye", func(): move_away_requested.emit(str(_data.get("id", "")))))
+	_move_away.pressed.connect(
+		func():
+			var who := str(_data.get("name", "This resident"))
+			ConfirmPopup.ask(
+				self,
+				"%s is moving away?" % who,
+				"%s leaves the island for good. Their past work stays in Insights and News." % who,
+				"Say goodbye",
+				func(): move_away_requested.emit(str(_data.get("id", "")))
+			)
+	)
 	%CancelButton.add_sibling(_move_away)
 	%CancelButton.get_parent().move_child(_move_away, %CancelButton.get_index())
 

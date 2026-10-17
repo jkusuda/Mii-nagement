@@ -10,32 +10,68 @@ class_name Seasons
 ## LOOKS, like DayNight's table: tweak the numbers to taste.
 
 const LOOKS := {
-	"spring": {
-		"grass_light": Color(0.62, 0.88, 0.36), "grass_dark": Color(0.47, 0.8, 0.28),
-		"clover": Color(0.8, 0.93, 0.55), "grass_edge": Color(0.38, 0.64, 0.22), "snow": 0.0,
-		"foliage": 0.0, "blossom": 1.0, "plant_snow": 0.0, "roof_snow": 0.0, "ice": 0.0,
-		"leaves": Color(1.0, 0.78, 0.88), "weather": "petals",
+	"spring":
+	{
+		"grass_light": Color(0.62, 0.88, 0.36),
+		"grass_dark": Color(0.47, 0.8, 0.28),
+		"clover": Color(0.8, 0.93, 0.55),
+		"grass_edge": Color(0.38, 0.64, 0.22),
+		"snow": 0.0,
+		"foliage": 0.0,
+		"blossom": 1.0,
+		"plant_snow": 0.0,
+		"roof_snow": 0.0,
+		"ice": 0.0,
+		"leaves": Color(1.0, 0.78, 0.88),
+		"weather": "petals",
 		"light": Color(1.0, 0.98, 1.0),
 	},
-	"summer": {
-		"grass_light": Color(0.56, 0.86, 0.25), "grass_dark": Color(0.42, 0.76, 0.2),
-		"clover": Color(0.66, 0.9, 0.38), "grass_edge": Color(0.35, 0.62, 0.18), "snow": 0.0,
-		"foliage": 0.0, "blossom": 0.0, "plant_snow": 0.0, "roof_snow": 0.0, "ice": 0.0,
-		"leaves": Color(0.13, 0.5, 0.12), "weather": "fireflies",
+	"summer":
+	{
+		"grass_light": Color(0.56, 0.86, 0.25),
+		"grass_dark": Color(0.42, 0.76, 0.2),
+		"clover": Color(0.66, 0.9, 0.38),
+		"grass_edge": Color(0.35, 0.62, 0.18),
+		"snow": 0.0,
+		"foliage": 0.0,
+		"blossom": 0.0,
+		"plant_snow": 0.0,
+		"roof_snow": 0.0,
+		"ice": 0.0,
+		"leaves": Color(0.13, 0.5, 0.12),
+		"weather": "fireflies",
 		"light": Color(1.0, 1.0, 1.0),
 	},
-	"autumn": {
-		"grass_light": Color(0.8, 0.78, 0.34), "grass_dark": Color(0.66, 0.68, 0.27),
-		"clover": Color(0.93, 0.6, 0.28), "grass_edge": Color(0.52, 0.5, 0.22), "snow": 0.0,
-		"foliage": 0.92, "blossom": 0.0, "plant_snow": 0.0, "roof_snow": 0.0, "ice": 0.0,
-		"leaves": Color(0.95, 0.5, 0.15), "weather": "leaves",
+	"autumn":
+	{
+		"grass_light": Color(0.8, 0.78, 0.34),
+		"grass_dark": Color(0.66, 0.68, 0.27),
+		"clover": Color(0.93, 0.6, 0.28),
+		"grass_edge": Color(0.52, 0.5, 0.22),
+		"snow": 0.0,
+		"foliage": 0.92,
+		"blossom": 0.0,
+		"plant_snow": 0.0,
+		"roof_snow": 0.0,
+		"ice": 0.0,
+		"leaves": Color(0.95, 0.5, 0.15),
+		"weather": "leaves",
 		"light": Color(1.05, 0.95, 0.85),
 	},
-	"winter": {
-		"grass_light": Color(0.7, 0.8, 0.62), "grass_dark": Color(0.58, 0.7, 0.52),
-		"clover": Color(0.85, 0.9, 0.85), "grass_edge": Color(0.48, 0.58, 0.44), "snow": 0.9,
-		"foliage": 0.0, "blossom": 0.0, "plant_snow": 0.75, "roof_snow": 0.95, "ice": 1.0,
-		"leaves": Color(1, 1, 1), "weather": "snow",
+	"winter":
+	{
+		"grass_light": Color(0.7, 0.8, 0.62),
+		"grass_dark": Color(0.58, 0.7, 0.52),
+		"clover": Color(0.85, 0.9, 0.85),
+		"grass_edge": Color(0.48, 0.58, 0.44),
+		"snow": 0.9,
+		"foliage": 0.0,
+		"blossom": 0.0,
+		"plant_snow": 0.75,
+		"roof_snow": 0.95,
+		"ice": 1.0,
+		"leaves": Color(1, 1, 1),
+		"weather": "snow",
 		"light": Color(0.9, 0.95, 1.08),
 	},
 }
@@ -74,7 +110,7 @@ static func apply(island: IslandBuilder) -> void:
 		for mesh: MeshInstance3D in building.find_children("*", "MeshInstance3D", true, false):
 			mesh.material_overlay = _overlay(mesh, season, true)  # snow, and lit windows at night
 
-	if island.detail == "full":
+	if island.detail == IslandBuilder.Detail.FULL:
 		_weather(island, row["weather"])
 
 

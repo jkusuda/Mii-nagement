@@ -50,13 +50,12 @@ const TOOL_HINTS := [
 ]
 const POND_SIZES := {"None": Vector2i.ZERO, "Small": Vector2i(2, 2), "Medium": Vector2i(3, 2), "Large": Vector2i(5, 2)}
 const SEASON_NAMES := {"spring": "Spring", "summer": "Summer", "autumn": "Autumn", "winter": "Winter"}
-const AnswerButton := preload("res://scenes/ui/answer_button.gd")
 const INFO_ICON := preload("res://assets/icons/circle-help.svg")
 const PLUS_ICON := preload("res://assets/icons/plus.svg")
 const MINUS_ICON := preload("res://assets/icons/minus.svg")
 const CLEAR_ICON := preload("res://assets/icons/x.svg")
-const INK := Color("292E50")       # the theme's dark text color
-const PROBLEM := Color("D9453B")   # red, for "that won't work"
+const INK := Color("292E50")  # the theme's dark text color
+const PROBLEM := Color("D9453B")  # red, for "that won't work"
 const OPTIONS_BG := Color("FFF4D6")  # the soft yellow strip behind a tool's options
 
 var island: IslandBuilder
@@ -76,25 +75,24 @@ var _save: Button
 var _ghost: MeshInstance3D
 var _ok_material := StandardMaterial3D.new()
 var _bad_material := StandardMaterial3D.new()
-var _http := HTTPRequest.new()
 var _saving := false
 
 # Move tool
-var _dragging := ""            # building type being dragged, "pond", or ""
-var _grab := Vector2i.ZERO     # which tile of the lot the mouse holds
-var _drag_spec := {}           # where the dragged thing would go now
-var _last_moved := ""          # the building R turns
-var _mouse := Vector2.ZERO     # the last mouse position over the island
+var _dragging := ""  # building type being dragged, "pond", or ""
+var _grab := Vector2i.ZERO  # which tile of the lot the mouse holds
+var _drag_spec := {}  # where the dragged thing would go now
+var _last_moved := ""  # the building R turns
+var _mouse := Vector2.ZERO  # the last mouse position over the island
 # Land tool
-var _selected := {}                  # Vector2i -> true: the tiles Add / Remove land will change
+var _selected := {}  # Vector2i -> true: the tiles Add / Remove land will change
 var _select_from := Vector2i(-1, -1)  # where the selection drag started (-1 = not dragging)
-var _select_before := {}             # the selection when the drag started (Shift adds to it)
+var _select_before := {}  # the selection when the drag started (Shift adds to it)
 var _selection_marks: MultiMeshInstance3D
 var _select_material := StandardMaterial3D.new()
 var _land_buttons: Array[Button] = []  # Add, Remove, Clear: off while nothing is selected
 # Plants tool
-var _plant_kind := "tree"      # tree | bush | remove
-var _plant_preview: Node3D     # a see-through tree or bush under the mouse
+var _plant_kind := "tree"  # tree | bush | remove
+var _plant_preview: Node3D  # a see-through tree or bush under the mouse
 var _plant_preview_kind := ""
 var _plant_ring: MeshInstance3D  # the green/red disc it would stand on
 var _preview_ok := StandardMaterial3D.new()
@@ -106,8 +104,6 @@ var _preview_bad := StandardMaterial3D.new()
 func setup(island_builder: IslandBuilder, camera_rig: CameraRig, frame: Control) -> void:
 	island = island_builder
 	rig = camera_rig
-	add_child(_http)
-	_http.request_completed.connect(_on_saved)
 
 	for m in [_ok_material, _bad_material]:
 		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -152,6 +148,7 @@ func setup(island_builder: IslandBuilder, camera_rig: CameraRig, frame: Control)
 
 # --- Opening and closing ----------------------------------------------------------
 
+
 func open() -> void:
 	if is_open or island.layout == null:
 		return
@@ -190,18 +187,15 @@ func _on_save_pressed() -> void:
 		return
 	_saving = true
 	_refresh_status()
-	var url := Net.http_url("/islands/%s/layout" % id.uri_encode())
-	_http.request(url, ["Content-Type: application/json"], HTTPClient.METHOD_PUT, JSON.stringify(draft.to_request()))
+	Net.request_json("/islands/%s/layout" % id.uri_encode(), _on_saved, HTTPClient.METHOD_PUT, draft.to_request())
 
 
-func _on_saved(result: int, code: int, _headers, body: PackedByteArray) -> void:
+func _on_saved(ok: bool, data: Dictionary) -> void:
 	_saving = false
-	if result == HTTPRequest.RESULT_SUCCESS and code == 200:
+	if ok:
 		_close()  # the server also sends everyone the new snapshot
 		return
-	var data = JSON.parse_string(body.get_string_from_utf8())
-	var message := str(data.get("error", "")) if data is Dictionary else ""
-	_refresh_status("Couldn't save: " + (message if message else "the backend didn't answer."))
+	_refresh_status("Couldn't save: %s" % data.get("error", "the backend didn't answer."))
 
 
 # --- The toolbar --------------------------------------------------------------------
@@ -212,6 +206,7 @@ func _on_saved(result: int, code: int, _headers, body: PackedByteArray) -> void:
 #
 # Godot concept: UI can be built in code, like here, instead of in a .tscn:
 # make the nodes, set their properties, add them as children.
+
 
 func _build_toolbar(frame: Control) -> void:
 	_panel = PanelContainer.new()
@@ -410,6 +405,7 @@ func _rebuild() -> void:
 
 # --- Mouse and keys -----------------------------------------------------------------
 
+
 func _unhandled_input(event: InputEvent) -> void:
 	if not is_open:
 		return
@@ -422,12 +418,21 @@ func _unhandled_input(event: InputEvent) -> void:
 		else:
 			_on_release()
 		get_viewport().set_input_as_handled()
-	elif event is InputEventMouseButton and event.pressed and _carrying_building() \
-			and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
+	elif (
+		event is InputEventMouseButton
+		and event.pressed
+		and _carrying_building()
+		and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]
+	):
 		_turn_carried(1 if event.button_index == MOUSE_BUTTON_WHEEL_UP else -1)
 		get_viewport().set_input_as_handled()  # turn, don't zoom
-	elif event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE \
-			and not _selected.is_empty():
+	elif (
+		event is InputEventKey
+		and event.pressed
+		and not event.echo
+		and event.keycode == KEY_ESCAPE
+		and not _selected.is_empty()
+	):
 		_clear_selection()
 		get_viewport().set_input_as_handled()
 	elif event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_R:
@@ -507,6 +512,7 @@ func _hide_markers() -> void:
 
 
 # --- Move -------------------------------------------------------------------------
+
 
 func _start_drag(tile: Vector2i) -> void:
 	for b in draft.buildings:
@@ -597,6 +603,7 @@ func _replace_building(spec: Dictionary) -> void:
 
 # --- Land ---------------------------------------------------------------------------
 
+
 ## Tiles that can change: everything but the grid's outer ring (it stays sea).
 func _is_editable(tile: Vector2i) -> bool:
 	return tile.x >= 1 and tile.y >= 1 and tile.x <= IslandLayout.GRID_W - 2 and tile.y <= IslandLayout.GRID_H - 2
@@ -640,7 +647,10 @@ func _show_selection() -> void:
 			_refresh_status()
 		else:
 			var land := _selected.keys().filter(func(t): return draft.is_land(t)).size()
-			_status.text = "%d selected: %d land, %d sea. Add or Remove land, or Esc to clear." % [_selected.size(), land, _selected.size() - land]
+			_status.text = (
+				"%d selected: %d land, %d sea. Add or Remove land, or Esc to clear."
+				% [_selected.size(), land, _selected.size() - land]
+			)
 
 
 func _refresh_land_buttons() -> void:
@@ -656,10 +666,12 @@ func _change_land(on: bool) -> void:
 	# Remove from the outside in, add from the inside out: that way each step
 	# keeps the island in one piece as long as possible.
 	var middle := Vector2(IslandLayout.GRID_W, IslandLayout.GRID_H) / 2.0
-	tiles.sort_custom(func(a, b):
-		var da := Vector2(a).distance_squared_to(middle)
-		var db := Vector2(b).distance_squared_to(middle)
-		return da > db if not on else da < db)
+	tiles.sort_custom(
+		func(a, b):
+			var da := Vector2(a).distance_squared_to(middle)
+			var db := Vector2(b).distance_squared_to(middle)
+			return da > db if not on else da < db
+	)
 	var skipped := 0
 	var reason := ""
 	for tile: Vector2i in tiles:
@@ -676,6 +688,7 @@ func _change_land(on: bool) -> void:
 
 
 # --- Plants -------------------------------------------------------------------------
+
 
 func _set_plant_kind(kind: String) -> void:
 	_plant_kind = kind
@@ -782,6 +795,7 @@ func _auto_arrange() -> void:
 
 # --- Buildings ----------------------------------------------------------------------
 
+
 func _show_step_toggles() -> void:
 	var busy: bool = Net.island.get("tasks", []).any(func(t): return t.get("status") == "in_progress")
 	for type in IslandLayout.STEP_ORDER:
@@ -804,12 +818,13 @@ func _toggle_step(type: String) -> void:
 			_refresh_status("There's no room for the %s. Add some land first." % IslandLayout.STEP_NAMES[type])
 			return
 		draft.buildings.append(spot)
-		draft.buildings = IslandLayout._in_step_order(draft.buildings)
+		draft.buildings = IslandLayout.in_step_order(draft.buildings)
 	_rebuild()
 	_select_tool(Tool.BUILDINGS)
 
 
 # --- Pond and season ----------------------------------------------------------------
+
 
 func _set_pond_size(size: Vector2i) -> void:
 	if size == Vector2i.ZERO:

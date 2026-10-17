@@ -8,22 +8,32 @@
 #   make sim       just the simulator (fake tasks; needs the backend)
 #   make watch     print the live event stream (needs the backend)
 #   make game      just the game
+#   make check     lint + test: run this after every change
+#   make lint      ruff (backend) + gdlint / gdformat --check (game)
+#   make fmt       ruff format (backend) + gdformat (game)
 #   make test      backend tests + Godot script check
+#   make godot-check   load the game headless and fail on any script error
 #   make reset     wipe the database (stop the server first)
 #
-# Needs: uv (https://docs.astral.sh/uv), Godot 4 (set GODOT=/path/to/godot if it isn't found).
+# Needs: uv (https://docs.astral.sh/uv) and Godot 4. Godot is found on PATH or in
+# /Applications; anywhere else, pass it: `make GODOT=/path/to/godot check`.
+# gdlint and gdformat run through `uvx`, so nothing else is installed.
 
 SHELL := /bin/bash
 BACKEND := backend
 UV := uv
+GDTOOLKIT := uvx --from 'gdtoolkit>=4'
 PORT ?= 8000
 
 # Find Godot: $GODOT, then `godot` on PATH, then the macOS app bundle.
 GODOT ?= $(shell command -v godot 2>/dev/null || ([ -x /Applications/Godot.app/Contents/MacOS/Godot ] && echo /Applications/Godot.app/Contents/MacOS/Godot))
 
-.PHONY: all up real setup server sim watch game test reset check-tools
+.PHONY: all help up real setup server sim watch game check lint fmt test godot-check reset check-tools
 
 all: up
+
+help:
+	@sed -n '2,20p' Makefile | sed 's/^#//'
 
 check-tools:
 	@command -v $(UV) >/dev/null || { echo "uv is missing. macOS: brew install uv   Linux: curl -LsSf https://astral.sh/uv/install.sh | sh   Windows: winget install astral-sh.uv"; exit 1; }
@@ -75,9 +85,30 @@ real: setup
 	echo "backend ready at http://localhost:$(PORT)"; \
 	if [ -n "$(GODOT)" ]; then MII_SERVER=localhost:$(PORT) "$(GODOT)" --path game; else echo "Godot not found: backend running, Ctrl+C to stop"; wait $$SERVER; fi
 
-test: setup
+# --- Checks -----------------------------------------------------------------------
+
+check: lint test
+
+lint:
+	cd $(BACKEND) && $(UV) run ruff check . && $(UV) run ruff format --check .
+	$(GDTOOLKIT) gdlint game
+	$(GDTOOLKIT) gdformat --check -l 120 game
+
+fmt:
+	cd $(BACKEND) && $(UV) run ruff check --fix . && $(UV) run ruff format .
+	$(GDTOOLKIT) gdformat -l 120 game
+
+test: godot-check
 	cd $(BACKEND) && $(UV) run pytest -q
-	@[ -z "$(GODOT)" ] || "$(GODOT)" --headless --path game --quit 2>&1 | grep -i "error" || true
+
+# Load every script without a window. Godot exits 0 even when a script fails to
+# parse, so the output is searched for errors and the target fails on any.
+godot-check:
+	@[ -n "$(GODOT)" ] || { echo "Godot not found: skipping the script check (set GODOT=/path/to/godot)"; exit 0; }
+	@[ -d game/.godot ] || "$(GODOT)" --headless --path game --import >/dev/null 2>&1 || true
+	@out=$$("$(GODOT)" --headless --path game --quit 2>&1); \
+	if echo "$$out" | grep -qiE 'SCRIPT ERROR|ERROR:|Parse Error'; then echo "$$out" | grep -iE -B1 -A3 'SCRIPT ERROR|ERROR:|Parse Error'; echo "Godot script check failed"; exit 1; fi; \
+	echo "Godot script check passed"
 
 reset:
 	cd $(BACKEND) && $(UV) run python manage.py seed --reset

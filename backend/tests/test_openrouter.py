@@ -31,9 +31,13 @@ async def test_openrouter_runner_uses_tools_inside_the_worktree_only(sandbox):
         if len(requests) == 1:
             assert body["model"] == "test/model"
             assert request.headers["Authorization"] == "Bearer sk-or-test"
-            return assistant(tool_calls=[("write_file", {"path": "hello.txt", "content": "hi\n"}),
-                                         ("read_file", {"path": "/etc/passwd"}),
-                                         ("list_files", {"glob": "*.py"})])
+            return assistant(
+                tool_calls=[
+                    ("write_file", {"path": "hello.txt", "content": "hi\n"}),
+                    ("read_file", {"path": "/etc/passwd"}),
+                    ("list_files", {"glob": "*.py"}),
+                ]
+            )
         return assistant(content="All done.\nVERDICT: PASS")
 
     report = RecordingReport()
@@ -75,7 +79,9 @@ async def test_openrouter_runner_honours_house_keys_for_commands(sandbox):
         nonlocal calls
         calls += 1
         if calls == 1:
-            return assistant(tool_calls=[("run_command", {"command": "echo hello"}), ("run_command", {"command": "npm install x"})])
+            return assistant(
+                tool_calls=[("run_command", {"command": "echo hello"}), ("run_command", {"command": "npm install x"})]
+            )
         body = json.loads(request.content)
         outputs = [m["content"] for m in body["messages"] if m["role"] == "tool"]
         assert "exit code 0\nhello" in outputs[0] and outputs[1].startswith("denied")

@@ -1,0 +1,33 @@
+# Optional local hooks: `uvx pre-commit install` once, then every commit runs these.
+# CI (.github/workflows/ci.yml) runs the same checks, so skipping the hooks is safe.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        exclude: '\.(tscn|tres|md)$'
+      - id: check-yaml
+      - id: check-merge-conflict
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.0
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+        files: ^backend/
+      - id: ruff-format
+        files: ^backend/
+
+  - repo: local
+    hooks:
+      - id: gdformat
+        name: gdformat
+        entry: uvx --from 'gdtoolkit>=4' gdformat -l 120
+        language: system
+        files: '\.gd$'
+      - id: gdlint
+        name: gdlint
+        entry: uvx --from 'gdtoolkit>=4' gdlint
+        language: system
+        files: '\.gd$'

@@ -67,10 +67,12 @@ func _build(title: String, text: String, yes_label: String, on_yes: Callable) ->
 	yes.text = yes_label
 	yes.theme_type_variation = &"AnswerButton"
 	yes.custom_minimum_size = Vector2(maxf(120, 24 + 9 * yes_label.length()), 38)
-	yes.set_script(preload("res://scenes/ui/answer_button.gd"))  # the wavy orange pill
-	yes.pressed.connect(func():
-		hide()
-		on_yes.call())
+	yes.set_script(AnswerButton)  # the wavy orange pill
+	yes.pressed.connect(
+		func():
+			hide()
+			on_yes.call()
+	)
 	buttons.add_child(no)
 	buttons.add_child(yes)
 	box.add_child(buttons)

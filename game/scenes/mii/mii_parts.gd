@@ -34,8 +34,13 @@ const HAIR_COLORS := ["#1E1A1A", "#3B2418", "#5E2C17", "#7C4A2B", "#A57A3E", "#D
 
 ## What a brand-new Mii looks like.
 const DEFAULT := {
-	"skin": "#F2C6A0", "hair": 0, "hair_color": "#3B2418",
-	"eyes": 0, "brows": 1, "nose": 0, "mouth": 2,
+	"skin": "#F2C6A0",
+	"hair": 0,
+	"hair_color": "#3B2418",
+	"eyes": 0,
+	"brows": 1,
+	"nose": 0,
+	"mouth": 2,
 }
 
 

@@ -129,14 +129,12 @@ The client should rebuild its view from scratch when it gets one.
   `#RRGGBB`; `hair` (`-1` = bald, the last few are hats), `eyes`, `brows`,
   `nose`, `mouth` are style numbers. `{}` until the creator sets it; the game
   then picks a look from the resident's id. The server only checks it's a flat
-  object of at most 24 short keys with numbers, booleans, or short strings.
+  object of at most 24 short keys with numbers, booleans, or short strings,
+  and otherwise stores and echoes it untouched (docs/mii-customization.md).
 - `residents[].notebook`: how full the agent's context window is, 0.0-1.0, or
   `null` until the agent reports it (see the `notebook` event).
 - `residents[].activity`: the last `activity` line the resident reported (`""`
   if none yet), so a client that connects mid-task shows it right away.
-- `residents[].appearance`: cosmetics from the resident creator (face, hair,
-  hat...). The backend stores and echoes the object untouched; the game owns
-  its meaning (docs/mii-customization.md). `{}` until set.
 - `bubbles`: bubbles still waiting for an answer. `asked_at` (ISO-8601 UTC) is
   when each one appeared, for "2m ago" after a reconnect.
 - `tasks[].status`: `queued`, `in_progress`, `done`, `failed`, or `cancelled`.
@@ -287,7 +285,7 @@ The island's buildings or roads changed: build mode (`set_layout`), or a
 resident was given a building. Replace `buildings` and `roads` wholesale; the
 shapes are the snapshot's.
 ```json
-{"type": "layout", "buildings": [{"id": "mailbox", "type": "mailbox", "name": "Mailbox", "x": 4, "y": 15, "resident": "jun"}],
+{"type": "layout", "buildings": [{"id": "mailbox", "type": "mailbox", "name": "Mailbox", "x": 4, "y": 15, "facing": 0, "resident": "jun"}],
  "roads": [{"from": "mailbox", "to": "workshop", "condition": "always"}]}
 ```
 
@@ -330,6 +328,11 @@ Any message may carry a `request_id` (a string of the client's choosing). The
 server never uses it except to echo it on an `error` reply. Success shows up as
 the broadcast event the command produces.
 
+The game sends `answer_bubble`, `create_resident`, `update_resident`,
+`delete_resident` and `cancel_task` today; `create_task`, `set_layout` and
+`update_island` work too but the game uses their HTTP twins (POST tasks, PUT
+layout with a map) or has no UI for them yet. It doesn't send `request_id`.
+
 ### `answer_bubble`
 You answered a bubble. The server sends the answer to the waiting resident, then
 sends `bubble_resolved` to every client.
@@ -350,9 +353,10 @@ logged in. Mock residents raise any kind at random.
 
 ### `create_resident`
 Move a new resident onto the island (the resident creator's "Move in"). The
-server picks the `id` and home building (planner → `mailbox`, coder →
-`workshop`, reviewer → `courthouse`), then sends a `resident` event to every
-client.
+server picks the `id` and home building (the first building of their job:
+planner → `mailbox` (then `post_office`), coder → `workshop` (then `lab`), reviewer →
+`courthouse`; `JOB_BUILDINGS` in backend/mii/vocab.py), then sends a `resident` event to
+every client.
 ```json
 {
   "type": "create_resident",
@@ -418,7 +422,7 @@ Build mode: replace the island's buildings and roads. Send the whole layout.
 {
   "type": "set_layout",
   "buildings": [
-    {"id": "mailbox", "type": "mailbox", "name": "Mailbox", "x": 4, "y": 15, "resident": "jun"},
+    {"id": "mailbox", "type": "mailbox", "name": "Mailbox", "x": 4, "y": 15, "facing": 0, "resident": "jun"},
     {"type": "lab", "name": "Lab", "x": 20, "y": 15}
   ],
   "roads": [{"from": "mailbox", "to": "workshop", "condition": "always"}]

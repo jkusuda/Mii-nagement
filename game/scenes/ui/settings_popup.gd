@@ -20,7 +20,12 @@ const SETTINGS := [
 	["islands_root", "Folder for new islands", "Where new island repositories go.", "text"],
 	["openrouter_model", "Default OpenRouter model", "For OpenRouter residents without a model of their own.", "text"],
 	["keep_worktrees", "Keep worktrees", "Leave each task's git worktree behind afterwards, for debugging.", "bool"],
-	["judge", "Judge", "auto: moods, help and flaky re-runs ask Jev when a TypeSafe key is saved. off: rules only.", "text"],
+	[
+		"judge",
+		"Judge",
+		"auto: moods, help and flaky re-runs ask Jev when a TypeSafe key is saved. off: rules only.",
+		"text"
+	],
 	["godot_path", "Godot executable", "For the Godot gift: the Godot 4 binary residents may run.", "text"],
 ]
 ## [secret, label]. Must match SECRETS in backend/mii/prefs.py.
@@ -33,10 +38,10 @@ const SECRETS := [
 ]
 
 var _mode := Label.new()
-var _inputs := {}    # setting -> CheckButton or LineEdit
-var _keys := {}      # secret -> LineEdit
-var _forget := {}    # secret -> true: delete it on Save
-var _loaded := {}    # GET /settings `settings`, to send only what changed
+var _inputs := {}  # setting -> CheckButton or LineEdit
+var _keys := {}  # secret -> LineEdit
+var _forget := {}  # secret -> true: delete it on Save
+var _loaded := {}  # GET /settings `settings`, to send only what changed
 var _brains := VBoxContainer.new()
 var _message := Label.new()
 var _save := Button.new()
@@ -73,8 +78,14 @@ func _init() -> void:
 		box.add_child(_field("" if s[3] == "bool" else s[1], s[2], input))
 
 	box.add_child(_section("API keys"))
-	box.add_child(_help("Only needed when an agent isn't logged in with its own CLI. Kept in your "
-		+ "computer's keychain and never shown again."))
+	box.add_child(
+		_help(
+			(
+				"Only needed when an agent isn't logged in with its own CLI. Kept in your "
+				+ "computer's keychain and never shown again."
+			)
+		)
+	)
 	for k in SECRETS:
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 6)
@@ -86,10 +97,12 @@ func _init() -> void:
 		forget.icon = FORGET_ICON
 		forget.theme_type_variation = &"FlatIconButton"
 		forget.tooltip_text = "Forget this key (on Save)"
-		forget.pressed.connect(func():
-			_forget[k[0]] = true
-			edit.clear()
-			edit.placeholder_text = "will be forgotten on Save")
+		forget.pressed.connect(
+			func():
+				_forget[k[0]] = true
+				edit.clear()
+				edit.placeholder_text = "will be forgotten on Save"
+		)
 		row.add_child(edit)
 		row.add_child(forget)
 		_keys[k[0]] = edit
@@ -126,38 +139,50 @@ func open() -> void:
 
 
 func _load() -> void:
-	Net.request_json("/health", func(ok: bool, data: Dictionary):
-		if not ok:
-			_mode.text = "Backend offline: start it, then reopen Settings."
-		elif data.get("mock_agents"):
-			_mode.text = "Running in mock mode: residents do fake work, no cost."
-		else:
-			_mode.text = "Running real agents in each island's git repository.")
-	Net.request_json("/settings", func(ok: bool, data: Dictionary):
-		if not ok:
-			_say("Couldn't load settings: %s" % data["error"], true)
-			return
-		_show_settings(data)
-		_say(""))
+	Net.request_json(
+		"/health",
+		func(ok: bool, data: Dictionary):
+			if not ok:
+				_mode.text = "Backend offline: start it, then reopen Settings."
+			elif data.get("mock_agents"):
+				_mode.text = "Running in mock mode: residents do fake work, no cost."
+			else:
+				_mode.text = "Running real agents in each island's git repository."
+	)
+	Net.request_json(
+		"/settings",
+		func(ok: bool, data: Dictionary):
+			if not ok:
+				_say("Couldn't load settings: %s" % data["error"], true)
+				return
+			_show_settings(data)
+			_say("")
+	)
 	_load_brains()
 
 
 func _load_brains() -> void:
-	Net.request_json("/brains/detail", func(ok: bool, brains: Dictionary):
-		for child in _brains.get_children():
-			child.queue_free()
-		if not ok:
-			_brains.add_child(_help("Couldn't ask the backend: %s" % brains["error"]))
-			return
-		for id in ResidentData.BRAINS:
-			var info: Dictionary = brains.get(id, {})
-			var row := Label.new()
-			row.theme_type_variation = &"BodyText"
-			row.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			row.text = "%s  %s · %s" % ["✓" if info.get("ok") else "✗", ResidentData.BRAINS[id], info.get("hint", "unknown")]
-			if not info.get("ok"):
-				row.add_theme_color_override("font_color", Color("8A8FA8"))
-			_brains.add_child(row))
+	Net.request_json(
+		"/brains/detail",
+		func(ok: bool, brains: Dictionary):
+			for child in _brains.get_children():
+				child.queue_free()
+			if not ok:
+				_brains.add_child(_help("Couldn't ask the backend: %s" % brains["error"]))
+				return
+			for id in ResidentData.BRAINS:
+				var info: Dictionary = brains.get(id, {})
+				var row := Label.new()
+				row.theme_type_variation = &"BodyText"
+				row.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+				row.text = (
+					"%s  %s · %s"
+					% ["✓" if info.get("ok") else "✗", ResidentData.BRAINS[id], info.get("hint", "unknown")]
+				)
+				if not info.get("ok"):
+					row.add_theme_color_override("font_color", Color("8A8FA8"))
+				_brains.add_child(row)
+	)
 
 
 ## Fill the fields from a GET / PUT /settings reply.
@@ -180,7 +205,9 @@ func _show_settings(data: Dictionary) -> void:
 		var edit: LineEdit = _keys[key]
 		edit.clear()
 		edit.editable = key not in locked
-		edit.placeholder_text = "set in .env" if key in locked else ("saved ✓ (type to replace)" if saved.get(key) else "not set")
+		edit.placeholder_text = (
+			"set in .env" if key in locked else ("saved ✓ (type to replace)" if saved.get(key) else "not set")
+		)
 	_save.disabled = false
 
 
@@ -190,7 +217,10 @@ func _on_save() -> void:
 		var input = _inputs[key]  # a CheckButton or a LineEdit
 		var value = input.button_pressed if input is CheckButton else input.text.strip_edges()
 		var before = _loaded.get(key)
-		if (input is CheckButton and value != bool(before)) or (input is LineEdit and value != ("" if before == null else str(before))):
+		if (
+			(input is CheckButton and value != bool(before))
+			or (input is LineEdit and value != ("" if before == null else str(before)))
+		):
 			settings[key] = value
 	var secrets := {}
 	for key in _keys:
@@ -203,15 +233,20 @@ func _on_save() -> void:
 		return
 	_save.disabled = true
 	_say("Saving…")
-	Net.request_json("/settings", func(ok: bool, data: Dictionary):
-		_save.disabled = false
-		if not ok:
-			_say("Couldn't save: %s" % data["error"], true)
-			return
-		_forget.clear()
-		_show_settings(data)
-		_say("Saved. Changes apply from the next package.")
-		_load_brains(), HTTPClient.METHOD_PUT, {"settings": settings, "secrets": secrets})
+	Net.request_json(
+		"/settings",
+		func(ok: bool, data: Dictionary):
+			_save.disabled = false
+			if not ok:
+				_say("Couldn't save: %s" % data["error"], true)
+				return
+			_forget.clear()
+			_show_settings(data)
+			_say("Saved. Changes apply from the next package.")
+			_load_brains(),
+		HTTPClient.METHOD_PUT,
+		{"settings": settings, "secrets": secrets}
+	)
 
 
 func _say(text: String, error := false) -> void:

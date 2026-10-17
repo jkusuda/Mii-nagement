@@ -1,6 +1,6 @@
 extends Node
 ## Clock: the island's time of day, day count, and weather, for the top bar and
-## the day/night lighting (scenes/day_night.gd).
+## the day/night lighting (scenes/island/day_night.gd).
 ##
 ## Time follows the real clock on this computer. For development there's an
 ## override (`dev_hour`, set by the little slider on the island view) so you can

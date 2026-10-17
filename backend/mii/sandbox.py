@@ -13,14 +13,19 @@ What is checked, and what isn't:
   ✋ permission bubble instead, in both the ACP runner and the OpenRouter brain.
 """
 
+import asyncio
 import os
 import re
 import subprocess
 from pathlib import Path
 
+from mii.vocab import DEFAULT_GIT_AUTHOR
+
+OUTPUT_LIMIT = 4000  # characters of command output we keep
+
 
 class SandboxError(Exception):
-    pass
+    """A path or worktree check failed, or git refused. The message is shown to the user."""
 
 
 def is_inside(path: str | Path, root: str | Path) -> bool:
@@ -65,10 +70,8 @@ class Sandbox:
 
     def resolve_branch(self, branch: str | None) -> str:
         """The ref to branch tasks from: `branch`, `origin/<branch>`, or HEAD when neither exists."""
-        for candidate in ([branch, f"origin/{branch}"] if branch else []):
-            ok = subprocess.run(["git", "-C", str(self.repo_path), "rev-parse", "--verify", "-q", candidate],
-                                capture_output=True).returncode == 0
-            if ok:
+        for candidate in [branch, f"origin/{branch}"] if branch else []:
+            if self._ok(self.repo_path, "rev-parse", "--verify", "-q", candidate):
                 return candidate
         return "HEAD"
 
@@ -83,48 +86,89 @@ class Sandbox:
         if not is_inside(workdir, self.worktree_root) or workdir.resolve() == self.worktree_root:
             raise SandboxError(f"refusing to run an agent outside {self.worktree_root}: {workdir}")
 
-    def commit_all(self, task_id: str, message: str, author: str = "Mii-nagement <mii@localhost>") -> bool:
+    def commit_all(self, task_id: str, message: str, author: str = DEFAULT_GIT_AUTHOR) -> bool:
         """Commit everything in the task's worktree. Returns False when there was nothing to commit."""
         path = self.worktree_path(task_id)
         self._git(path, "add", "-A")
-        if subprocess.run(["git", "-C", str(path), "diff", "--cached", "--quiet"]).returncode == 0:
+        if self._ok(path, "diff", "--cached", "--quiet"):
             return False  # nothing staged
-        name, email = _split_author(author)
+        name, email = split_author(author)
         self._git(path, "-c", f"user.name={name}", "-c", f"user.email={email}", "commit", "-q", "-m", message)
         return True
 
     def diff_stat(self, task_id: str) -> str:
         """What the task branch changed compared to where it started (for the reviewer)."""
         path = self.worktree_path(task_id)
-        result = subprocess.run(
-            ["git", "-C", str(path), "diff", "--stat", "HEAD~0", "--", "."], capture_output=True, text=True
-        )
-        committed = subprocess.run(
-            ["git", "-C", str(path), "log", "--oneline", f"HEAD...{self._base(task_id)}"], capture_output=True, text=True
-        )
-        return (committed.stdout + result.stdout).strip() or "(no changes yet)"
+        uncommitted = self._git(path, "diff", "--stat", "HEAD~0", "--", ".", check=False)
+        committed = self._git(path, "log", "--oneline", f"HEAD...{self._base(task_id)}", check=False)
+        return (committed + uncommitted).strip() or "(no changes yet)"
 
     def _base(self, task_id: str) -> str:
         """The commit the task branch was created from (the main repo's HEAD if we don't know)."""
         if task_id in self.bases:
             return self.bases[task_id]
-        result = subprocess.run(["git", "-C", str(self.repo_path), "rev-parse", "HEAD"], capture_output=True, text=True)
-        return result.stdout.strip() or "HEAD"
+        return self._git(self.repo_path, "rev-parse", "HEAD", check=False).strip() or "HEAD"
 
     @staticmethod
-    def _git(cwd: Path, *args: str) -> str:
+    def _git(cwd: Path, *args: str, check: bool = True) -> str:
+        """Run git in `cwd` and return its stdout. With `check`, a non-zero exit is a SandboxError."""
         result = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True)
-        if result.returncode != 0:
+        if check and result.returncode != 0:
             raise SandboxError(f"git {' '.join(args)} failed: {result.stderr.strip()}")
         return result.stdout
 
+    @staticmethod
+    def _ok(cwd: Path, *args: str) -> bool:
+        return subprocess.run(["git", "-C", str(cwd), *args], capture_output=True).returncode == 0
 
-def _split_author(author: str) -> tuple[str, str]:
+
+def split_author(author: str) -> tuple[str, str]:
     """'Name <email>' -> ('Name', 'email')."""
     if "<" in author and author.endswith(">"):
         name, email = author[:-1].split("<", 1)
         return name.strip() or "Mii-nagement", email.strip()
     return author.strip() or "Mii-nagement", "mii@localhost"
+
+
+def require_worktree(job) -> str | None:
+    """Why a real brain can't run this job (no worktree, or one we didn't make), or None when it can.
+
+    `job` is an agents.AgentJob; every runner that starts a process calls this first.
+    """
+    if job.sandbox is None or job.workdir is None:
+        return f"The {job.resident.brain} brain needs a worktree (MOCK_AGENTS=0 and an island repository)."
+    try:
+        job.sandbox.check_workdir(job.workdir)
+    except SandboxError as e:
+        return str(e)
+    return None
+
+
+def inside(root: Path, path: str) -> Path:
+    """`path` (relative to `root`, or absolute) as a Path inside `root`. Raises SandboxError otherwise."""
+    full = Path(path) if Path(path).is_absolute() else root / path
+    if not is_inside(full, root):
+        raise SandboxError(f"{path} is outside the worktree")
+    return full
+
+
+async def run_shell(command: str, cwd: Path, timeout: float, limit: int = OUTPUT_LIMIT) -> tuple[int, str]:
+    """Run a shell command in `cwd`. Returns (exit code, combined output capped to `limit` chars)."""
+    proc = await asyncio.create_subprocess_shell(
+        command, cwd=str(cwd), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
+    )
+    try:
+        raw, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except TimeoutError:
+        proc.kill()
+        return 124, "(timed out)"
+    except asyncio.CancelledError:  # the step timed out or the task was cancelled: no orphans
+        proc.kill()
+        raise
+    output = raw.decode(errors="replace")
+    if len(output) > limit:
+        output = "…" + output[-limit:]
+    return proc.returncode or 0, output
 
 
 class Sandboxes:
@@ -134,7 +178,7 @@ class Sandboxes:
         self.worktree_root = worktree_root
         self._by_path: dict[str, Sandbox] = {}
 
-    def for_island(self, island) -> Sandbox:
+    def for_island(self, island: object) -> Sandbox:
         """`island` is an Island row (or anything with `repo_path`)."""
         key = island.repo_path or ""
         if key not in self._by_path:

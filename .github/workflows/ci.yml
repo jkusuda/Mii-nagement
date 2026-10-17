@@ -1,0 +1,42 @@
+# Backend tests + lint, GDScript lint + format, Godot headless script check.
+# The same checks run locally with `make check`.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest -q
+
+  game:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: gdlint + gdformat
+        run: |
+          uvx --from 'gdtoolkit>=4' gdlint game
+          uvx --from 'gdtoolkit>=4' gdformat --check -l 120 game
+      - uses: chickensoft-games/setup-godot@v2
+        with:
+          version: 4.7.0
+          use-dotnet: false
+      - name: Godot script check
+        run: |
+          godot --headless --path game --import > /dev/null 2>&1 || true
+          make godot-check GODOT=godot

@@ -1,3 +1,4 @@
+class_name IslandResidents
 extends Node3D
 ## Puts every resident from the backend on the 3D island and keeps them in step
 ## with its events. Lives in island_3d.tscn as `Residents`.
@@ -13,7 +14,7 @@ extends Node3D
 ## until they're clear of the building. Residents at the same building line up
 ## along the path from the stop.
 ##
-## The paths come from the island's map (Island.map, IslandBuilder); when
+## The paths come from the island's layout (IslandBuilder.layout); when
 ## it changes (build mode), everyone is placed again.
 ##
 ## Between packages, island_life.gd (the `Life` child) borrows idle residents
@@ -24,7 +25,7 @@ const ResidentScene := preload("res://scenes/island/island_resident.tscn")
 const SEARCH_TILES := 12  # how far along the path a hidden stop may slide
 
 var _walkers := {}  # resident id -> IslandResident
-var _stops := {}    # building id -> Vector3, worked out once per building (per island)
+var _stops := {}  # building id -> Vector3, worked out once per building (per island)
 var _life: IslandLife
 
 @onready var island: IslandBuilder = get_node("../Island")
@@ -43,6 +44,7 @@ func _ready() -> void:
 
 
 ## --- What island_life.gd needs ----------------------------------------------------
+
 
 func walker(resident_id: String) -> IslandResident:
 	return _walkers.get(resident_id)
@@ -103,7 +105,7 @@ func _sync(snap := false) -> void:
 			_walkers[id] = walker
 		_walkers[id].show_resident(resident, bubbles.get(id, {}))
 
-	# Anyone the server dropped (not possible yet, but cheap to handle).
+	# Anyone who moved away (`resident_removed`) leaves the island.
 	for id in _walkers.keys():
 		if Net.find_resident(id).is_empty():
 			_walkers[id].queue_free()
@@ -138,7 +140,7 @@ func _line_up(snap: bool) -> void:
 		group.sort_custom(func(a, b): return str(a["id"]) < str(b["id"]))
 		for i in group.size():
 			var walker: IslandResident = _walkers[str(group[i]["id"])]
-			var spot := _slot(building, i, group.size())
+			var spot := _slot(building, i)
 			if snap:
 				walker.place(spot)
 			var state := str(group[i].get("state", "idle"))
@@ -236,7 +238,7 @@ func _line(b: Dictionary) -> Array[Vector3]:
 
 
 ## Where the i-th resident at a building stands: the next path tiles along from the stop.
-func _slot(building_id: String, i: int, _n: int) -> Vector3:
+func _slot(building_id: String, i: int) -> Vector3:
 	var b := island.layout.building(str(Net.find_building(building_id).get("type", "")))
 	if b.is_empty() or i == 0:
 		return _stop(building_id)

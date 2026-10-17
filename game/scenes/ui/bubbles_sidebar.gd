@@ -23,16 +23,20 @@ func _ready() -> void:
 	Net.island_changed.connect(refresh)
 	Net.disconnected.connect(refresh)
 	add_child(_popup)
-	_popup.answered.connect(func(id: String):
-		if _cards.has(id):
-			_cards[id].mark_sent())
+	_popup.answered.connect(
+		func(id: String):
+			if _cards.has(id):
+				_cards[id].mark_sent()
+	)
 
 	# Godot concept: a Timer node fires `timeout` every `wait_time` seconds.
 	var timer := Timer.new()
 	timer.wait_time = 15.0
-	timer.timeout.connect(func():
-		for card in _cards.values():
-			card.refresh_age())
+	timer.timeout.connect(
+		func():
+			for card in _cards.values():
+				card.refresh_age()
+	)
 	add_child(timer)
 	timer.start()
 	refresh()

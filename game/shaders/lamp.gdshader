@@ -3,7 +3,7 @@
 //
 // Godot concepts:
 // - `global uniform float night` is shared by every shader (Project Settings >
-//   Shader Globals); scenes/day_night.gd sets it every frame.
+//   Shader Globals); scenes/island/day_night.gd sets it every frame.
 // - an `instance uniform` can differ per mesh node while they all share one
 //   material: IslandBuilder gives each lamp its own switch_on.
 

@@ -9,37 +9,64 @@
     PR state:  gh pr view <url> --json state,mergedAt   (insights.py: "PRs merged")
     merge:     gh pr merge <url> --squash   (or --merge / --rebase, whichever the repo allows)
 
-Both functions block on subprocesses; async callers wrap them in asyncio.to_thread.
+Everything here blocks on subprocesses; async callers wrap it in asyncio.to_thread.
 """
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
+# `gh` as a command list, so tests can swap in a stand-in (tests/fake_gh.py).
+GH = ["gh"]
+INSTALL_HINT = "the GitHub CLI (gh) is not installed: get it from https://cli.github.com"
+
 
 class GitHubError(Exception):
-    pass
+    """gh (or git) could not do it. The message is shown to the user."""
 
 
-def _run(args: list[str], cwd: Path | None = None) -> str:
+def _run(args: list[str], cwd: Path | None = None, timeout: float = 120) -> str:
+    # GIT_TERMINAL_PROMPT=0: never hang waiting for a password nobody can type.
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
     try:
-        result = subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=120)
+        result = subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=timeout, env=env)
     except FileNotFoundError:
-        raise GitHubError(f"`{args[0]}` is not installed")
+        raise GitHubError(INSTALL_HINT if args[0] == GH[0] else f"`{args[0]}` is not installed")
     except subprocess.TimeoutExpired:
         raise GitHubError(f"`{' '.join(args[:2])}` timed out")
     if result.returncode != 0:
-        raise GitHubError(f"`{' '.join(args[:3])}` failed: {result.stderr.strip() or result.stdout.strip()}")
+        raise GitHubError(f"`{' '.join(args[:3])}` failed: {(result.stderr.strip() or result.stdout.strip())[-300:]}")
     return result.stdout
+
+
+def _json(raw: str) -> dict | list:
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        raise GitHubError("gh returned something that isn't JSON")
+
+
+def ensure_logged_in() -> None:
+    """gh is installed and logged in (it clones and, later, opens the PRs)."""
+    try:
+        status = subprocess.run([*GH, "auth", "status"], capture_output=True, text=True, timeout=30)
+    except FileNotFoundError:
+        raise GitHubError(f"{INSTALL_HINT}, then run `gh auth login`")
+    except subprocess.TimeoutExpired:
+        raise GitHubError("`gh auth status` timed out")
+    if status.returncode != 0:
+        raise GitHubError("gh is not logged in to GitHub: run `gh auth login` in a terminal, then try again")
+
+
+def clone(repo: str, path: Path, timeout: float) -> None:
+    """`gh repo clone owner/name <path>` (islands' repos.clone_repo)."""
+    _run([*GH, "repo", "clone", repo, str(path)], timeout=timeout)
 
 
 def list_repos(query: str = "", limit: int = 100) -> list[dict]:
     """Repos the logged-in user can see, newest first, filtered by `query`."""
-    raw = _run(["gh", "repo", "list", "--limit", str(limit), "--json", "nameWithOwner,isPrivate,updatedAt"])
-    try:
-        repos = json.loads(raw)
-    except json.JSONDecodeError:
-        raise GitHubError("gh returned something that isn't JSON")
+    repos = _json(_run([*GH, "repo", "list", "--limit", str(limit), "--json", "nameWithOwner,isPrivate,updatedAt"]))
     query = query.lower().strip()
     return [
         {"repo": r["nameWithOwner"], "private": r["isPrivate"], "updated_at": r["updatedAt"]}
@@ -50,38 +77,51 @@ def list_repos(query: str = "", limit: int = 100) -> list[dict]:
 
 def list_branches(repo: str) -> list[str]:
     """Branch names of `owner/name`."""
-    return [line for line in _run(["gh", "api", f"repos/{repo}/branches", "--jq", ".[].name"]).splitlines() if line]
+    return [line for line in _run([*GH, "api", f"repos/{repo}/branches", "--jq", ".[].name"]).splitlines() if line]
 
 
 def list_issues(repo: str, limit: int = 50) -> list[dict]:
     """Open issues of `owner/name`, newest first: number, title, labels, updated_at (GET /islands/{id}/issues)."""
-    raw = _run(["gh", "issue", "list", "--repo", repo, "--state", "open", "--limit", str(limit),
-                "--json", "number,title,labels,updatedAt"])
+    raw = _run(
+        [
+            "gh",
+            "issue",
+            "list",
+            "--repo",
+            repo,
+            "--state",
+            "open",
+            "--limit",
+            str(limit),
+            "--json",
+            "number,title,labels,updatedAt",
+        ]
+    )
     try:
         issues = json.loads(raw)
     except json.JSONDecodeError:
         raise GitHubError("gh returned something that isn't JSON")
     return [
-        {"number": i["number"], "title": i["title"], "labels": [l["name"] for l in i.get("labels", [])],
-         "updated_at": i.get("updatedAt")}
+        {
+            "number": i["number"],
+            "title": i["title"],
+            "labels": [label["name"] for label in i.get("labels", [])],
+            "updated_at": i.get("updatedAt"),
+        }
         for i in issues
     ]
 
 
 def fetch_issue(repo: str, number: int) -> tuple[str, str]:
     """Return (title, body) of an issue. Used by POST /islands/{id}/tasks {"issue": 42}."""
-    raw = _run(["gh", "issue", "view", str(number), "--repo", repo, "--json", "title,body"])
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        raise GitHubError("gh returned something that isn't JSON")
+    data = _json(_run([*GH, "issue", "view", str(number), "--repo", repo, "--json", "title,body"]))
     return data.get("title", f"Issue #{number}"), data.get("body") or ""
 
 
 def open_pull_request(repo: str, worktree: Path, branch: str, title: str, body: str, base: str | None = None) -> str:
     """Push the task branch and open a PR against `base` (the island's branch). Returns the PR URL."""
     _run(["git", "push", "-u", "origin", branch], cwd=worktree)
-    args = ["gh", "pr", "create", "--repo", repo, "--head", branch, "--title", title, "--body", body]
+    args = [*GH, "pr", "create", "--repo", repo, "--head", branch, "--title", title, "--body", body]
     if base:
         args += ["--base", base]
     out = _run(args, cwd=worktree)
@@ -100,7 +140,7 @@ def merge_pull_request(pr_url: str) -> str:
     errors = []
     for method in MERGE_METHODS:
         try:
-            _run(["gh", "pr", "merge", pr_url, method])
+            _run([*GH, "pr", "merge", pr_url, method])
             return method.lstrip("-")
         except GitHubError as e:
             if "not allowed" not in str(e).lower():
@@ -111,9 +151,5 @@ def merge_pull_request(pr_url: str) -> str:
 
 def pr_merged_at(pr_url: str) -> str | None:
     """When the PR was merged (ISO-8601), or None while it's open or closed unmerged."""
-    raw = _run(["gh", "pr", "view", pr_url, "--json", "state,mergedAt"])
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        raise GitHubError("gh returned something that isn't JSON")
+    data = _json(_run([*GH, "pr", "view", pr_url, "--json", "state,mergedAt"]))
     return data.get("mergedAt") or None

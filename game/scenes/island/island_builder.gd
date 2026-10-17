@@ -19,6 +19,9 @@ extends Node3D
 
 signal built
 
+## FULL for the island view; FAR for the home screen's sea and thumbnails.
+enum Detail { FULL, FAR }
+
 const BUILDING_SCENES := {
 	"mailbox": preload("res://scenes/buildings/mailbox.tscn"),
 	"workshop": preload("res://scenes/buildings/workshop.tscn"),
@@ -26,8 +29,8 @@ const BUILDING_SCENES := {
 	"courthouse": preload("res://scenes/buildings/courthouse.tscn"),
 	"post_office": preload("res://scenes/buildings/post_office.tscn"),
 }
-const TreeScene := preload("res://scenes/apple_tree.tscn")
-const BushScene := preload("res://scenes/bush.tscn")
+const TreeScene := preload("res://scenes/plants/apple_tree.tscn")
+const BushScene := preload("res://scenes/plants/bush.tscn")
 const TerrainShader := preload("res://shaders/terrain.gdshader")
 const PondShader := preload("res://shaders/pond.gdshader")
 const TREE_SCALE := 3.4
@@ -37,9 +40,10 @@ const LampShader := preload("res://shaders/lamp.gdshader")
 const MAX_LAMPS := 14
 const LAMP_SPACING := 3.2  # tiles between lamps, at least
 
-## "full" for the island view; "far" for the home screen's sea and thumbnails
-## (no falling leaves or lamp lights, and it leaves the sea alone).
-@export var detail := "full"
+static var _noise: NoiseTexture2D
+
+## FAR skips falling leaves and lamp lights, and leaves the sea alone.
+@export var detail := Detail.FULL
 
 var layout: IslandLayout
 var ground := {}  # IslandTerrain.build(): field texture, its rect, the mesh
@@ -55,8 +59,6 @@ var _lily_pads: Node3D
 var _lamp_lights: Array = []  # [OmniLight3D, switch_on] for each lamp (island view only)
 var _ground_key := ""
 var _plants_key := ""
-
-static var _noise: NoiseTexture2D
 
 
 func _ready() -> void:
@@ -81,7 +83,7 @@ func _ready() -> void:
 	for type in BUILDING_SCENES:
 		var node: IslandBuilding = BUILDING_SCENES[type].instantiate()
 		node.name = type.to_pascal_case()  # "post_office" -> PostOffice
-		node.lights_enabled = detail == "full"
+		node.lights_enabled = detail == Detail.FULL
 		node.visible = false
 		buildings.add_child(node)
 
@@ -121,7 +123,7 @@ func build(new_layout: IslandLayout) -> void:
 	_place_buildings()
 	_place_plants()
 	Seasons.apply(self)
-	if detail == "full":
+	if detail == Detail.FULL:
 		show_on_water(get_node_or_null("../Water"))
 	built.emit()
 
@@ -208,7 +210,9 @@ func _add_lily_pads(half: Vector2) -> void:
 		disc.radial_segments = 14
 		pad.mesh = disc
 		pad.material_override = pad_material
-		pad.position = Vector3(rng.randf_range(-half.x + 0.7, half.x - 0.7), 0.02, rng.randf_range(-half.y + 0.6, half.y - 0.6))
+		pad.position = Vector3(
+			rng.randf_range(-half.x + 0.7, half.x - 0.7), 0.02, rng.randf_range(-half.y + 0.6, half.y - 0.6)
+		)
 		_lily_pads.add_child(pad)
 		if i == 0:
 			var flower := MeshInstance3D.new()
@@ -238,7 +242,10 @@ func _place_lamps() -> void:
 		if chosen.size() >= MAX_LAMPS:
 			break
 		var here := Vector2(t)
-		if doors.any(func(d): return d.distance_to(here) < 1.5) or chosen.any(func(c): return c.distance_to(here) < LAMP_SPACING):
+		if (
+			doors.any(func(d): return d.distance_to(here) < 1.5)
+			or chosen.any(func(c): return c.distance_to(here) < LAMP_SPACING)
+		):
 			continue
 		var sides := [Vector2i.UP, Vector2i.RIGHT, Vector2i.DOWN, Vector2i.LEFT]
 		if flip:
@@ -246,7 +253,9 @@ func _place_lamps() -> void:
 		for side: Vector2i in sides:
 			var n := t + side
 			if layout.is_land(n) and not layout.path_tiles.has(n) and not blocked.has(n):
-				_add_lamp(IslandLayout.tile_center(t) + Vector3(side.x, 0, side.y) * IslandLayout.TILE * 0.62, chosen.size())
+				_add_lamp(
+					IslandLayout.tile_center(t) + Vector3(side.x, 0, side.y) * IslandLayout.TILE * 0.62, chosen.size()
+				)
 				chosen.append(here)
 				flip = not flip
 				break
@@ -280,7 +289,7 @@ func _add_lamp(at: Vector3, index: int) -> void:
 	var switch_on := 0.35 + 0.3 * fposmod(index * 0.618, 1.0)
 	head.set_instance_shader_parameter("switch_on", switch_on)
 	lamp.add_child(head)
-	if detail == "full":
+	if detail == Detail.FULL:
 		var light := OmniLight3D.new()
 		light.light_color = Color(1.0, 0.78, 0.48)
 		light.omni_range = 5.6
@@ -317,6 +326,6 @@ func _place_plants() -> void:
 		node.position = IslandLayout.tile_to_world(Vector2(plant["x"], plant["y"]))
 		node.rotation_degrees = Vector3(0, float(plant.get("rot", 0.0)), 0)
 		node.scale = Vector3(s, s, s)
-		if detail != "full" and node.has_node("FallingLeaves"):
+		if detail != Detail.FULL and node.has_node("FallingLeaves"):
 			node.get_node("FallingLeaves").free()
 		plants.add_child(node)

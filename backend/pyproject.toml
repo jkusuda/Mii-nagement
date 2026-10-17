@@ -19,6 +19,7 @@ dev = [
     "pytest>=8",
     "pytest-asyncio>=0.24",
     "pytest-django>=4.9",
+    "ruff>=0.14",
 ]
 
 # This is an app, not a library, so uv doesn't need to build/install it.
@@ -31,3 +32,22 @@ testpaths = ["tests"]
 pythonpath = ["."]
 asyncio_mode = "auto"
 DJANGO_SETTINGS_MODULE = "mii.settings"
+
+# Lint and format: `make lint` / `make fmt` (or `uv run ruff check .` / `uv run ruff format .` from backend/).
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = ["mii/migrations"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = [
+    "RUF012",  # mutable class attributes: Django models and handler tables are meant to be shared
+    "B904",    # `raise ... from e` inside except: our error messages are rewritten for the user on purpose
+]
+
+[tool.ruff.lint.per-file-ignores]
+"mii/asgi.py" = ["E402"]  # django.setup() must run before the Channels imports
+
+[tool.ruff.lint.isort]
+known-first-party = ["mii"]

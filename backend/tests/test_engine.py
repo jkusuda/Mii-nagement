@@ -1,6 +1,5 @@
 import asyncio
 import random
-
 import subprocess
 
 import pytest
@@ -11,7 +10,7 @@ from mii.agents import StepResult
 from mii.agents.mock import MockRunner
 from mii.engine import IslandGraph, split_pr_text
 from mii.models import Event, Island, Resident, Step, Task
-from mii.sandbox import Sandbox, SandboxError, is_inside
+from mii.sandbox import SandboxError, is_inside
 
 pytestmark = db_test
 
@@ -107,7 +106,9 @@ class WritingRunner:
 
 
 async def test_lab_runs_the_test_command_and_workshop_commits(island, sandbox, sandboxes):
-    workflow, client = make_workflow(WritingRunner(), sandboxes=sandboxes, test_command="test -f feature.py", keep_worktrees=True)
+    workflow, client = make_workflow(
+        WritingRunner(), sandboxes=sandboxes, test_command="test -f feature.py", keep_worktrees=True
+    )
     task = await workflow.run_task((await workflow.submit("sunny", "Add feature")).id)
 
     assert task.status == "done" and task.branch == "mii/" + task.id and task.finished_at is not None
@@ -115,7 +116,7 @@ async def test_lab_runs_the_test_command_and_workshop_commits(island, sandbox, s
     assert workdir.exists()  # keep_worktrees
     log = sandbox._git(workdir, "log", "--oneline")
     assert "Add feature" in log and "init" in log
-    assert any("Running: test -f feature.py" == e["text"] for e in client.of_type("activity"))
+    assert any(e["text"] == "Running: test -f feature.py" for e in client.of_type("activity"))
     steps = [s async for s in Step.objects.filter(task_id=task.id, building_type="lab")]
     assert steps[0].outcome == "pass"
 
@@ -208,7 +209,9 @@ async def test_courthouse_approval_merges_at_the_post_office(island, sandbox, sa
     assert workshop_visits == 2  # the note went back to the coder
 
 
-async def test_unanswered_review_leaves_the_pr_open_and_rule_off_merges_without_asking(island, sandbox, sandboxes, monkeypatch):
+async def test_unanswered_review_leaves_the_pr_open_and_rule_off_merges_without_asking(
+    island, sandbox, sandboxes, monkeypatch
+):
     gh = FakeGitHub(monkeypatch)
     await Island.objects.filter(pk="sunny").aupdate(repo="o/r", rules={"merge_pr": True})
     workflow, client = make_workflow(WritingRunner(), sandboxes=sandboxes, test_command="true")
@@ -236,7 +239,9 @@ def test_merge_tries_the_methods_the_repo_allows(monkeypatch):
     monkeypatch.setattr(github, "_run", fake_run)
     assert github.merge_pull_request("https://github.com/o/r/pull/1") == "merge" and tried == ["--squash", "--merge"]
 
-    monkeypatch.setattr(github, "_run", lambda args, cwd=None: (_ for _ in ()).throw(github.GitHubError("checks failing")))
+    monkeypatch.setattr(
+        github, "_run", lambda args, cwd=None: (_ for _ in ()).throw(github.GitHubError("checks failing"))
+    )
     with pytest.raises(github.GitHubError, match="checks failing"):
         github.merge_pull_request("https://github.com/o/r/pull/1")
 
@@ -265,7 +270,7 @@ async def test_bubble_answer_reaches_the_waiting_resident(island):
     asking = asyncio.create_task(bubbles.ask("sunny", "carlos", "permission", "Run npm?", 5, ["Allow", "Deny"]))
     while not [e for e in client.sent if e["type"] == "bubble"]:
         await asyncio.sleep(0.01)  # let ask() run until the bubble is shown
-    shown = [e for e in client.sent if e["type"] == "bubble"][0]
+    shown = next(e for e in client.sent if e["type"] == "bubble")
     assert shown["options"] == ["Allow", "Deny"]
 
     assert bubbles.answer(shown["id"], "Allow") is True
@@ -377,7 +382,17 @@ async def test_a_neighbour_takes_the_workshop_when_the_lab_keeps_failing(island)
     assert task.status == "done"
     # Lab fails twice: Carlos gets one retry of his own, then Jun (his only friend so far) takes the
     # third Workshop turn. The Lab itself is never "helped": its tests are the owner's call.
-    assert runner.visited == ["mailbox", "workshop", "lab", "workshop", "lab", "workshop", "lab", "courthouse", "post_office"]
+    assert runner.visited == [
+        "mailbox",
+        "workshop",
+        "lab",
+        "workshop",
+        "lab",
+        "workshop",
+        "lab",
+        "courthouse",
+        "post_office",
+    ]
     assert runner.workers[3:6] == ["carlos", "carlos", "jun"]
     chats = [(e["from"], e["to"]) for e in client.of_type("chat")]
     assert chats == [("carlos", "jun"), ("jun", "carlos")]
@@ -389,17 +404,24 @@ async def test_a_neighbour_takes_the_workshop_when_the_lab_keeps_failing(island)
     assert ("carlos", "jun") in [(e["a"], e["b"]) for e in client.of_type("friendship")]
     jun_states = [(e["state"], e["building"]) for e in client.of_type("agent_state") if e["agent"] == "jun"]
     assert ("working", "workshop") in jun_states and jun_states[-1] == ("idle", "post_office")
-    assert [(e["from"], e["to"]) for e in client.of_type("handoff")][-3:] == [("jun", "carlos"), ("carlos", "sydney"), ("sydney", "jun")]
+    assert [(e["from"], e["to"]) for e in client.of_type("handoff")][-3:] == [
+        ("jun", "carlos"),
+        ("carlos", "sydney"),
+        ("sydney", "jun"),
+    ]
     assert any("Jun helped Carlos at the Workshop" in note for note in runner.jobs[-1].history)
 
 
 async def test_help_say_and_remember_lines(island):
-    runner = LineRunner(workshop=["Stuck.\nHELP: the auth tests hang\nSAY TO Sydney: heads up\nREMEMBER: tests are slow\nVERDICT: FAIL"])
+    runner = LineRunner(
+        workshop=["Stuck.\nHELP: the auth tests hang\nSAY TO Sydney: heads up\nREMEMBER: tests are slow\nVERDICT: FAIL"]
+    )
     workflow, client = make_workflow(runner)
     task = await workflow.run_task((await workflow.submit("sunny", "Fix the thing")).id)
 
     assert task.status == "done"
-    # An explicit HELP line gets a takeover of the same building right away. No other coder: Jun, the best friend, comes.
+    # An explicit HELP line gets a takeover of the same building right away.
+    # No other coder: Jun, the best friend, comes.
     visits = [(j.building.id, j.resident.id) for j in runner.jobs]
     assert visits[:3] == [("mailbox", "jun"), ("workshop", "carlos"), ("workshop", "jun")]
     helper_job = runner.jobs[2]
@@ -466,8 +488,12 @@ async def test_lab_reruns_a_flaky_test_once(island, sandboxes):
     from mii.insights import island_insights
 
     # Fails the first time it runs in a worktree, passes the second time.
-    workflow, client = make_workflow(ScriptedRunner(), sandboxes=sandboxes, judge=FlakyJudge(),
-                                     test_command="test -f .ran || { touch .ran; exit 1; }")
+    workflow, client = make_workflow(
+        ScriptedRunner(),
+        sandboxes=sandboxes,
+        judge=FlakyJudge(),
+        test_command="test -f .ran || { touch .ran; exit 1; }",
+    )
     task = await workflow.run_task((await workflow.submit("sunny", "Flaky")).id)
     assert task.status == "done"
     lab = await Step.objects.aget(task_id=task.id, building_type="lab")
@@ -493,8 +519,9 @@ async def test_mock_runner_sometimes_asks_for_help_or_chats():
 
 async def test_lab_skips_the_flaky_rerun_when_the_step_budget_is_spent(island, sandboxes):
     # The first run eats the whole budget (a hang): no second run, and the step fails cleanly.
-    workflow, client = make_workflow(ScriptedRunner(), sandboxes=sandboxes, judge=FlakyJudge(),
-                                     test_command="sleep 30", step_timeout=1.5)
+    workflow, client = make_workflow(
+        ScriptedRunner(), sandboxes=sandboxes, judge=FlakyJudge(), test_command="sleep 30", step_timeout=1.5
+    )
     task = await workflow.run_task((await workflow.submit("sunny", "Hangs")).id)
     assert task.status == "failed"
     lab = await Step.objects.filter(task_id=task.id, building_type="lab").afirst()

@@ -1,48 +1,36 @@
-"""HTTP endpoints (plain async Django views, JSON in / JSON out):
+"""HTTP endpoints: plain async Django views, JSON in / JSON out.
 
-    GET  /health                       is the server up? which mode?
-    GET  /meta                         the vocabulary the game would otherwise hard-code (jobs, traits, brains, ...)
-    GET  /brains                       {brain: true/false} (what the game's creator greys out)
-    GET  /brains/detail                per brain: installed, logged_in, api_key, hint
-    GET  /gifts                        per gift (MCP server): ok, label, hint (what the creator greys out)
-    GET  /models                       the OpenRouter model catalogue (needs OPENROUTER_API_KEY)
-    GET  /islands                      every island + the default folder for new repositories
-    POST /islands                      found an island {"name", "repo", "branch", "shape", "steps" | "plan", "season",
-                                       "rules", "folder", "existing_repo"}
-    GET  /github/repos?q=              the user's repos (via gh), for the island creator
-    GET  /github/branches?repo=        a repo's branches (via gh)
-    GET  /islands/{id}                 the island snapshot
-    PATCH /islands/{id}                rename, link a repo, change branch / rules {"name"?, "repo"?, "branch"?, "rules"?}
-    GET  /islands/{id}/issues          the linked repo's open GitHub issues (via gh), to start a task from one
-    GET  /islands/{id}/tasks           the island's tasks with their steps (?status=done,failed&limit=50)
-    POST /islands/{id}/tasks           {"title": "...", "description": "..."} or {"issue": 42} -> runs through the island
-    GET  /islands/{id}/tasks/{task}    one task: steps (what each resident reported) + the events while it ran
-    GET  /islands/{id}/insights        stats for the Insights screen (?range=today|week|month)
-    GET  /islands/{id}/events          stored events, oldest first (?limit=200), for the News tab
-    PUT  /islands/{id}/layout          build mode: {"buildings": [...], "roads": [...]} -> the saved layout,
-                                       or {"map": {...}, "buildings": [{type, x, y, facing}]} -> the snapshot
-    GET  /settings                     settings + which API keys are set (never the keys themselves)
-    PUT  /settings                     {"settings": {...}, "secrets": {"openrouter_api_key": "sk-..."|null}}
-    POST /replay/{task_id}?speed=4     replay a recorded task into the game
+The routes are listed in urls.py and documented in docs/http-api.md. Views only parse
+the request and pick the status code; the work happens in the module each one calls
+(islands, residents, tasks, layout, insights, prefs, replay, github).
 """
 
 import asyncio
 import json
 
+from asgiref.sync import sync_to_async
 from django.http import HttpRequest, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
-from asgiref.sync import sync_to_async
-
-from mii import events, github, islands, judge, layout, prefs, residents, tasks, weather
-from mii.agents.acp import BRAINS, GIFTS, available_brains, available_gifts
+from mii import events, github, islands, layout, prefs, residents, tasks, vocab, weather
+from mii.agents.acp import GIFTS, available_brains, available_gifts
 from mii.agents.openrouter import list_models
-from mii.engine import BUBBLE_MOODS, HANDLERS
 from mii.insights import RANGES, island_insights
-from mii.models import DEFAULT_KEYS, Event, Island, Step, Task, island_snapshot, step_to_dict, task_detail_dict, task_to_dict
+from mii.island_map import SHAPES
+from mii.models import (
+    DEFAULT_KEYS,
+    Event,
+    Island,
+    Step,
+    Task,
+    island_snapshot,
+    island_to_dict,
+    task_detail_dict,
+    task_to_dict,
+)
 from mii.personality import JOBS, TRAITS
-from mii.replay import ReplayError, replay_task
+from mii.replay import ReplayError, replay_task, task_window
 from mii.runtime import get_runtime
 
 
@@ -50,8 +38,35 @@ def _error(message: str, status: int) -> JsonResponse:
     return JsonResponse({"error": message}, status=status)
 
 
-async def _island_or_none(island_id: str) -> Island | None:
-    return await Island.objects.filter(pk=island_id).afirst()
+def _json_body(request: HttpRequest) -> dict | JsonResponse:
+    """The request body as a dict, or the 400 to answer with."""
+    try:
+        body = json.loads(request.body or b"{}")
+    except json.JSONDecodeError:
+        return _error("body is not valid JSON", 400)
+    if not isinstance(body, dict):
+        return _error("body must be a JSON object", 400)
+    return body
+
+
+def _int_param(request: HttpRequest, name: str, default: int, cap: int) -> int | JsonResponse:
+    """A positive whole-number query parameter capped at `cap`, or the 400 to answer with."""
+    try:
+        return min(max(1, int(request.GET.get(name, str(default)))), cap)
+    except ValueError:
+        return _error(f"{name} must be a number", 400)
+
+
+async def _island_or_404(island_id: str) -> Island | JsonResponse:
+    island = await Island.objects.filter(pk=island_id).afirst()
+    return island if island is not None else _error(f"no island {island_id!r}", 404)
+
+
+async def _snapshot(island_id: str) -> dict:
+    """The snapshot event's `island`, including `mock_agents`. Raises Island.DoesNotExist."""
+    runtime = get_runtime()
+    island = await island_snapshot(island_id, runtime.bubbles.for_island(island_id))
+    return events.snapshot(island, runtime.mock_agents)["island"]
 
 
 @require_GET
@@ -67,29 +82,30 @@ def _brains() -> dict[str, dict]:
 
 @require_GET
 async def meta(request: HttpRequest) -> JsonResponse:
-    """Every list the game shows pickers for, so it never has to repeat backend vocabulary.
+    """Every list the game shows pickers for (vocab.py, plus jobs, traits, gifts and keys).
 
-    Static: it comes from the tables in personality.py, acp.py, islands.py, residents.py
-    and engine.py. The game keeps its own copies as an offline fallback.
+    Static. The game mirrors the same lists in scenes/protocol.gd and resident_data.gd.
     """
-    return JsonResponse({
-        "jobs": list(JOBS),
-        "job_buildings": residents.JOB_BUILDINGS,
-        "traits": {name: {"low": low, "medium": medium, "high": high} for name, (low, medium, high) in TRAITS.items()},
-        "brains": ["mock", *BRAINS, "openrouter"],
-        "gifts": {gift: spec["label"] for gift, spec in GIFTS.items()},
-        "keys": {"names": list(DEFAULT_KEYS), "values": list(residents.KEY_VALUES), "defaults": DEFAULT_KEYS},
-        "building_types": list(HANDLERS),
-        "road_conditions": list(layout.CONDITIONS),
-        "plans": {plan: {"steps": list(steps)} for plan, steps in islands.PLANS.items()},
-        "shapes": list(islands.SHAPES),
-        "rules": list(islands.RULES),
-        "bubble_kinds": list(BUBBLE_MOODS),
-        "moods": list(judge.MOODS),
-        "states": ["idle", "walking", "working", "sleeping"],
-        "task_statuses": ["queued", "in_progress", "done", "failed", "cancelled"],
-        "weather": list(weather.KINDS),
-    })
+    return JsonResponse(
+        {
+            "jobs": list(JOBS),
+            "job_buildings": vocab.JOB_BUILDINGS,
+            "traits": {name: {"low": lo, "medium": mid, "high": hi} for name, (lo, mid, hi) in TRAITS.items()},
+            "brains": list(vocab.BRAIN_NAMES),
+            "gifts": {gift: spec["label"] for gift, spec in GIFTS.items()},
+            "keys": {"names": list(DEFAULT_KEYS), "values": list(residents.KEY_VALUES), "defaults": DEFAULT_KEYS},
+            "building_types": list(vocab.STEP_ORDER),
+            "road_conditions": list(vocab.ROAD_CONDITIONS),
+            "plans": {plan: {"steps": list(steps)} for plan, steps in vocab.PLANS.items()},
+            "shapes": list(SHAPES),
+            "rules": list(vocab.RULES),
+            "bubble_kinds": list(vocab.BUBBLE_KINDS),
+            "moods": list(vocab.MOODS),
+            "states": list(vocab.STATES),
+            "task_statuses": list(vocab.TASK_STATUSES),
+            "weather": list(weather.KINDS),
+        }
+    )
 
 
 @require_GET
@@ -123,25 +139,18 @@ async def models_list(request: HttpRequest) -> JsonResponse:
 async def islands_view(request: HttpRequest) -> JsonResponse:
     """GET: every island (the Archipelago screen). POST: found an island (the island creator)."""
     if request.method == "GET":
-        rows = [
-            {"id": i.id, "name": i.name, "repo": i.repo, "path": i.repo_path, "branch": i.branch, "plan": i.plan,
-             "created_at": i.created_at.isoformat()}
-            async for i in Island.objects.order_by("name")
-        ]
+        rows = [island_to_dict(i) async for i in Island.objects.order_by("name")]
         return JsonResponse({"islands": rows, "default_folder": str(await asyncio.to_thread(islands.default_folder))})
     if request.method != "POST":
         return _error("GET or POST", 405)
-    try:
-        body = json.loads(request.body or b"{}")
-    except json.JSONDecodeError:
-        return _error("body is not valid JSON", 400)
-    if not isinstance(body, dict):
-        return _error("body must be a JSON object", 400)
+    body = _json_body(request)
+    if isinstance(body, JsonResponse):
+        return body
     try:
         island = await asyncio.to_thread(islands.create_island, body)
     except islands.IslandError as e:
         return _error(str(e), 400)
-    return JsonResponse(await island_snapshot(island.id, []))
+    return JsonResponse(await _snapshot(island.id))
 
 
 @require_GET
@@ -176,12 +185,9 @@ async def island_view(request: HttpRequest, island_id: str) -> JsonResponse:
             return _error(str(e), 409)
         return JsonResponse({"deleted": island_id, "repo_kept": kept})
     if request.method == "PATCH":
-        try:
-            body = json.loads(request.body or b"{}")
-        except json.JSONDecodeError:
-            return _error("body is not valid JSON", 400)
-        if not isinstance(body, dict):
-            return _error("body must be a JSON object", 400)
+        body = _json_body(request)
+        if isinstance(body, JsonResponse):
+            return body
         try:
             island = await asyncio.to_thread(islands.update_island, island_id, body)
         except Island.DoesNotExist:
@@ -193,27 +199,23 @@ async def island_view(request: HttpRequest, island_id: str) -> JsonResponse:
         return JsonResponse(event["island"])
     if request.method != "GET":
         return _error("GET, PATCH or DELETE", 405)
-    runtime = get_runtime()
     try:
-        snapshot = await island_snapshot(island_id, runtime.bubbles.for_island(island_id))
+        return JsonResponse(await _snapshot(island_id))
     except Island.DoesNotExist:
         return _error(f"no island {island_id!r}", 404)
-    snapshot["mock_agents"] = runtime.mock_agents
-    return JsonResponse(snapshot)
 
 
 @require_GET
 async def island_issues(request: HttpRequest, island_id: str) -> JsonResponse:
     """Open issues on the island's GitHub repo, newest first, so a task can start from one."""
-    island = await _island_or_none(island_id)
-    if island is None:
-        return _error(f"no island {island_id!r}", 404)
+    island = await _island_or_404(island_id)
+    if isinstance(island, JsonResponse):
+        return island
     if not island.repo:
         return _error("this island has no GitHub repo (link one with PATCH /islands/{id})", 400)
-    try:
-        limit = min(max(1, int(request.GET.get("limit", "50"))), 200)
-    except ValueError:
-        return _error("limit must be a number", 400)
+    limit = _int_param(request, "limit", 50, 200)
+    if isinstance(limit, JsonResponse):
+        return limit
     try:
         return JsonResponse({"issues": await asyncio.to_thread(github.list_issues, island.repo, limit)})
     except github.GitHubError as e:
@@ -243,17 +245,16 @@ async def tasks_view(request: HttpRequest, island_id: str) -> JsonResponse:
     OpenRouter; the mock brain while `mock_agents` is on). Follow it over the
     WebSocket, or poll GET /islands/{id}/tasks/{task_id}.
     """
-    island = await _island_or_none(island_id)
-    if island is None:
-        return _error(f"no island {island_id!r}", 404)
+    island = await _island_or_404(island_id)
+    if isinstance(island, JsonResponse):
+        return island
     if request.method == "GET":
         return await _list_tasks(request, island_id)
     if request.method != "POST":
         return _error("GET or POST", 405)
-    try:
-        body = json.loads(request.body or b"{}")
-    except json.JSONDecodeError:
-        return _error("body is not valid JSON", 400)
+    body = _json_body(request)
+    if isinstance(body, JsonResponse):
+        return body
     try:
         task = await tasks.submit_task(get_runtime().workflow, island, body)
     except tasks.TaskError as e:
@@ -263,10 +264,9 @@ async def tasks_view(request: HttpRequest, island_id: str) -> JsonResponse:
 
 async def _list_tasks(request: HttpRequest, island_id: str) -> JsonResponse:
     statuses = [s for s in request.GET.get("status", "").split(",") if s]
-    try:
-        limit = max(1, int(request.GET.get("limit", "50")))
-    except ValueError:
-        return _error("limit must be a number", 400)
+    limit = _int_param(request, "limit", 50, 2000)
+    if isinstance(limit, JsonResponse):
+        return limit
     rows = Task.objects.filter(island_id=island_id).order_by("-created_at", "-id")
     if statuses:
         rows = rows.filter(status__in=statuses)
@@ -306,29 +306,20 @@ async def _steps_by_task(task_ids: list[str]) -> dict[str, list[Step]]:
 
 
 async def _task_events(task: Task, limit: int = 200) -> list[dict]:
-    """The island's stored events while this task ran: activity lines, bubbles, moods, handoffs.
-
-    Events aren't tagged with a task, but the engine runs one task at a time, so
-    everything between the task's `in_progress` event and its `done`/`failed`
-    event belongs to it. Same shape as the planned GET /islands/{id}/events:
-    the stored payload plus `event_id`, oldest first, the newest `limit` rows.
-    """
-    marks = Event.objects.filter(island_id=task.island_id, type="task", payload__id=task.id).order_by("id")
-    first = await marks.filter(payload__status="in_progress").afirst()
-    if first is None:
+    """The island's stored events while this task ran (replay.task_window), the newest `limit`,
+    oldest first, each the stored payload plus `event_id`: the shape of GET /islands/{id}/events."""
+    window = await task_window(task.id, running_too=True)
+    if window is None:
         return []  # still queued
-    rows = Event.objects.filter(island_id=task.island_id, id__gte=first.id)
-    last = await marks.filter(payload__status__in=["done", "failed"]).alast()
-    if last is not None:
-        rows = rows.filter(id__lte=last.id)
-    newest = [{"event_id": e.id, **e.payload} async for e in rows.order_by("-id")[:limit]]
+    newest = [{"event_id": e.id, **e.payload} async for e in window.order_by("-id")[:limit]]
     return newest[::-1]
 
 
 @require_GET
 async def get_insights(request: HttpRequest, island_id: str) -> JsonResponse:
-    if await _island_or_none(island_id) is None:
-        return _error(f"no island {island_id!r}", 404)
+    island = await _island_or_404(island_id)
+    if isinstance(island, JsonResponse):
+        return island
     range_name = request.GET.get("range", "week")
     if range_name not in RANGES:
         return _error(f"range must be one of {list(RANGES)}", 400)
@@ -338,13 +329,15 @@ async def get_insights(request: HttpRequest, island_id: str) -> JsonResponse:
 @require_GET
 async def get_events(request: HttpRequest, island_id: str) -> JsonResponse:
     """The newest `limit` stored events, oldest first: the stored payload plus `event_id`."""
-    if await _island_or_none(island_id) is None:
-        return _error(f"no island {island_id!r}", 404)
-    try:
-        limit = min(max(1, int(request.GET.get("limit", "200"))), 2000)
-    except ValueError:
-        return _error("limit must be a number", 400)
-    newest = [{"event_id": e.id, **e.payload} async for e in Event.objects.filter(island_id=island_id).order_by("-id")[:limit]]
+    island = await _island_or_404(island_id)
+    if isinstance(island, JsonResponse):
+        return island
+    limit = _int_param(request, "limit", 200, 2000)
+    if isinstance(limit, JsonResponse):
+        return limit
+    newest = [
+        {"event_id": e.id, **e.payload} async for e in Event.objects.filter(island_id=island_id).order_by("-id")[:limit]
+    ]
     return JsonResponse({"events": newest[::-1]})
 
 
@@ -361,14 +354,12 @@ async def layout_view(request: HttpRequest, island_id: str) -> JsonResponse:
     """
     if request.method != "PUT":
         return _error("PUT", 405)
-    if await _island_or_none(island_id) is None:
-        return _error(f"no island {island_id!r}", 404)
-    try:
-        body = json.loads(request.body or b"{}")
-    except json.JSONDecodeError:
-        return _error("body is not valid JSON", 400)
-    if not isinstance(body, dict):
-        return _error("body must be a JSON object", 400)
+    island = await _island_or_404(island_id)
+    if isinstance(island, JsonResponse):
+        return island
+    body = _json_body(request)
+    if isinstance(body, JsonResponse):
+        return body
     if "map" in body:
         try:
             await asyncio.to_thread(islands.set_map, island_id, body)
@@ -377,8 +368,8 @@ async def layout_view(request: HttpRequest, island_id: str) -> JsonResponse:
         except islands.IslandError as e:
             return _error(str(e), 400)
         runtime = get_runtime()
-        snapshot = await island_snapshot(island_id, runtime.bubbles.for_island(island_id))
-        await runtime.bus.broadcast({"type": "snapshot", "island": snapshot}, island_id)
+        snapshot = await _snapshot(island_id)
+        await runtime.bus.emit(island_id, events.snapshot(snapshot, runtime.mock_agents))  # every client redraws
         return JsonResponse(snapshot)
     try:
         buildings, roads = layout.clean_layout(island_id, body)
@@ -411,12 +402,9 @@ async def settings_view(request: HttpRequest) -> JsonResponse:
     in the environment (.env) wins and is listed in `from_env`.
     """
     if request.method == "PUT":
-        try:
-            body = json.loads(request.body or b"{}")
-        except json.JSONDecodeError:
-            return _error("body is not valid JSON", 400)
-        if not isinstance(body, dict):
-            return _error("body must be a JSON object", 400)
+        body = _json_body(request)
+        if isinstance(body, JsonResponse):
+            return body
         settings = body.get("settings") or {}
         secrets = body.get("secrets") or {}
         if not isinstance(settings, dict) or not isinstance(secrets, dict):

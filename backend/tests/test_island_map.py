@@ -2,21 +2,24 @@
 
 import copy
 import json
-from types import SimpleNamespace
 
 import pytest
 from asgiref.sync import sync_to_async
-from conftest import ScriptedRunner, db_test, make_workflow
+from conftest import db_test
 from django.test import AsyncClient
 
-from mii import islands, views
+from mii import islands
 from mii.models import Building, Island, Resident, Road, Task
 
 pytestmark = db_test
 
 CLASSIC_ROADS = [
-    ("mailbox", "workshop", "always"), ("workshop", "lab", "always"), ("lab", "courthouse", "pass"),
-    ("lab", "workshop", "fail"), ("courthouse", "post_office", "pass"), ("courthouse", "workshop", "fail"),
+    ("mailbox", "workshop", "always"),
+    ("workshop", "lab", "always"),
+    ("lab", "courthouse", "pass"),
+    ("lab", "workshop", "fail"),
+    ("courthouse", "post_office", "pass"),
+    ("courthouse", "workshop", "fail"),
 ]
 
 
@@ -26,6 +29,7 @@ def classic(steps=islands.STEP_ORDER):
 
 # --- Steps and roads ------------------------------------------------------------
 
+
 def test_roads_for_all_steps_match_the_classic_plan():
     assert islands.build_roads(islands.STEP_ORDER) == CLASSIC_ROADS
     # The order the steps are given in doesn't matter: roads follow STEP_ORDER.
@@ -34,10 +38,15 @@ def test_roads_for_all_steps_match_the_classic_plan():
 
 def test_roads_for_other_step_sets():
     assert islands.build_roads(islands.PLANS["quick_fixes"]) == [
-        ("mailbox", "workshop", "always"), ("workshop", "post_office", "always")]
+        ("mailbox", "workshop", "always"),
+        ("workshop", "post_office", "always"),
+    ]
     assert islands.build_roads(["mailbox", "workshop", "lab", "post_office"]) == [
-        ("mailbox", "workshop", "always"), ("workshop", "lab", "always"),
-        ("lab", "post_office", "pass"), ("lab", "workshop", "fail")]
+        ("mailbox", "workshop", "always"),
+        ("workshop", "lab", "always"),
+        ("lab", "post_office", "pass"),
+        ("lab", "workshop", "fail"),
+    ]
 
 
 def test_required_steps():
@@ -51,10 +60,13 @@ def test_required_steps():
 
 # --- Shapes and validation ------------------------------------------------------
 
+
 @pytest.mark.parametrize("shape", list(islands.SHAPES))
 @pytest.mark.parametrize("plan", list(islands.PLANS))
 def test_every_shape_preset_is_valid(shape, plan):
-    layout, buildings = islands.validate_map(islands.default_map(shape), islands.default_buildings(shape, islands.PLANS[plan]))
+    layout, buildings = islands.validate_map(
+        islands.default_map(shape), islands.default_buildings(shape, islands.PLANS[plan])
+    )
     assert layout["shape"] == shape and [b["type"] for b in buildings] == list(islands.PLANS[plan])
 
 
@@ -95,7 +107,7 @@ def test_validation_rules():
     islands.validate_map(layout, boxed)
     blocked = copy.deepcopy(buildings)
     blocked[1].update(x=6, y=2)  # workshop right next to the mailbox ...
-    blocked[0]["facing"] = 1     # ... so the mailbox's east door opens into it
+    blocked[0]["facing"] = 1  # ... so the mailbox's east door opens into it
     rejects(layout, blocked, "door is blocked")
 
 
@@ -108,15 +120,26 @@ def test_validation_keeps_explicit_plants_and_cleans_them():
 
 # --- Founding with a shape and steps --------------------------------------------
 
+
 async def test_found_island_with_shape_and_steps(island, tmp_path, monkeypatch):
     monkeypatch.setenv("ISLANDS_ROOT", str(tmp_path))
     new = await sync_to_async(islands.create_island)(
-        {"name": "Twin Peaks", "shape": "twin", "steps": ["post_office", "mailbox", "workshop", "lab"], "season": "winter"})
+        {
+            "name": "Twin Peaks",
+            "shape": "twin",
+            "steps": ["post_office", "mailbox", "workshop", "lab"],
+            "season": "winter",
+        }
+    )
     assert new.plan == "custom" and new.map["shape"] == "twin" and new.map["season"] == "winter"
     types = await sync_to_async(lambda: sorted(Building.objects.filter(island=new).values_list("type", flat=True)))()
     assert types == ["lab", "mailbox", "post_office", "workshop"]
-    roads = await sync_to_async(lambda: [(r.from_building.type, r.to_building.type, r.condition)
-                                         for r in Road.objects.filter(island=new).order_by("id")])()
+    roads = await sync_to_async(
+        lambda: [
+            (r.from_building.type, r.to_building.type, r.condition)
+            for r in Road.objects.filter(island=new).order_by("id")
+        ]
+    )()
     assert roads == islands.build_roads(types)
 
     quick = await sync_to_async(islands.create_island)({"name": "Quick", "plan": "quick_fixes"})
@@ -126,6 +149,7 @@ async def test_found_island_with_shape_and_steps(island, tmp_path, monkeypatch):
 
 
 # --- Build mode saves -----------------------------------------------------------
+
 
 def _body(**changes):
     layout, buildings = classic()
@@ -146,8 +170,15 @@ async def test_set_layout_moves_buildings_and_keeps_ids(island):
 async def test_set_layout_adds_and_removes_steps(island):
     layout, buildings = classic(islands.PLANS["quick_fixes"])
     await sync_to_async(islands.set_map)("sunny", {"map": layout, "buildings": buildings})
-    assert sorted([b.type async for b in Building.objects.filter(island_id="sunny")]) == ["mailbox", "post_office", "workshop"]
-    roads = [(r.from_building_id, r.to_building_id, r.condition) async for r in Road.objects.filter(island_id="sunny").order_by("id")]
+    assert sorted([b.type async for b in Building.objects.filter(island_id="sunny")]) == [
+        "mailbox",
+        "post_office",
+        "workshop",
+    ]
+    roads = [
+        (r.from_building_id, r.to_building_id, r.condition)
+        async for r in Road.objects.filter(island_id="sunny").order_by("id")
+    ]
     assert roads == [("mailbox", "workshop", "always"), ("workshop", "post_office", "always")]
     sydney = await Resident.objects.aget(pk="sydney")  # the reviewer lost the courthouse: no other home
     assert sydney.building_id is None
@@ -172,13 +203,6 @@ async def test_set_layout_refuses_new_steps_while_a_task_runs(island):
 
 
 # --- The endpoint ---------------------------------------------------------------
-
-@pytest.fixture
-def fake_runtime(monkeypatch):
-    workflow, client = make_workflow(ScriptedRunner())
-    runtime = SimpleNamespace(workflow=workflow, bubbles=workflow.bubbles, bus=workflow.bus, mock_agents=True)
-    monkeypatch.setattr(views, "get_runtime", lambda: runtime)
-    return client
 
 
 async def test_put_map_endpoint(island, fake_runtime):

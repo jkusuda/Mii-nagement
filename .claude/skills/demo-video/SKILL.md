@@ -30,7 +30,7 @@ Alternatives:
 ## 2. Record with MovieWriter
 
 ```bash
-/Applications/Godot.app/Contents/MacOS/Godot --path game --write-movie demo.avi --fixed-fps 60
+"$GODOT" --path game --write-movie demo.avi --fixed-fps 60   # GODOT = your Godot 4 binary (see the Makefile)
 ```
 
 - `.avi` = MJPEG + uncompressed audio (big, lossless-ish); `.png` writes a frame sequence.

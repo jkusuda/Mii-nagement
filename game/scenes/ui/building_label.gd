@@ -35,9 +35,11 @@ func setup(building: Node3D, view_camera: Camera3D, title: String, icon: Texture
 	badge.add_theme_stylebox_override("panel", style)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	gui_input.connect(func(event: InputEvent):
-		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-			pressed.emit())
+	gui_input.connect(
+		func(event: InputEvent):
+			if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+				pressed.emit()
+	)
 
 
 ## How many residents are here (0 included). `title` renames the pill (the

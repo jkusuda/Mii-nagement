@@ -4,9 +4,8 @@ extends PanelContainer
 ## One card in the Bubbles sidebar: who's asking, their mood tag, the question,
 ## and an Answer button.
 ##
-## Godot concept: `@export` variables show up in the Inspector, so each card in
-## game.tscn sets its own name, colors, and text there. The `set(value):` part
-## re-applies them so the editor preview updates as you type.
+## Godot concept: `@export` variables show up in the Inspector; with `@tool` the
+## editor preview of bubble_card.tscn redraws as you type (the `set(value):` part).
 ##
 ## In the game, bubbles_sidebar.gd makes one card per open bubble and calls
 ## setup(). Answer emits `answer_requested`; the sidebar opens the AnswerPopup
@@ -15,22 +14,11 @@ extends PanelContainer
 
 signal answer_requested(bubble: Dictionary)
 
-## bubble kind -> tag color
-const KIND_COLORS := {
-	"confused": Color("7553DF"), "struggling": Color("E36F1E"), "permission": Color("D6457A"),
-	"ready": Color("009D85"), "tired": Color("C57722"),
-}
-
-var bubble_id := ""
-var bubble := {}  # the bubble from Net.island this card shows
-var _since := 0.0
-var _place := ""
-
 @export var resident_name := "Mo":
 	set(value):
 		resident_name = value
 		_apply()
-@export var role := "Tester · Puzzled":
+@export var role := "Coder · Puzzled":
 	set(value):
 		role = value
 		_apply()
@@ -59,6 +47,11 @@ var _place := ""
 		card_color = value
 		_apply()
 
+var bubble_id := ""
+var bubble := {}  # the bubble from Net.island this card shows
+var _since := 0.0
+var _place := ""
+
 
 func _ready() -> void:
 	_apply()
@@ -74,16 +67,16 @@ func setup(data: Dictionary, resident: Dictionary, place: String) -> void:
 	_since = float(bubble.get("since", Time.get_unix_time_from_system()))
 	_place = place
 	var kind := str(bubble["kind"])
-	var tag: Array = ResidentData.BUBBLE_TAGS.get(kind, ["Needs you", null, "Answer"])
+	var look := Protocol.bubble(kind)
 	resident_name = str(resident.get("name", bubble["agent"]))
 	role = ResidentData.role_line(resident) if resident else ""
-	tag_text = tag[0]
-	tag_icon = tag[1]
-	tag_color = KIND_COLORS.get(kind, Color("7553DF"))
+	tag_text = look["tag"]
+	tag_icon = look["icon"]
+	tag_color = look["color"]
 	quote = "“%s”" % bubble["text"]
 	card_color = Color(str(resident.get("color", "#FFFFFF"))).lerp(Color.WHITE, 0.86)
 	if not %AnswerButton.disabled:
-		%AnswerButton.text = tag[2]
+		%AnswerButton.text = look["button"]
 	refresh_age()
 
 
@@ -107,7 +100,7 @@ func _apply() -> void:
 	if not is_node_ready():
 		return  # children don't exist yet; _ready() will call us again
 	%Name.text = resident_name
-	%Initial.text = resident_name.left(1)  # TODO(mvp): the resident's Mii face instead of an initial
+	%Initial.text = resident_name.left(1)  # TODO(stretch): the resident's Mii headshot (Portraits) instead of an initial
 	%Role.text = role
 	%TagLabel.text = tag_text
 	%TagLabel.add_theme_color_override("font_color", tag_color)

@@ -35,8 +35,13 @@ func setup(data: Dictionary) -> void:
 	var friend: Dictionary = data.get("friend", {})
 	_friend.visible = not friend.is_empty()
 	if friend:
-		_friend.text = "♥ %s %s · %d%%" % [ResidentData.friendship_words(friend["score"]), friend["name"], roundi(friend["score"] * 100.0)]
-		_friend.tooltip_text = "%d package%s handed between them" % [friend["handoffs"], "" if friend["handoffs"] == 1 else "s"]
+		_friend.text = (
+			"♥ %s %s · %d%%"
+			% [ResidentData.friendship_words(friend["score"]), friend["name"], roundi(friend["score"] * 100.0)]
+		)
+		_friend.tooltip_text = (
+			"%d package%s handed between them" % [friend["handoffs"], "" if friend["handoffs"] == 1 else "s"]
+		)
 		_friend.add_theme_color_override("font_color", ink)
 
 	# The notebook is how full the agent's context window is (0-1). The backend
@@ -58,7 +63,7 @@ func setup(data: Dictionary) -> void:
 	%ActionButton.visible = has_bubble
 	%VisitButton.visible = not has_bubble
 	if has_bubble:
-		%ActionButton.text = ResidentData.BUBBLE_TAGS.get(bubble["kind"], ["", null, "Answer"])[2]
+		%ActionButton.text = Protocol.bubble(str(bubble["kind"]))["button"]
 
 	# Recolor copies of the theme styles for this resident.
 	_tint("panel", "CardPanel", self, accent.lerp(Color.WHITE, 0.86))

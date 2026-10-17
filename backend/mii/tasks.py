@@ -6,9 +6,13 @@ emits the `task` event; the package starts at the island's mailbox.
 """
 
 import asyncio
+from typing import TYPE_CHECKING
 
 from mii import github
 from mii.models import Island, Task
+
+if TYPE_CHECKING:
+    from mii.engine import WorkflowEngine
 
 
 class TaskError(ValueError):
@@ -19,7 +23,7 @@ class TaskError(ValueError):
         self.status = status
 
 
-async def submit_task(workflow, island: Island, data: dict) -> Task:
+async def submit_task(workflow: "WorkflowEngine", island: Island, data: object) -> Task:
     """Validate `data` and queue the task on `island`. Raises TaskError."""
     if not isinstance(data, dict):
         raise TaskError("the task must be a JSON object")

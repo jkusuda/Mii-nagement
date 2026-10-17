@@ -2,7 +2,7 @@
 
 [ext_resource type="Theme" path="res://ui/theme.tres" id="1_theme"]
 [ext_resource type="Script" uid="uid://c6ktv16khi0rb" path="res://scenes/game.gd" id="2_game"]
-[ext_resource type="PackedScene" path="res://scenes/island_3d.tscn" id="3_island_3d"]
+[ext_resource type="PackedScene" path="res://scenes/island/island_3d.tscn" id="3_island_3d"]
 [ext_resource type="Texture2D" uid="uid://dnqxung6wr1fd" path="res://assets/icons/chevron-left.svg" id="5_chevron_left"]
 [ext_resource type="Texture2D" uid="uid://bori8153c8i6o" path="res://assets/icons/sprout.svg" id="6_sprout"]
 [ext_resource type="Texture2D" uid="uid://dh2msv6gtqfyn" path="res://assets/icons/chevron-down.svg" id="7_chevron_down"]
@@ -23,7 +23,7 @@
 [ext_resource type="PackedScene" path="res://scenes/news/news_screen.tscn" id="25_news"]
 [ext_resource type="PackedScene" path="res://scenes/home/home.tscn" id="26_home"]
 [ext_resource type="PackedScene" path="res://scenes/home/island_creator.tscn" id="27_island_creator"]
-[ext_resource type="Script" path="res://scenes/sea/sea_view.gd" id="40_sea"]
+[ext_resource type="Script" path="res://scenes/home/sea_view.gd" id="40_sea"]
 [ext_resource type="Texture2D" path="res://assets/icons/mail.svg" id="41_mail"]
 [ext_resource type="Script" path="res://scenes/ui/answer_button.gd" id="42_answer"]
 

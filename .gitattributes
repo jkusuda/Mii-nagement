@@ -1,0 +1,20 @@
+# One line ending everywhere (the project is edited on macOS and Windows).
+* text=auto eol=lf
+
+# Godot and binary assets never get line-ending or diff treatment.
+*.glb binary
+*.obj binary
+*.png binary
+*.jpg binary
+*.svg text
+*.ttf binary
+*.otf binary
+*.wav binary
+*.ogg binary
+*.mp4 binary
+*.import text
+*.tscn text
+*.tres text
+*.gd text
+*.gd.uid text
+uv.lock text -diff

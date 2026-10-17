@@ -17,24 +17,23 @@ extends Node
 ##
 ## Godot concepts used: a Timer node (ticks), `await` on a signal or a timer
 ## (coroutines: the function pauses until the walk ends), Tweens (in
-## island_resident.gd), and the DayNight autoload's `night` value.
+## island_resident.gd), and DayNight.night (a static var on the DayNight class).
 
-const ENABLED := true
 const TICK_MIN := 6.0
 const TICK_MAX := 15.0
 const MAX_ACTIVE := 2
-const WAVE_DISTANCE := 2.6   # units: a passer-by this close gets a wave
+const WAVE_DISTANCE := 2.6  # units: a passer-by this close gets a wave
 const WAVE_COOLDOWN := 25.0  # seconds before the same two wave again
 
-var _residents: Node  # island_residents.gd
+var _residents: IslandResidents
 var _timer := Timer.new()
-var _active := {}     # resident id -> true while they're in an ambient action
+var _active := {}  # resident id -> true while they're in an ambient action
 var _last_wave := {}  # "a|b" -> time of the last wave between them
 var _wave_clock := 0.0
 var _rng := RandomNumberGenerator.new()
 
 
-func setup(residents: Node) -> void:
+func setup(residents: IslandResidents) -> void:
 	_residents = residents
 
 
@@ -59,7 +58,7 @@ func _schedule() -> void:
 ## Every tick: maybe start one ambient action for one free resident.
 func _tick() -> void:
 	_schedule()
-	if not ENABLED or _residents == null or _active.size() >= MAX_ACTIVE:
+	if _residents == null or _active.size() >= MAX_ACTIVE:
 		return
 	var free := _free_residents()
 	if free.is_empty():
@@ -122,12 +121,18 @@ func _run(resident: Dictionary, action: String) -> void:
 	walker.life_busy = true
 	walker.home_spot = walker.global_position
 	match action:
-		"stroll": await _stroll(walker)
-		"visit": await _visit(resident, walker)
-		"pond": await _pond(walker)
-		"tree": await _tree(walker)
-		"mutter": walker.say(LifeLines.mutter(resident, Net.island), 3.5)
-		"shift": walker.emote("shift")
+		"stroll":
+			await _stroll(walker)
+		"visit":
+			await _visit(resident, walker)
+		"pond":
+			await _pond(walker)
+		"tree":
+			await _tree(walker)
+		"mutter":
+			walker.say(LifeLines.mutter(resident, Net.island), 3.5)
+		"shift":
+			walker.emote("shift")
 	_finish(id)
 
 

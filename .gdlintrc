@@ -1,0 +1,26 @@
+# gdlint settings (GDScript Toolkit). Run through `make lint`; format with `make fmt` (gdformat, 120 columns).
+# Everything not listed keeps gdlint's default.
+max-line-length: 120
+max-file-lines: 1000
+function-arguments-number: 10
+class-definitions-order:
+- tools
+- classnames
+- extends
+- docstrings
+- signals
+- enums
+- consts
+- staticvars
+- exports
+- pubvars
+- prvvars
+- onreadypubvars
+- onreadyprvvars
+- others
+# max-returns: early returns are the clearest shape for validators (IslandLayout.problem) and
+# event dispatch (NewsStories._story_for), so the count is not enforced.
+disable: [max-returns]
+excluded_directories: !!set
+  .git: null
+  .godot: null

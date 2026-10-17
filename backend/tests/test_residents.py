@@ -20,9 +20,16 @@ async def test_create_fills_defaults_and_home(island):
 
 async def test_create_keeps_every_creator_field(island):
     data = {
-        "name": "Bea", "job": "planner", "color": "#2fa37a", "catchphrase": "Tidy!",
-        "brain": "openrouter", "model": "  ", "bluntness": 1.7, "caution": 0.25,
-        "keys": {"edit": "yes"}, "gifts": ["docs", "browser", "docs"],
+        "name": "Bea",
+        "job": "planner",
+        "color": "#2fa37a",
+        "catchphrase": "Tidy!",
+        "brain": "openrouter",
+        "model": "  ",
+        "bluntness": 1.7,
+        "caution": 0.25,
+        "keys": {"edit": "yes"},
+        "gifts": ["docs", "browser", "docs"],
         "appearance": {"skin": "#F2C6A0", "hair": 12, "eyes": 3},
     }
     r = await residents.create_resident("sunny", data)
@@ -35,21 +42,24 @@ async def test_create_keeps_every_creator_field(island):
     assert sent["appearance"] == {"skin": "#F2C6A0", "hair": 12, "eyes": 3}
 
 
-@pytest.mark.parametrize("bad", [
-    {"name": ""},
-    {"name": "x" * 21},
-    {"name": "Mo", "job": "tester"},
-    {"name": "Mo", "brain": "gpt-9"},
-    {"name": "Mo", "color": "purple"},
-    {"name": "Mo", "caution": "very"},
-    {"name": "Mo", "keys": {"edit": "maybe"}},
-    {"name": "Mo", "keys": {"launch": "yes"}},
-    {"name": "Mo", "gifts": ["jetpack"]},
-    {"name": "Mo", "appearance": "bob"},
-    {"name": "Mo", "appearance": {"hair": {"style": 1}}},
-    {"name": "Mo", "appearance": {"hair": "x" * 21}},
-    {"name": "Mo", "appearance": {f"k{i}": 1 for i in range(25)}},
-])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"name": ""},
+        {"name": "x" * 21},
+        {"name": "Mo", "job": "tester"},
+        {"name": "Mo", "brain": "gpt-9"},
+        {"name": "Mo", "color": "purple"},
+        {"name": "Mo", "caution": "very"},
+        {"name": "Mo", "keys": {"edit": "maybe"}},
+        {"name": "Mo", "keys": {"launch": "yes"}},
+        {"name": "Mo", "gifts": ["jetpack"]},
+        {"name": "Mo", "appearance": "bob"},
+        {"name": "Mo", "appearance": {"hair": {"style": 1}}},
+        {"name": "Mo", "appearance": {"hair": "x" * 21}},
+        {"name": "Mo", "appearance": {f"k{i}": 1 for i in range(25)}},
+    ],
+)
 async def test_create_rejects_bad_fields(island, bad):
     with pytest.raises(residents.ResidentError):
         await residents.create_resident("sunny", bad)
@@ -133,7 +143,9 @@ async def test_update_island_message_and_request_id_echo(island):
     [event] = watcher.sent
     assert event["type"] == "island" and event["island"]["name"] == "Sunnier" and event["island"]["branch"] == "dev"
 
-    reply = await handle_message(runtime, "sunny", {"type": "update_island", "island": {"repo": "bad"}, "request_id": "r2"})
+    reply = await handle_message(
+        runtime, "sunny", {"type": "update_island", "island": {"repo": "bad"}, "request_id": "r2"}
+    )
     assert reply["type"] == "error" and reply["request_id"] == "r2" and len(watcher.sent) == 1
     reply = await handle_message(runtime, "sunny", {"type": "answer_bubble", "id": "b_x"})
     assert reply["type"] == "error" and "request_id" not in reply

@@ -17,12 +17,11 @@ signal closed
 ## A resident's "Answer" button: open that bubble's reply in the sidebar.
 signal answer_requested(bubble_id: String)
 
-const AnswerButtonScript := preload("res://scenes/ui/answer_button.gd")
 const CLOSE_ICON := preload("res://assets/icons/x.svg")
 const SEND_ICON := preload("res://assets/icons/plus.svg")
 const CARD_WIDTH := 780.0
 const LIST_HEIGHT := 330.0
-const INK := Color("292E50")       # the theme's dark navy
+const INK := Color("292E50")  # the theme's dark navy
 const CREAM := Color("FFFDF3")
 const LINE := Color("E3E5EE")
 const STATES := {"working": "Working", "walking": "Walking", "idle": "Idle", "sleeping": "Sleeping"}
@@ -62,9 +61,11 @@ func _init() -> void:
 
 	_haze.color = Color(1, 1, 1, 0.35)
 	_haze.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_haze.gui_input.connect(func(event: InputEvent):
-		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-			close())
+	_haze.gui_input.connect(
+		func(event: InputEvent):
+			if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+				close()
+	)
 	add_child(_haze)
 
 	# The card, centered. Godot concept: a CenterContainer keeps its child in
@@ -87,10 +88,16 @@ func _init() -> void:
 	_form.visible = false
 	_form.sent.connect(func(): _show_list())
 	_form.busy_changed.connect(func(busy: bool): _action.disabled = busy)
-	Net.island_changed.connect(func(): if visible and not _composing: _refresh())
-	Net.thinking_received.connect(func(task_id: String):
-		if _thinking_views.has(task_id):
-			_show_thinking(task_id))
+	Net.island_changed.connect(
+		func():
+			if visible and not _composing:
+				_refresh()
+	)
+	Net.thinking_received.connect(
+		func(task_id: String):
+			if _thinking_views.has(task_id):
+				_show_thinking(task_id)
+	)
 
 
 ## Open the card for a building type ("mailbox", "lab", ...). `compose` opens
@@ -102,7 +109,9 @@ func open(type: String, compose := false) -> void:
 	_header.add_theme_stylebox_override("panel", _box(color.lerp(Color.WHITE, 0.78), 24, Color.TRANSPARENT, 0, 0, true))
 	_icon.texture = info["icon"]
 	_icon.modulate = color
-	_count_pill.add_theme_stylebox_override("panel", _box(color.lerp(Color.WHITE, 0.8), 14, Color.TRANSPARENT, 0, 0, false, Vector4(12, 4, 12, 4)))
+	_count_pill.add_theme_stylebox_override(
+		"panel", _box(color.lerp(Color.WHITE, 0.8), 14, Color.TRANSPARENT, 0, 0, false, Vector4(12, 4, 12, 4))
+	)
 	_count.add_theme_color_override("font_color", color.darkened(0.3))
 	_title.text = str(_building().get("name", info["name"]))
 	_tagline.text = info["tagline"]
@@ -140,6 +149,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 # --- The two views ---------------------------------------------------------------
+
 
 func _show_list() -> void:
 	_composing = false
@@ -195,7 +205,9 @@ func _fill_mailbox() -> void:
 	# Furthest along first (the Post Office end of the road), queued ones last.
 	var stages: Array = BuildingData.TYPES.keys()
 	var tasks: Array = Net.island.get("tasks", []).duplicate()
-	tasks.sort_custom(func(a, b): return stages.find(_type_of(a.get("building"))) > stages.find(_type_of(b.get("building"))))
+	tasks.sort_custom(
+		func(a, b): return stages.find(_type_of(a.get("building"))) > stages.find(_type_of(b.get("building")))
+	)
 	_section.text = "Current issues"
 	_count.text = "%d open issue%s" % [tasks.size(), "" if tasks.size() == 1 else "s"]
 	_footer_title.text = "Got something for the island?"
@@ -233,6 +245,7 @@ func _fill_stage() -> void:
 
 
 # --- Cards -----------------------------------------------------------------------
+
 
 ## One package: icon, title, "#91 · Mo is testing at the Lab", and a status pill.
 ## `with_activity`: add the carrier's latest activity line (on stage panels).
@@ -292,11 +305,20 @@ func _take_back_button(task: Dictionary) -> Button:
 	button.disabled = not Net.is_online
 	var title := str(task.get("title", "this package"))
 	var running: bool = task.get("status") == "in_progress"
-	button.pressed.connect(func():
-		ConfirmPopup.ask(self, "Take back “%s”?" % title,
-			("The resident working on it stops right away and puts it down."
-				if running else "It leaves the queue before anyone starts on it."),
-			"Take it back", func(): Net.send_cancel_task(str(task["id"]))))
+	button.pressed.connect(
+		func():
+			ConfirmPopup.ask(
+				self,
+				"Take back “%s”?" % title,
+				(
+					"The resident working on it stops right away and puts it down."
+					if running
+					else "It leaves the queue before anyone starts on it."
+				),
+				"Take it back",
+				func(): Net.send_cancel_task(str(task["id"]))
+			)
+	)
 	return button
 
 
@@ -330,15 +352,17 @@ func _thinking_box(task: Dictionary, who: String) -> Control:
 	_thinking_views[task_id] = view
 	_show_thinking(task_id)
 
-	toggle.pressed.connect(func():
-		var opening: bool = not _thinking_open.get(task_id, false)
-		_thinking_open[task_id] = opening
-		frame.visible = opening
-		toggle.text = ("▾ " if opening else "▸ ") + "What %s is thinking" % who
-		if opening:
-			_thinking_scroll.erase(task_id)  # start at the newest
-			_load_thinking_history(task_id)
-			_show_thinking(task_id))
+	toggle.pressed.connect(
+		func():
+			var opening: bool = not _thinking_open.get(task_id, false)
+			_thinking_open[task_id] = opening
+			frame.visible = opening
+			toggle.text = ("▾ " if opening else "▸ ") + "What %s is thinking" % who
+			if opening:
+				_thinking_scroll.erase(task_id)  # start at the newest
+				_load_thinking_history(task_id)
+				_show_thinking(task_id)
+	)
 	return box
 
 
@@ -363,17 +387,23 @@ func _show_thinking(task_id: String) -> void:
 			parts.append("\n[b]%s[/b]\n" % _escape(str(Net.find_resident(speaker).get("name", speaker))))
 		var text := _escape(str(e["text"]))
 		match e["kind"]:
-			"thought": parts.append("[i][color=#68738B]%s[/color][/i]\n" % text.strip_edges())
-			"tool": parts.append("[color=#68738B]› %s[/color]\n" % text.strip_edges())
-			_: parts.append(text)
+			"thought":
+				parts.append("[i][color=#68738B]%s[/color][/i]\n" % text.strip_edges())
+			"tool":
+				parts.append("[color=#68738B]› %s[/color]\n" % text.strip_edges())
+			_:
+				parts.append(text)
 	view.append_text("".join(parts).strip_edges())
 	_thinking_scroll.erase(task_id)
 	# The new text is laid out next frame; then scroll.
-	(func():
-		if not is_instance_valid(view):
-			return
-		var b := view.get_v_scroll_bar()
-		b.value = b.max_value if was[1] else was[0]).call_deferred()
+	(
+		(func():
+			if not is_instance_valid(view):
+				return
+			var b := view.get_v_scroll_bar()
+			b.value = b.max_value if was[1] else was[0])
+		. call_deferred()
+	)
 
 
 ## Opened mid-task: fetch what was thought before the game started listening.
@@ -382,17 +412,20 @@ func _load_thinking_history(task_id: String) -> void:
 		return
 	_thinking_loaded[task_id] = true
 	var path := "/islands/%s/tasks/%s" % [str(Net.island["id"]).uri_encode(), task_id.uri_encode()]
-	Net.request_json(path, func(ok: bool, data: Dictionary):
-		if not ok:
-			return
-		var live: Array = Net.thinking.get(task_id, []).duplicate()
-		Net.thinking[task_id] = []
-		for e in data.get("events", []):
-			if e.get("type") == "thinking":
-				Net.add_thinking(e)
-		if Net.thinking[task_id].is_empty():  # nothing stored (yet): keep what we had
-			Net.thinking[task_id] = live
-		_show_thinking(task_id))
+	Net.request_json(
+		path,
+		func(ok: bool, data: Dictionary):
+			if not ok:
+				return
+			var live: Array = Net.thinking.get(task_id, []).duplicate()
+			Net.thinking[task_id] = []
+			for e in data.get("events", []):
+				if e.get("type") == "thinking":
+					Net.add_thinking(e)
+			if Net.thinking[task_id].is_empty():  # nothing stored (yet): keep what we had
+				Net.thinking[task_id] = live
+			_show_thinking(task_id)
+	)
 
 
 ## Text from an agent can contain "[": keep it from being read as BBCode.
@@ -422,18 +455,20 @@ func _resident_card(r: Dictionary, here_id: String) -> Control:
 	if r.get("activity"):
 		texts.add_child(_activity(str(r["activity"])))
 
-	var bubble := _bubble_of(str(r.get("id", "")))
+	var bubble := Net.bubble_of(str(r.get("id", "")))
 	var side: Control
 	if not bubble.is_empty():
 		side = Button.new()
-		side.set_script(AnswerButtonScript)  # the wavy orange button (paints itself in _ready)
+		side.set_script(AnswerButton)  # the wavy orange button (paints itself in _ready)
 		side.theme_type_variation = &"AnswerButton"
 		side.custom_minimum_size = Vector2(96, 34)
 		side.text = "Answer"
 		side.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		side.pressed.connect(func():
-			answer_requested.emit(str(bubble["id"]))
-			close())
+		side.pressed.connect(
+			func():
+				answer_requested.emit(str(bubble["id"]))
+				close()
+		)
 	else:
 		var state := str(r.get("state", "idle"))
 		side = _pill(STATES.get(state, state.capitalize()), color if state == "working" else Color("8A8FA8"))
@@ -473,7 +508,9 @@ func _icon_tile(texture: Texture2D, color: Color) -> Control:
 func _pill(text: String, color: Color) -> Control:
 	var pill := PanelContainer.new()
 	pill.custom_minimum_size.x = 116
-	pill.add_theme_stylebox_override("panel", _box(color.lerp(Color.WHITE, 0.8), 16, Color.TRANSPARENT, 0, 0, false, Vector4(14, 7, 14, 7)))
+	pill.add_theme_stylebox_override(
+		"panel", _box(color.lerp(Color.WHITE, 0.8), 16, Color.TRANSPARENT, 0, 0, false, Vector4(14, 7, 14, 7))
+	)
 	var label := _text("●  " + text, 13, true)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.add_theme_color_override("font_color", color.darkened(0.2))
@@ -482,6 +519,7 @@ func _pill(text: String, color: Color) -> Control:
 
 
 # --- Building the frame ----------------------------------------------------------
+
 
 func _build_header() -> Control:
 	var row := HBoxContainer.new()
@@ -582,7 +620,7 @@ func _build_footer() -> Control:
 	_back.pressed.connect(_show_list)
 	row.add_child(_back)
 
-	_action.set_script(AnswerButtonScript)  # the wavy orange button
+	_action.set_script(AnswerButton)  # the wavy orange button
 	_action.theme_type_variation = &"AnswerButton"
 	_action.add_theme_constant_override("icon_max_width", 16)
 	_action.custom_minimum_size = Vector2(196, 46)
@@ -595,6 +633,7 @@ func _build_footer() -> Control:
 
 # --- Small helpers ---------------------------------------------------------------
 
+
 ## This island's building of the open type (from Net.island), or {}.
 func _building() -> Dictionary:
 	for b in Net.island.get("buildings", []):
@@ -604,15 +643,8 @@ func _building() -> Dictionary:
 
 
 ## The type of the building with this id (null or "" = none), or "".
-func _type_of(building_id) -> String:
+func _type_of(building_id: Variant) -> String:
 	return str(Net.find_building(str(building_id)).get("type", "")) if building_id else ""
-
-
-func _bubble_of(agent: String) -> Dictionary:
-	for b in Net.island.get("bubbles", []):
-		if b.get("agent") == agent:
-			return b
-	return {}
 
 
 ## "Passes go to the Courthouse · fails go back to the Workshop", from the roads.
@@ -676,8 +708,15 @@ func _margins(child: Control, left: int, top: int, right: int, bottom: int) -> M
 
 ## A rounded box. `top_only` rounds just the top corners (the header). `pad`:
 ## content margins (left, top, right, bottom).
-func _box(bg: Color, radius: int, border := Color.TRANSPARENT, border_width := 0, shadow := 0,
-		top_only := false, pad := Vector4.ZERO) -> StyleBoxFlat:
+func _box(
+	bg: Color,
+	radius: int,
+	border := Color.TRANSPARENT,
+	border_width := 0,
+	shadow := 0,
+	top_only := false,
+	pad := Vector4.ZERO
+) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
 	style.bg_color = bg
 	style.set_corner_radius_all(radius)

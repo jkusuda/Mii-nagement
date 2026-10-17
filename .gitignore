@@ -3,6 +3,7 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.ruff_cache/
 *.egg-info/
 
 # --- Local data & secrets ---
@@ -15,6 +16,10 @@ backend/.worktrees/
 # --- Godot ---
 .godot/
 game/builds/
+# demo-video recordings (MovieWriter / ffmpeg output)
+/*.avi
+/*.mp4
+/*.gif
 *.pck
 *.apk
 *.aab
@@ -26,4 +31,5 @@ game/builds/
 .DS_Store
 .vscode/
 .idea/
-.claude/.secrets.json
+backend/.secrets.json   # API keys when there is no OS keychain (prefs.py)
+.claude/settings.local.json

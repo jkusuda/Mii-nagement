@@ -8,7 +8,7 @@ extends Node3D
 ##
 ## Children you can tune in the editor (open the .tscn):
 ##   Model  the .glb, scaled to fit the lot and lifted so it stands on the grass
-##   Door   a marker on the path just outside the front door (residents stop here)
+##   Door   a marker just outside the front door (for the editor; residents use IslandLayout.door_tile)
 ##
 ## At night a warm porch light comes on over the door (and the windows glow:
 ## that part is the building's season overlay, shaders/season_overlay.gdshader).

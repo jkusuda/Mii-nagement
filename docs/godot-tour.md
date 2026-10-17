@@ -10,7 +10,7 @@ This is for someone who knows Python but has never opened Godot.
 | **Scene**: a saved tree of nodes (`.tscn`). Scenes can contain other scenes. | a class you can instantiate | `scenes/*.tscn` |
 | **Script** (`.gd`, GDScript): code attached to a node that adds behavior | a subclass of that node's type | `scenes/*.gd` |
 | **Signal**: a node announces "this happened" and others connect functions to it | an event or callback | `net.gd`, buttons |
-| **Autoload**: a script Godot creates once at startup, reachable by name from anywhere | a module-level singleton | `Net` |
+| **Autoload**: a script Godot creates once at startup, reachable by name from anywhere | a module-level singleton | `Net`, `Islands`, `Clock`, `Portraits` |
 
 GDScript reads a lot like Python: indentation blocks, `func` instead of `def`,
 `var` to declare variables, and optional types (`var name: String`). Functions
@@ -19,7 +19,7 @@ named with a leading `_`, like `_ready` and `_process`, are called by Godot itse
 ## Open the project
 
 ```bash
-/Applications/Godot.app/Contents/MacOS/Godot -e --path game
+make game                                   # or: godot -e --path game  (the editor)
 ```
 
 The editor has four main areas:
@@ -35,8 +35,8 @@ scene that's open.
 ## The files, in the order to read them
 
 ### 1. `project.godot`: settings
-The window size (1280×720), the start scene (`scenes/game.tscn`), and the `Net`
-autoload. Change these through **Project → Project Settings**.
+The window size (1280×720), the start scene (`scenes/game.tscn`), and the four
+autoloads (`Net`, `Islands`, `Clock`, `Portraits`). Change these through **Project → Project Settings**.
 
 ### 2. `net.gd`: the `Net` autoload
 - This is the only code that talks to the backend.
@@ -76,7 +76,7 @@ Game (Control)                      game.gd; theme = ui/theme.tres
 - `game.gd` creates the building labels, wires the zoom buttons, and keeps the
   connection pill in sync with `Net`.
 
-### 4. `scenes/island_3d.tscn`: the 3D world
+### 4. `scenes/island/island_3d.tscn`: the 3D world
 ```
 Island3D (Node3D)
 ├── WorldEnvironment    sky light, Filmic color, soft shadows (SSAO), glow
@@ -85,7 +85,8 @@ Island3D (Node3D)
 │   └── Camera3D        tilted 45°, 30° field of view
 ├── Water               a big plane using shaders/water.gdshader
 ├── Island              island_builder.gd: builds the island from data (see 8b)
-└── Residents           island_residents.gd: the walking Miis
+├── Residents           island_residents.gd: the walking Miis
+└── DayNight            day_night.gd: moves the sun and recolours light and water
 ```
 Click any node and change it in the Inspector: rotate the Sun, tilt the camera.
 Click **Preview** at the top of the 3D view to look through the camera. The
@@ -93,7 +94,7 @@ island itself is built when the game runs (from the backend's layout), so to
 change *where things are*, use **Build** in the game. To change *how a building
 looks or sits on its lot*, open its scene in `scenes/buildings/`.
 
-### 5. `scenes/camera_rig.gd`: zoom and drag
+### 5. `scenes/island/camera_rig.gd`: zoom and drag
 - The camera is a child of the rig. Zoom moves the camera closer; drag slides
   the whole rig across the ground.
 - `_unhandled_input()` gets only the clicks the UI didn't use, so buttons never
@@ -113,7 +114,8 @@ looks or sits on its lot*, open its scene in `scenes/buildings/`.
   resident", and each card's **Edit** open `resident_creator`; the sidebar hides
   so the creator gets the full width. The back button steps back one screen.
 - `resident_data.gd` holds the lists (jobs, brains, sliders, house keys, gifts)
-  and the mock residents shown until the backend sends a snapshot.
+  and the mock residents shown until the backend sends a snapshot. The vocabulary
+  shared with the backend (building types, bubble kinds...) is in `scenes/protocol.gd`.
 - `mii.tscn` is the 3D Mii: the model plus `mii.gd`, which tints it and plays
   idle / walk / run. `mii_preview.tscn` puts one Mii on its own little stage
   (a SubViewport with `own_world_3d`, so it isn't standing on the island).
@@ -144,7 +146,7 @@ a pond, plants, a season, and each building's lot and facing.
   height follows the field: grass, a rounded edge, the beach, the sea floor.
 - `island_builder.gd` puts it all in the scene: the ground (colored by
   `shaders/terrain.gdshader`), the pond, the five building scenes, plants, and
-  lamp posts. `scenes/seasons.gd` then gives it the season's look.
+  lamp posts. `scenes/island/seasons.gd` then gives it the season's look.
 - `scenes/build/build_mode.gd` is the **Build** button: it edits a copy of the
   layout, rebuilds the island after every change, and sends it to the backend on
   Save. It finds the tile under the mouse by **ray casting**: a ray from the
@@ -176,7 +178,7 @@ a pond, plants, a season, and each building's lot and facing.
   name in the top bar opens `island_dropdown.gd`, a **PopupPanel** (a small
   window that closes when you click outside it).
 
-### 12. `scenes/sea/` and the island creator
+### 12. `scenes/home/sea_view.gd` and the island creator
 - `sea_view.gd` is a **SubViewportContainer** that borrows island_3d.tscn's sky,
   sun, and water, then places any number of islands in it. The water shader
   takes up to 8 island centers (`island_centers`) so every island gets its own
@@ -200,11 +202,12 @@ a pond, plants, a season, and each building's lot and facing.
 - Scroll, pinch, or the − / + buttons zoom; click and drag pans. The name pills
   follow their buildings.
 - The connection pill turns green when the backend is running.
-- With the backend and simulator running (`uv run python -m mii.seed --loop`),
+- With the backend and simulator running (`make`, or `manage.py seed --loop`),
   residents walk the sand path between buildings, hop while working, show
   "z Z" when asleep, and get an icon over their head when they need you. The
   sidebar fills with their bubbles, and the building pills count who's there.
-- Day, weather, and the News badge are still placeholders.
+- The top bar shows the island's day and the time; the weather pill follows the
+  backend's weather; the News button counts stories you haven't read.
 
 ## Handy editor tricks
 

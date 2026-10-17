@@ -13,7 +13,7 @@ asleep or wakes). The game may still roll its own; this is the backend's say.
 from mii.models import Resident, Step
 
 RECENT_STEPS = 10
-SUNNY_AT = 0.8   # pass rate at or above this: sunny
+SUNNY_AT = 0.8  # pass rate at or above this: sunny
 CLOUDY_AT = 0.5  # pass rate at or above this: cloudy; below: rainy
 KINDS = ("sunny", "cloudy", "rainy", "night")
 

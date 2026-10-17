@@ -1,9 +1,9 @@
 [gd_scene format=3 uid="uid://5k3pwhvx3cow"]
 
 [ext_resource type="Shader" uid="uid://xqv25s7dloit" path="res://shaders/water.gdshader" id="7_water"]
-[ext_resource type="Script" uid="uid://bm0u4itifj4k6" path="res://scenes/camera_rig.gd" id="8_rig"]
+[ext_resource type="Script" uid="uid://bm0u4itifj4k6" path="res://scenes/island/camera_rig.gd" id="8_rig"]
 [ext_resource type="Script" path="res://scenes/island/island_residents.gd" id="9_residents"]
-[ext_resource type="Script" path="res://scenes/day_night.gd" id="10_day_night"]
+[ext_resource type="Script" path="res://scenes/island/day_night.gd" id="10_day_night"]
 [ext_resource type="Script" path="res://scenes/island/island_builder.gd" id="11_island"]
 
 [sub_resource type="ProceduralSkyMaterial" id="sky_material"]

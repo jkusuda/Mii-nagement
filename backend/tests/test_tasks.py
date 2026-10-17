@@ -68,14 +68,20 @@ async def test_task_and_resident_messages_over_the_socket(island):
 
     assert (await handle_message(runtime, "sunny", {"type": "create_task", "task": {}}))["type"] == "error"
     assert (await handle_message(runtime, "sunny", {"type": "create_task", "task": {"issue": 3}}))["type"] == "error"
-    assert await handle_message(runtime, "sunny", {"type": "create_task", "task": {"title": "Hi", "description": "x"}}) is None
+    assert (
+        await handle_message(runtime, "sunny", {"type": "create_task", "task": {"title": "Hi", "description": "x"}})
+        is None
+    )
     task_id = client.of_type("task")[-1]["id"]
     assert (await Task.objects.aget(pk=task_id)).description == "x" and workflow.queue.qsize() == 1
 
     assert await handle_message(runtime, "sunny", {"type": "cancel_task", "id": task_id}) is None
     assert client.of_type("task")[-1]["status"] == "cancelled"
     assert (await handle_message(runtime, "sunny", {"type": "cancel_task", "id": "t_nope"}))["type"] == "error"
-    assert "already cancelled" in (await handle_message(runtime, "sunny", {"type": "cancel_task", "id": task_id}))["message"]
+    assert (
+        "already cancelled"
+        in (await handle_message(runtime, "sunny", {"type": "cancel_task", "id": task_id}))["message"]
+    )
 
     mo = await residents.create_resident("sunny", {"name": "Mo", "job": "coder"})
     busy = await handle_message(runtime, "sunny", {"type": "delete_resident", "id": "carlos"})
@@ -106,8 +112,9 @@ async def test_islands_work_in_parallel_but_one_package_at_a_time_each(island):
     # A second, one-building island next to the seed island.
     await Island.objects.acreate(id="breezy", name="Breezy")
     await Resident.objects.acreate(id="bo", island_id="breezy", name="Bo", job="planner")
-    await Building.objects.acreate(id="breezy_mailbox", island_id="breezy", type="mailbox", name="Mailbox",
-                                   x=1, y=1, resident_id="bo")
+    await Building.objects.acreate(
+        id="breezy_mailbox", island_id="breezy", type="mailbox", name="Mailbox", x=1, y=1, resident_id="bo"
+    )
     runner = OverlapRunner(delay=0.2)
     workflow, _ = make_workflow(runner)
     worker = asyncio.create_task(workflow.run_forever())

@@ -51,18 +51,26 @@ func _init() -> void:
 	var buttons := HBoxContainer.new()
 	buttons.add_theme_constant_override("separation", 8)
 	var found := _button("New island", PLUS, &"SelectorButton")
-	found.pressed.connect(func():
-		hide()
-		new_island.emit())
+	found.pressed.connect(
+		func():
+			hide()
+			new_island.emit()
+	)
 	var home := _button("Archipelago", MAP, &"OutlineButton")
-	home.pressed.connect(func():
-		hide()
-		go_home.emit())
+	home.pressed.connect(
+		func():
+			hide()
+			go_home.emit()
+	)
 	buttons.add_child(found)
 	buttons.add_child(home)
 	box.add_child(buttons)
 
-	Islands.changed.connect(func(): if visible: _fill())
+	Islands.changed.connect(
+		func():
+			if visible:
+				_fill()
+	)
 
 
 ## Open just below `anchor` (the island name pill).
@@ -77,8 +85,10 @@ func _fill() -> void:
 	for child in _rows.get_children():
 		_rows.remove_child(child)  # out now, so it doesn't count toward the popup's size
 		child.queue_free()
-	_summary.text = "%d island%s · %d residents" % [Islands.islands.size(),
-		"" if Islands.islands.size() == 1 else "s", Islands.resident_count()]
+	_summary.text = (
+		"%d island%s · %d residents"
+		% [Islands.islands.size(), "" if Islands.islands.size() == 1 else "s", Islands.resident_count()]
+	)
 	for island in Islands.islands:
 		_rows.add_child(_row(island))
 	size = Vector2i(get_contents_minimum_size())  # shrink-wrap to the rows
@@ -92,9 +102,11 @@ func _row(island: Dictionary) -> Control:
 	row.custom_minimum_size.y = 58
 	row.focus_mode = Control.FOCUS_NONE
 	row.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	row.pressed.connect(func():
-		hide()
-		visit.emit(id))
+	row.pressed.connect(
+		func():
+			hide()
+			visit.emit(id)
+	)
 
 	var line := HBoxContainer.new()
 	line.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -116,8 +128,8 @@ func _row(island: Dictionary) -> Control:
 	names.alignment = BoxContainer.ALIGNMENT_CENTER
 	names.add_theme_constant_override("separation", -2)
 	names.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var name_label := _label(str(island.get("name", id)), 15, true)
-	var repo := _label(str(island["repo"]) if island.get("repo") else "no repo linked", 11, false)
+	var name_label := UI.label(str(island.get("name", id)), 15, true)
+	var repo := UI.label(str(island["repo"]) if island.get("repo") else "no repo linked", 11, false)
 	names.add_child(name_label)
 	names.add_child(repo)
 
@@ -134,11 +146,11 @@ func _row(island: Dictionary) -> Control:
 		check.modulate = Color("2E8B57")
 		check.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		tag.add_child(check)
-		var label := _label("You're here", 11, true)
+		var label := UI.label("You're here", 11, true)
 		label.add_theme_color_override("font_color", Color("2E8B57"))
 		tag.add_child(label)
 	else:
-		var label := _label(_short_status(island, status), 11, true)
+		var label := UI.label(_short_status(island, status), 11, true)
 		label.add_theme_color_override("font_color", status["color"])
 		tag.add_child(label)
 
@@ -162,15 +174,23 @@ func _abandon(island: Dictionary) -> void:
 	var id := str(island["id"])
 	var island_name := str(island.get("name", id))
 	hide()
-	ConfirmPopup.ask(self, "Abandon %s?" % island_name,
+	ConfirmPopup.ask(
+		self,
+		"Abandon %s?" % island_name,
 		"Its residents, buildings and history leave the archipelago. The git repository stays on your disk.",
-		"Abandon island", func():
-			Net.request_json("/islands/%s" % id.uri_encode(), func(ok: bool, data: Dictionary):
-				if not ok:
-					failed.emit("Couldn't abandon %s: %s" % [island_name, data["error"]])
-					return
-				abandoned.emit(id, str(data.get("repo_kept", "")))
-				Islands.refresh(), HTTPClient.METHOD_DELETE))
+		"Abandon island",
+		func():
+			Net.request_json(
+				"/islands/%s" % id.uri_encode(),
+				func(ok: bool, data: Dictionary):
+					if not ok:
+						failed.emit("Couldn't abandon %s: %s" % [island_name, data["error"]])
+						return
+					abandoned.emit(id, str(data.get("repo_kept", "")))
+					Islands.refresh(),
+				HTTPClient.METHOD_DELETE
+			)
+	)
 
 
 ## "2 need you" / "Busy · 4 working" / "Napping": short enough for the row.
@@ -192,12 +212,3 @@ func _button(text: String, icon: Texture2D, style: StringName) -> Button:
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	button.focus_mode = Control.FOCUS_NONE
 	return button
-
-
-func _label(text: String, size: int, strong: bool) -> Label:
-	var label := Label.new()
-	label.text = text
-	label.theme_type_variation = &"LabelStrong" if strong else &"LabelMuted"
-	label.add_theme_font_size_override("font_size", size)
-	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	return label

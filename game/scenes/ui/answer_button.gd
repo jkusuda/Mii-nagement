@@ -1,4 +1,5 @@
 @tool
+class_name AnswerButton
 extends Button
 ## The wavy orange "Answer" button. Its background is painted pixel by pixel
 ## here instead of loaded from an image, so the colors are easy to change.

@@ -3,69 +3,104 @@ extends Node
 ## Day/night cycle for the 3D island: moves the sun and recolors the light,
 ## ambient light, background, and water to match Clock.hour() (real time, or the
 ## dev slider). Lives in island_3d.tscn as the "DayNight" node, so the home
-## screen's sea (which reuses island_3d.tscn) gets it too. The 2D screen
-## backgrounds follow the same table (scenes/ui/sky_background.gd).
+## screen's sea (which reuses island_3d.tscn) gets it too. Noon is whatever the
+## scene has (the Sun's angle), so daytime can still be tuned in the editor.
 ##
-## The look at noon is whatever the scene has (Sun's angle in island_3d.tscn), so
-## you can still tune daytime in the editor. At night the same light becomes a
-## dim blue "moon" on its own arc.
+## How dark it is (0 = day, 1 = night) is published for everything that lights up
+## at night: DayNight.night for scripts (porch lights, path lamps) and the global
+## shader parameter `night` for shaders (glowing windows, lamp heads).
 ##
-## The water is shiny, so it mostly shows a reflection of "background": that's
-## why background matters even though you barely see it directly.
-##
-## Godot concept: _process(delta) runs every frame. Recoloring a few lights each
-## frame is cheap, and it keeps the dev slider smooth.
-##
-## How dark it is (0 = day, 1 = night) is also published for everything that
-## lights up at night: DayNight.night for scripts (building porch lights, path
-## lamps) and the global shader parameter `night` for shaders (glowing windows,
-## lamp heads). Godot concept: a *global* shader parameter (Project Settings >
-## Shader Globals) is one value every shader can read.
+## Godot concepts: _process(delta) runs every frame (recolouring a few lights is
+## cheap). A *global* shader parameter (Project Settings > Shader Globals) is one
+## value every shader can read.
 
 const NIGHT := {
-	"sun": Color(0.7, 0.78, 1.0), "sun_energy": 0.5,
-	"ambient": Color(0.45, 0.5, 0.75), "ambient_energy": 0.4,
+	"sun": Color(0.7, 0.78, 1.0),
+	"sun_energy": 0.5,
+	"ambient": Color(0.45, 0.5, 0.75),
+	"ambient_energy": 0.4,
 	"background": Color(0.16, 0.27, 0.48),
-	"deep": Color(0.1, 0.3, 0.48), "shallow": Color(0.22, 0.45, 0.6), "foam": Color(0.7, 0.78, 0.95),
-	"screen": Color(0.13, 0.2, 0.38), "night": 1.0,
+	"deep": Color(0.1, 0.3, 0.48),
+	"shallow": Color(0.22, 0.45, 0.6),
+	"foam": Color(0.7, 0.78, 0.95),
+	"night": 1.0,
 }
 const DAY := {
-	"sun": Color(1.0, 0.97, 0.9), "sun_energy": 1.9,
-	"ambient": Color(0.76, 0.87, 1.0), "ambient_energy": 0.55,
+	"sun": Color(1.0, 0.97, 0.9),
+	"sun_energy": 1.9,
+	"ambient": Color(0.76, 0.87, 1.0),
+	"ambient_energy": 0.55,
 	"background": Color(0.13, 0.7, 0.8),
-	"deep": Color(0.12, 0.55, 0.68), "shallow": Color(0.42, 0.82, 0.8), "foam": Color(1, 1, 1),
-	"screen": Color(0.412, 0.831, 0.922), "night": 0.0,
+	"deep": Color(0.12, 0.55, 0.68),
+	"shallow": Color(0.42, 0.82, 0.8),
+	"foam": Color(1, 1, 1),
+	"night": 0.0,
 }
-## "screen" is the 2D page background, "night" how dark it is (0 = day,
-## 1 = night) for 2D bits that need to stay readable (night_label.gd).
+## "night" is how dark it is (0 = day, 1 = night).
 ## The look at each hour; between two rows the values blend, 24 wraps to 0.
 ## (Day matches the colors set in island_3d.tscn / game.tscn.) The sun's energy
 ## dips at 6:00 and 18:00, where it swaps over to the moon.
 const KEYS := [
 	[0.0, NIGHT],
 	[5.5, NIGHT],
-	[6.0, {"sun": Color(0.9, 0.7, 0.75), "sun_energy": 0.15,
-		"ambient": Color(0.6, 0.55, 0.75), "ambient_energy": 0.38,
-		"background": Color(0.36, 0.4, 0.55),
-		"deep": Color(0.1, 0.27, 0.42), "shallow": Color(0.35, 0.42, 0.58), "foam": Color(0.85, 0.8, 0.88),
-		"screen": Color(0.36, 0.42, 0.6), "night": 0.7}],
-	[7.0, {"sun": Color(1.0, 0.72, 0.5), "sun_energy": 1.1,
-		"ambient": Color(0.95, 0.78, 0.75), "ambient_energy": 0.45,
-		"background": Color(0.7, 0.72, 0.8),
-		"deep": Color(0.13, 0.42, 0.56), "shallow": Color(0.55, 0.7, 0.72), "foam": Color(1.0, 0.94, 0.9),
-		"screen": Color(0.6, 0.72, 0.85), "night": 0.2}],
+	[
+		6.0,
+		{
+			"sun": Color(0.9, 0.7, 0.75),
+			"sun_energy": 0.15,
+			"ambient": Color(0.6, 0.55, 0.75),
+			"ambient_energy": 0.38,
+			"background": Color(0.36, 0.4, 0.55),
+			"deep": Color(0.1, 0.27, 0.42),
+			"shallow": Color(0.35, 0.42, 0.58),
+			"foam": Color(0.85, 0.8, 0.88),
+			"night": 0.7
+		}
+	],
+	[
+		7.0,
+		{
+			"sun": Color(1.0, 0.72, 0.5),
+			"sun_energy": 1.1,
+			"ambient": Color(0.95, 0.78, 0.75),
+			"ambient_energy": 0.45,
+			"background": Color(0.7, 0.72, 0.8),
+			"deep": Color(0.13, 0.42, 0.56),
+			"shallow": Color(0.55, 0.7, 0.72),
+			"foam": Color(1.0, 0.94, 0.9),
+			"night": 0.2
+		}
+	],
 	[9.5, DAY],
 	[16.5, DAY],
-	[17.5, {"sun": Color(1.0, 0.62, 0.4), "sun_energy": 1.1,
-		"ambient": Color(0.9, 0.66, 0.7), "ambient_energy": 0.45,
-		"background": Color(0.78, 0.62, 0.65),
-		"deep": Color(0.13, 0.35, 0.52), "shallow": Color(0.58, 0.58, 0.66), "foam": Color(1.0, 0.88, 0.85),
-		"screen": Color(0.62, 0.58, 0.78), "night": 0.2}],
-	[18.0, {"sun": Color(0.85, 0.6, 0.7), "sun_energy": 0.15,
-		"ambient": Color(0.55, 0.48, 0.72), "ambient_energy": 0.38,
-		"background": Color(0.38, 0.34, 0.54),
-		"deep": Color(0.08, 0.24, 0.4), "shallow": Color(0.3, 0.36, 0.55), "foam": Color(0.8, 0.75, 0.88),
-		"screen": Color(0.32, 0.32, 0.55), "night": 0.7}],
+	[
+		17.5,
+		{
+			"sun": Color(1.0, 0.62, 0.4),
+			"sun_energy": 1.1,
+			"ambient": Color(0.9, 0.66, 0.7),
+			"ambient_energy": 0.45,
+			"background": Color(0.78, 0.62, 0.65),
+			"deep": Color(0.13, 0.35, 0.52),
+			"shallow": Color(0.58, 0.58, 0.66),
+			"foam": Color(1.0, 0.88, 0.85),
+			"night": 0.2
+		}
+	],
+	[
+		18.0,
+		{
+			"sun": Color(0.85, 0.6, 0.7),
+			"sun_energy": 0.15,
+			"ambient": Color(0.55, 0.48, 0.72),
+			"ambient_energy": 0.38,
+			"background": Color(0.38, 0.34, 0.54),
+			"deep": Color(0.08, 0.24, 0.4),
+			"shallow": Color(0.3, 0.36, 0.55),
+			"foam": Color(0.8, 0.75, 0.88),
+			"night": 0.7
+		}
+	],
 	[18.5, NIGHT],
 	[24.0, NIGHT],
 ]
@@ -74,15 +109,15 @@ const MIN_ELEVATION := deg_to_rad(20.0)
 ## How far the sun swings east/west of its noon direction.
 const SWING := deg_to_rad(70.0)
 
-@onready var sun: DirectionalLight3D = $"../Sun"
-@onready var env: Environment = $"../WorldEnvironment".environment
-@onready var water: MeshInstance3D = get_node_or_null("../Water")  # thumbnails have none
-
 ## How dark it is right now: 0 = day, 1 = night (see the top of this file).
 static var night := 0.0
 
 var _noon_elevation := 0.0
 var _noon_azimuth := 0.0
+
+@onready var sun: DirectionalLight3D = $"../Sun"
+@onready var env: Environment = $"../WorldEnvironment".environment
+@onready var water: MeshInstance3D = get_node_or_null("../Water")  # thumbnails have none
 
 
 ## The blended look at this hour (0-24): a dictionary like NIGHT / DAY.

@@ -16,6 +16,10 @@ A Tomodachi Life-style manager for teams of coding agents doing real software wo
 - When a resident needs you, a **bubble** pops up over their head. Click it to
   answer.
 
+**New here (person or AI agent)?** Read [docs/architecture.md](docs/architecture.md)
+first: how the two halves fit, a map of every file, and a "where to look" table for
+common changes. Then [CLAUDE.md](CLAUDE.md) for the working rules.
+
 > **Status:** the backend MVP is done (Django + Channels, ACP brains, OpenRouter
 > brain, GitHub in/out, insights, replay) and runs end to end in **mock mode**
 > (fake agents, no API cost). The game is wired to every backend endpoint. Open work is
@@ -32,8 +36,10 @@ A Tomodachi Life-style manager for teams of coding agents doing real software wo
 └───────────────────────────┘                             └──────────────────────┘
 ```
 
-Every message is defined in [docs/protocol.md](docs/protocol.md). How the
-backend works: [docs/architecture.md](docs/architecture.md).
+- [docs/architecture.md](docs/architecture.md): how it fits together, which file does
+  what, and where to look for a change.
+- [docs/protocol.md](docs/protocol.md): every WebSocket message (the single source of truth).
+- [docs/http-api.md](docs/http-api.md): every HTTP endpoint and payload.
 
 ## The lazy way
 
@@ -54,12 +60,13 @@ without `--reload` (editing the code would restart the server mid-task).
 
 ## Setup (once, by hand)
 
-You need macOS, [Homebrew](https://brew.sh), and
-[Godot 4](https://godotengine.org/download) (4.3 or newer; built with 4.7) in
-`/Applications`. Run these from the repo root:
+You need [uv](https://docs.astral.sh/uv) and [Godot 4](https://godotengine.org/download)
+(4.4 or newer; built with 4.7) on macOS, Linux or Windows. `make` finds Godot on your
+PATH or in `/Applications`; anywhere else, pass it: `make GODOT=/path/to/godot`.
+Run these from the repo root:
 
 ```bash
-brew install uv
+brew install uv            # macOS; Linux: curl -LsSf https://astral.sh/uv/install.sh | sh; Windows: winget install astral-sh.uv
 ```
 
 ```bash
@@ -72,8 +79,7 @@ cd backend && uv sync
   saved at runtime (see "Settings" below). Developers can still copy
   `.env.example` to `.env` to force values.
 
-Optional: make `godot` a terminal command. The commands below use the full path,
-so this is only for convenience.
+Optional: make `godot` a terminal command (macOS shown; the commands below assume it).
 
 ```bash
 echo 'alias godot="/Applications/Godot.app/Contents/MacOS/Godot"' >> ~/.zshrc && source ~/.zshrc
@@ -95,11 +101,11 @@ cd backend && uv run python manage.py seed --loop
 
 **3. The game.** Starts it directly, without the editor:
 ```bash
-/Applications/Godot.app/Contents/MacOS/Godot --path game
+godot --path game
 ```
 Or open the editor and press **F5** (▶ Play, top right):
 ```bash
-/Applications/Godot.app/Contents/MacOS/Godot -e --path game
+godot -e --path game
 ```
 The first time, you can also open Godot normally, click **Import**, and pick
 `game/project.godot`.
@@ -109,14 +115,13 @@ The first time, you can also open Godot normally, click **Import**, and pick
 cd backend && uv run python manage.py watch
 ```
 
-**Tests and checks:**
+**Tests and checks** (run `make check` before you call a change done; CI runs the same):
 ```bash
-cd backend && uv run pytest
+make check     # ruff + backend tests + gdlint/gdformat + the Godot script check
+make fmt       # format both halves (ruff format, gdformat)
 ```
-```bash
-/Applications/Godot.app/Contents/MacOS/Godot --headless --path game --quit
-```
-The second one loads the game without a window and prints any script errors.
+The Godot check loads every script without a window and fails on any script error.
+Optional: `uvx pre-commit install` runs the formatters on every commit.
 
 **Start over with a fresh database.** Stop the server first.
 ```bash
@@ -210,10 +215,10 @@ isn't a git repo) come back as a 400 with the reason, shown in the creator.
 ## Settings
 
 `GET /settings` shows the effective settings (`mock_agents`, `islands_root`,
-`test_command`, `openrouter_model`, `keep_worktrees`), which ones `.env` locks,
-and which API keys are set. `PUT /settings` saves settings to the database and
-API keys (`openrouter_api_key`, `anthropic_api_key`, `openai_api_key`,
-`gemini_api_key`) to the OS keychain: macOS Keychain, Windows Credential
+`test_command`, `openrouter_model`, `keep_worktrees`, `database_url`, `godot_path`,
+`judge`), which ones `.env` locks, and which API keys are set. `PUT /settings` saves
+settings to the database and API keys (`openrouter_api_key`, `typesafe_api_key`,
+`anthropic_api_key`, `openai_api_key`, `gemini_api_key`) to the OS keychain: macOS Keychain, Windows Credential
 Manager, or Linux Secret Service, with an owner-only file as the fallback. Keys
 are never sent back. Changes apply from the next task.
 
@@ -230,15 +235,17 @@ the Lab runs `TEST_COMMAND`, and the Post Office pushes the branch and opens the
 ```
 backend/   Django server: workflow engine, ACP + OpenRouter agents, event bus, insights
 game/      Godot 4 client: 3D island, UI, residents, bubbles
-docs/      protocol.md (WebSocket events), architecture.md (backend design),
-           godot-tour.md (Godot for beginners)
+docs/      architecture.md (start here: the map), protocol.md (WebSocket), http-api.md (HTTP),
+           godot-tour.md (Godot for beginners), mii-customization.md (faces and hair)
+tools/     build_mii_parts.py (rebuilds the Mii parts from the Mii Maker rips)
+.claude/   Claude Code skills (godot-animation, demo-video) and shared permissions
+.github/   CI: the same checks as `make check`
 TODO.md    roadmap (MVP vs stretch)
-CLAUDE.md  context for Claude Code sessions
+CLAUDE.md  working rules for Claude Code sessions (and a short read for humans too)
+Makefile   runs everything above: `make help`
 ```
-
-`Makefile` runs the commands above for you.
 
 Find every open TODO:
 ```bash
-grep -rn "TODO(mvp)" backend/mii game/net.gd game/scenes
+grep -rn "TODO(" backend/mii game --include="*.py" --include="*.gd"
 ```

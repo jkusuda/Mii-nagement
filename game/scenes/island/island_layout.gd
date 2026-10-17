@@ -20,64 +20,163 @@ const GRID_W := 20
 const GRID_H := 14
 const TILE := 2.0
 const LOT := 3  # a building stands on a LOT x LOT lot
-const STEP_ORDER := ["mailbox", "workshop", "lab", "courthouse", "post_office"]
-const REQUIRED_STEPS := ["mailbox", "workshop", "post_office"]
-const SEASONS := ["spring", "summer", "autumn", "winter"]
-const STEP_NAMES := {"mailbox": "Mailbox", "workshop": "Workshop", "lab": "Lab", "courthouse": "Courthouse",
-	"post_office": "Post Office"}
+const STEP_ORDER := Protocol.STEP_ORDER
+const REQUIRED_STEPS := Protocol.REQUIRED_STEPS
+const SEASONS := Protocol.SEASONS
+const STEP_NAMES := Protocol.STEP_NAMES
 
 ## The island shapes, same as SHAPES in backend/mii/islands.py (keep them in step):
 ## land rows, a pond, and a lot (x, y, facing) for every step.
 const SHAPES := {
-	"classic": {
+	"classic":
+	{
 		"title": "Classic",
-		"land": ["....................", ".##################.", ".##################.", ".##################.",
-			".##################.", ".##################.", ".##################.", ".##################.",
-			".##################.", ".##################.", ".##################.", ".##################.",
-			".##################.", "...................."],
+		"land":
+		[
+			"....................",
+			".##################.",
+			".##################.",
+			".##################.",
+			".##################.",
+			".##################.",
+			".##################.",
+			".##################.",
+			".##################.",
+			".##################.",
+			".##################.",
+			".##################.",
+			".##################.",
+			"...................."
+		],
 		"pond": {"x": 7, "y": 6, "w": 5, "h": 2},
-		"lots": {"mailbox": [3, 2, 0], "workshop": [8, 2, 0], "lab": [13, 2, 0], "courthouse": [15, 8, 3],
-			"post_office": [2, 8, 1]},
+		"lots":
+		{
+			"mailbox": [3, 2, 0],
+			"workshop": [8, 2, 0],
+			"lab": [13, 2, 0],
+			"courthouse": [15, 8, 3],
+			"post_office": [2, 8, 1]
+		},
 	},
-	"round": {
+	"round":
+	{
 		"title": "Round",
-		"land": ["....................", "......########......", "....############....", "...##############...",
-			"..################..", ".##################.", ".##################.", ".##################.",
-			".##################.", "..################..", "...##############...", "....############....",
-			"......########......", "...................."],
+		"land":
+		[
+			"....................",
+			"......########......",
+			"....############....",
+			"...##############...",
+			"..################..",
+			".##################.",
+			".##################.",
+			".##################.",
+			".##################.",
+			"..################..",
+			"...##############...",
+			"....############....",
+			"......########......",
+			"...................."
+		],
 		"pond": {"x": 9, "y": 6, "w": 3, "h": 2},
-		"lots": {"mailbox": [5, 3, 0], "workshop": [8, 2, 0], "lab": [12, 3, 0], "courthouse": [12, 8, 2],
-			"post_office": [5, 8, 2]},
+		"lots":
+		{
+			"mailbox": [5, 3, 0],
+			"workshop": [8, 2, 0],
+			"lab": [12, 3, 0],
+			"courthouse": [12, 8, 2],
+			"post_office": [5, 8, 2]
+		},
 	},
-	"long": {
+	"long":
+	{
 		"title": "Main street",
-		"land": ["....................", "....................", ".##################.", ".##################.",
-			".##################.", ".##################.", ".##################.", ".##################.",
-			".##################.", ".##################.", ".##################.", ".##################.",
-			"....................", "...................."],
+		"land":
+		[
+			"....................",
+			"....................",
+			".##################.",
+			".##################.",
+			".##################.",
+			".##################.",
+			".##################.",
+			".##################.",
+			".##################.",
+			".##################.",
+			".##################.",
+			".##################.",
+			"....................",
+			"...................."
+		],
 		"pond": {"x": 15, "y": 8, "w": 3, "h": 2},
-		"lots": {"mailbox": [2, 3, 0], "workshop": [7, 3, 0], "lab": [12, 3, 0], "courthouse": [10, 8, 2],
-			"post_office": [4, 8, 2]},
+		"lots":
+		{
+			"mailbox": [2, 3, 0],
+			"workshop": [7, 3, 0],
+			"lab": [12, 3, 0],
+			"courthouse": [10, 8, 2],
+			"post_office": [4, 8, 2]
+		},
 	},
-	"l_shape": {
+	"l_shape":
+	{
 		"title": "L-shape",
-		"land": ["....................", ".##################.", ".##################.", ".##################.",
-			".##################.", ".##################.", ".##################.", ".#########..........",
-			".#########..........", ".#########..........", ".#########..........", ".#########..........",
-			".#########..........", "...................."],
+		"land":
+		[
+			"....................",
+			".##################.",
+			".##################.",
+			".##################.",
+			".##################.",
+			".##################.",
+			".##################.",
+			".#########..........",
+			".#########..........",
+			".#########..........",
+			".#########..........",
+			".#########..........",
+			".#########..........",
+			"...................."
+		],
 		"pond": {"x": 6, "y": 8, "w": 2, "h": 3},
-		"lots": {"mailbox": [2, 2, 0], "workshop": [6, 2, 0], "lab": [10, 2, 0], "courthouse": [14, 2, 3],
-			"post_office": [2, 8, 1]},
+		"lots":
+		{
+			"mailbox": [2, 2, 0],
+			"workshop": [6, 2, 0],
+			"lab": [10, 2, 0],
+			"courthouse": [14, 2, 3],
+			"post_office": [2, 8, 1]
+		},
 	},
-	"twin": {
+	"twin":
+	{
 		"title": "Two coves",
-		"land": ["....................", ".########..########.", ".########..########.", ".########..########.",
-			".########..########.", ".##################.", ".##################.", ".##################.",
-			".##################.", ".########..########.", ".########..########.", ".########..########.",
-			".########..########.", "...................."],
+		"land":
+		[
+			"....................",
+			".########..########.",
+			".########..########.",
+			".########..########.",
+			".########..########.",
+			".##################.",
+			".##################.",
+			".##################.",
+			".##################.",
+			".########..########.",
+			".########..########.",
+			".########..########.",
+			".########..########.",
+			"...................."
+		],
 		"pond": {},
-		"lots": {"mailbox": [2, 2, 0], "workshop": [5, 2, 0], "lab": [12, 2, 0], "courthouse": [15, 2, 0],
-			"post_office": [12, 8, 2]},
+		"lots":
+		{
+			"mailbox": [2, 2, 0],
+			"workshop": [5, 2, 0],
+			"lab": [12, 2, 0],
+			"courthouse": [15, 2, 0],
+			"post_office": [12, 8, 2]
+		},
 	},
 }
 
@@ -85,7 +184,7 @@ const SHAPES := {
 # coast, reuse paths already laid, and go straight rather than zig-zag.
 const COST_LAND := 1.0
 const COST_COAST := 3.0  # extra, next to the sea
-const COST_PATH := 0.6   # a tile that's already path
+const COST_PATH := 0.6  # a tile that's already path
 const COST_TURN := 0.6
 
 # Auto plants.
@@ -94,18 +193,18 @@ const MAX_BUSHES := 11
 
 var shape := "classic"
 var land: PackedStringArray
-var pond := {}            # {x, y, w, h} in tiles, or {} for none
-var plants = null         # null = arranged automatically, or [{kind, x, y, rot, scale}]
+var pond := {}  # {x, y, w, h} in tiles, or {} for none
+var plants = null  # null = arranged automatically, or [{kind, x, y, rot, scale}]
 var season := "summer"
-var buildings: Array = [] # [{type, x, y, facing}] in STEP_ORDER
-var seed_text := ""       # the island id: the same island always grows the same plants
+var buildings: Array = []  # [{type, x, y, facing}] in STEP_ORDER
+var seed_text := ""  # the island id: the same island always grows the same plants
 
 # Worked out by refresh():
-var path_tiles := {}      # Vector2i -> true
+var path_tiles := {}  # Vector2i -> true
 var shown_plants: Array = []  # the plants to draw (auto, or the hand-placed ones that fit)
 
-
 # --- Making layouts ---------------------------------------------------------------
+
 
 ## A layout from a snapshot's island dictionary (falls back to the classic island).
 static func from_snapshot(island: Dictionary) -> IslandLayout:
@@ -120,11 +219,17 @@ static func from_snapshot(island: Dictionary) -> IslandLayout:
 	layout.season = str(data.get("season", "summer")) if str(data.get("season", "")) in SEASONS else "summer"
 	var list: Array = []
 	for b in island.get("buildings", []):
-		list.append({"type": str(b["type"]), "x": int(b.get("x", 0)), "y": int(b.get("y", 0)),
-			"facing": int(b.get("facing", 0))})
+		list.append(
+			{
+				"type": str(b["type"]),
+				"x": int(b.get("x", 0)),
+				"y": int(b.get("y", 0)),
+				"facing": int(b.get("facing", 0))
+			}
+		)
 	if not island.has("buildings"):  # offline: the classic island with everything
 		list = from_shape("classic", STEP_ORDER).buildings
-	layout.buildings = _in_step_order(list)
+	layout.buildings = in_step_order(list)
 	return layout
 
 
@@ -159,13 +264,20 @@ func copy() -> IslandLayout:
 ## The body for PUT /islands/{id}/layout (the "map" form).
 func to_request() -> Dictionary:
 	return {
-		"map": {"version": 1, "shape": shape, "land": Array(land), "pond": pond if not pond.is_empty() else null,
-			"plants": plants, "season": season},
+		"map":
+		{
+			"version": 1,
+			"shape": shape,
+			"land": Array(land),
+			"pond": pond if not pond.is_empty() else null,
+			"plants": plants,
+			"season": season
+		},
 		"buildings": buildings.duplicate(true),
 	}
 
 
-static func _in_step_order(list: Array) -> Array:
+static func in_step_order(list: Array) -> Array:
 	var out: Array = []
 	for t in STEP_ORDER:
 		for b in list:
@@ -175,6 +287,7 @@ static func _in_step_order(list: Array) -> Array:
 
 
 # --- Tiles and positions ------------------------------------------------------------
+
 
 func is_land(t: Vector2i) -> bool:
 	return t.x >= 0 and t.y >= 0 and t.x < GRID_W and t.y < GRID_H and land[t.y][t.x] == "#"
@@ -219,7 +332,9 @@ static func facing_angle(b: Dictionary) -> float:
 static func door_tile(b: Dictionary) -> Vector2i:
 	var x: int = b["x"]
 	var y: int = b["y"]
-	return [Vector2i(x + 1, y + LOT), Vector2i(x + LOT, y + 1), Vector2i(x + 1, y - 1), Vector2i(x - 1, y + 1)][int(b["facing"])]
+	return [Vector2i(x + 1, y + LOT), Vector2i(x + LOT, y + 1), Vector2i(x + 1, y - 1), Vector2i(x - 1, y + 1)][int(
+		b["facing"]
+	)]
 
 
 static func lot_tiles(b: Dictionary) -> Array[Vector2i]:
@@ -263,6 +378,7 @@ func blocked_tiles() -> Dictionary:
 
 
 # --- Rules (the same as validate_layout in backend/mii/islands.py) -------------------
+
 
 ## What's wrong with this layout, in words for the player; "" if it's fine.
 func problem() -> String:
@@ -321,7 +437,7 @@ func can_place(b: Dictionary) -> bool:
 	var other := copy()
 	other.buildings = other.buildings.filter(func(o): return o["type"] != b["type"])
 	other.buildings.append(b)
-	other.buildings = _in_step_order(other.buildings)
+	other.buildings = in_step_order(other.buildings)
 	return other.problem() == ""
 
 
@@ -377,6 +493,7 @@ static func _reachable(start: Vector2i, tiles: Dictionary) -> Dictionary:
 
 # --- Paths and plants ---------------------------------------------------------------
 
+
 ## Work out the paths and the plants. Call after changing anything.
 func refresh() -> void:
 	_lay_paths()
@@ -409,7 +526,7 @@ func _lay_paths() -> void:
 ## little extra, so paths come out as clean L-shapes instead of staircases).
 func _route(a: Vector2i, b: Vector2i, blocked: Dictionary) -> Array[Vector2i]:
 	var dirs := [Vector2i.RIGHT, Vector2i.DOWN, Vector2i.LEFT, Vector2i.UP]
-	var best := {}       # [tile, dir] -> cost
+	var best := {}  # [tile, dir] -> cost
 	var came_from := {}  # [tile, dir] -> [tile, dir]
 	var open := [[0.0, a, -1]]
 	best[[a, -1]] = 0.0
@@ -479,8 +596,13 @@ func _auto_plants() -> Array:
 		var tree := rng.randf() < (0.7 if sea < 2.2 else 0.3)
 		if (tree and trees >= MAX_TREES) or (not tree and bushes >= MAX_BUSHES):
 			tree = not tree
-		var plant := {"kind": "tree" if tree else "bush", "x": p.x, "y": p.y,
-			"rot": rng.randf_range(0.0, 360.0), "scale": rng.randf_range(0.85, 1.15)}
+		var plant := {
+			"kind": "tree" if tree else "bush",
+			"x": p.x,
+			"y": p.y,
+			"rot": rng.randf_range(0.0, 360.0),
+			"scale": rng.randf_range(0.85, 1.15)
+		}
 		if not _plant_fits(plant, out):
 			continue
 		out.append(plant)
@@ -551,6 +673,7 @@ static func _distance_to_rect(p: Vector2, rect: Rect2) -> float:
 
 
 # --- Walking ----------------------------------------------------------------------
+
 
 ## The path tile nearest to a world position.
 func nearest_path_tile(p: Vector3) -> Vector2i:

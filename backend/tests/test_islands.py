@@ -74,11 +74,18 @@ def test_found_in_a_chosen_folder_or_adopt_an_existing_repo(island, tmp_path):
     assert Path(adopted.repo_path) == repo.resolve()
 
 
-@pytest.mark.parametrize("bad", [
-    {"name": ""}, {"name": "x" * 31}, {"name": "A", "repo": "not a repo"},
-    {"name": "A", "plan": "empty_lots"}, {"name": "A", "rules": {"merge_pr": "yes"}}, {"name": "A", "rules": {"fly": True}},
-    {"name": "A", "existing_repo": "/nowhere/at/all"},
-])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"name": ""},
+        {"name": "x" * 31},
+        {"name": "A", "repo": "not a repo"},
+        {"name": "A", "plan": "empty_lots"},
+        {"name": "A", "rules": {"merge_pr": "yes"}},
+        {"name": "A", "rules": {"fly": True}},
+        {"name": "A", "existing_repo": "/nowhere/at/all"},
+    ],
+)
 def test_found_rejects_bad_requests(island, bad):
     with pytest.raises(islands.IslandError):
         islands.create_island(bad)
@@ -117,10 +124,12 @@ def test_ensure_repo_gives_the_seed_island_a_repo(island, repos_in_tmp):
 
 
 def test_list_repos_filters_and_reshapes(monkeypatch):
-    out = json.dumps([
-        {"nameWithOwner": "me/fern-api", "isPrivate": True, "updatedAt": "2026-10-16T00:00:00Z"},
-        {"nameWithOwner": "me/other", "isPrivate": False, "updatedAt": "2026-10-15T00:00:00Z"},
-    ])
+    out = json.dumps(
+        [
+            {"nameWithOwner": "me/fern-api", "isPrivate": True, "updatedAt": "2026-10-16T00:00:00Z"},
+            {"nameWithOwner": "me/other", "isPrivate": False, "updatedAt": "2026-10-15T00:00:00Z"},
+        ]
+    )
     monkeypatch.setattr(subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0, out, ""))
     assert github.list_repos("FERN") == [{"repo": "me/fern-api", "private": True, "updated_at": "2026-10-16T00:00:00Z"}]
 
@@ -133,16 +142,21 @@ def test_gh_failure_is_a_github_error(monkeypatch):
 
 # --- An island on code you already have -------------------------------------------
 
+
 def git(path, *args):
-    return subprocess.run(["git", "-C", str(path), "-c", "user.name=t", "-c", "user.email=t@t", *args],
-                          capture_output=True, text=True, check=True).stdout.strip()
+    return subprocess.run(
+        ["git", "-C", str(path), "-c", "user.name=t", "-c", "user.email=t@t", *args],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
 
 
 @pytest.fixture
 def fake_github(monkeypatch, tmp_path):
     """A pretend GitHub: bare repos under tmp_path/github, cloned by tests/fake_gh.py."""
     root = tmp_path / "github"
-    monkeypatch.setattr(islands, "GH", [sys.executable, str(Path(__file__).parent / "fake_gh.py")])
+    monkeypatch.setattr(github, "GH", [sys.executable, str(Path(__file__).parent / "fake_gh.py")])
     monkeypatch.setenv("FAKE_GH_ROOT", str(root))
     return root
 
@@ -174,6 +188,7 @@ def test_found_from_github_clones_the_real_code(island, fake_github, tmp_path, r
 
     # A task's worktree can push its branch back (the Post Office's first step).
     from mii.sandbox import Sandbox
+
     work = Sandbox(path, tmp_path / "worktrees").create_worktree("t1", new.branch)
     (work / "fix.py").write_text("fixed = True\n")
     git(work, "add", ".")
@@ -196,20 +211,24 @@ def test_found_from_an_empty_github_repo_starts_it(island, fake_github, tmp_path
     assert (path / "README.md").read_text().startswith("# Empty")
 
 
-@pytest.mark.parametrize("setup, request_extra, match", [
-    ("missing", {}, "Could not resolve"),
-    ("logged_out", {}, "gh auth login"),
-    ("no_gh", {}, "not installed"),
-    ("hosted", {"branch": "nope"}, "no branch nope"),
-])
-def test_clone_errors_are_clear_and_leave_nothing(island, fake_github, tmp_path, repos_in_tmp, monkeypatch,
-                                                   setup, request_extra, match):
+@pytest.mark.parametrize(
+    "setup, request_extra, match",
+    [
+        ("missing", {}, "Could not resolve"),
+        ("logged_out", {}, "gh auth login"),
+        ("no_gh", {}, "not installed"),
+        ("hosted", {"branch": "nope"}, "no branch nope"),
+    ],
+)
+def test_clone_errors_are_clear_and_leave_nothing(
+    island, fake_github, tmp_path, repos_in_tmp, monkeypatch, setup, request_extra, match
+):
     if setup == "hosted":
         hosted_repo(fake_github, "me/app", tmp_path)
     if setup == "logged_out":
         monkeypatch.setenv("FAKE_GH_LOGGED_OUT", "1")
     if setup == "no_gh":
-        monkeypatch.setattr(islands, "GH", ["no-such-gh-command-here"])
+        monkeypatch.setattr(github, "GH", ["no-such-gh-command-here"])
     with pytest.raises(islands.IslandError, match=match):
         islands.create_island({"name": "App", "repo": "me/app", **request_extra})
     assert not Island.objects.filter(name="App").exists()
@@ -225,8 +244,15 @@ def test_clone_refuses_a_non_empty_folder(island, fake_github, tmp_path, repos_i
     assert (repos_in_tmp / "app" / "notes.txt").read_text() == "mine"  # left alone
 
 
-@pytest.mark.parametrize("url", ["https://github.com/me/app.git", "git@github.com:me/app.git",
-                                 "ssh://git@github.com/me/app", "https://github.com/me/app"])
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://github.com/me/app.git",
+        "git@github.com:me/app.git",
+        "ssh://git@github.com/me/app",
+        "https://github.com/me/app",
+    ],
+)
 def test_adopt_reads_owner_and_name_from_origin(island, tmp_path, url):
     repo = make_git_repo(tmp_path / "mine")
     git(repo, "checkout", "-q", "-b", "work")

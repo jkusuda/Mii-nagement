@@ -41,6 +41,9 @@ const HAIR_FIT := Vector3(1.06, 1.04, 1.08)
 ## Nudges the hair in head units (x, up, forward) after fitting.
 const HAIR_OFFSET := Vector3(0.0, 0.02, -0.02)
 
+## The baked mesh and head measurements, per source mesh, shared by every Mii.
+static var _bake_cache := {}
+
 ## The resident's colour: their shirt.
 @export var color := Color("B9A8F5"):
 	set(value):
@@ -54,9 +57,6 @@ var appearance: Dictionary = MiiParts.DEFAULT.duplicate():
 		appearance = MiiParts.DEFAULT.merged(value, true)
 		if is_node_ready():
 			_apply()
-
-## The baked mesh and head measurements, per source mesh, shared by every Mii.
-static var _bake_cache := {}
 
 var _material := ShaderMaterial.new()
 var _player: AnimationPlayer
@@ -154,6 +154,7 @@ func _apply() -> void:
 
 # --- Hair -----------------------------------------------------------------------
 
+
 ## Hang an (empty) hair MeshInstance3D on the head bone, sized to the head.
 ## Godot concept: a BoneAttachment3D is a node that copies one bone's pose every
 ## frame, so whatever is under it moves with that bone.
@@ -166,8 +167,8 @@ func _attach_hair_holder(body: MeshInstance3D) -> void:
 
 	# Fit the hair's head ball onto this head's box, in mesh space...
 	var half: Vector3 = _head["half"]
-	var scale := half / HAIR_HEAD_RADIUS * HAIR_FIT
-	var fit := Transform3D(Basis.from_scale(scale), _head["center"] + HAIR_OFFSET * half)
+	var hair_scale := half / HAIR_HEAD_RADIUS * HAIR_FIT
+	var fit := Transform3D(Basis.from_scale(hair_scale), _head["center"] + HAIR_OFFSET * half)
 	fit = fit * Transform3D(Basis.IDENTITY, -HAIR_HEAD_CENTER)
 	# ...then move it from mesh space into the bone's space. The skin's bind pose
 	# is exactly that conversion (it's how the body's own vertices follow bones).
@@ -178,6 +179,7 @@ func _attach_hair_holder(body: MeshInstance3D) -> void:
 
 
 # --- Baking the head coordinates ------------------------------------------------
+
 
 static func _bone_ends_with(bone_name: String, ends: Array) -> bool:
 	for end in ends:
@@ -205,7 +207,9 @@ static func _bake(body: MeshInstance3D) -> Dictionary:
 		var bone_name := String(skin.get_bind_name(i))
 		# A bind pose maps mesh space into the bone's space; its inverse's origin
 		# is where the bone sits on the mesh.
-		bone_y[bone_name.get_slice("_", bone_name.get_slice_count("_") - 1)] = skin.get_bind_pose(i).affine_inverse().origin.y
+		bone_y[bone_name.get_slice("_", bone_name.get_slice_count("_") - 1)] = (
+			skin.get_bind_pose(i).affine_inverse().origin.y
+		)
 		if _bone_ends_with(bone_name, HEAD_BONES):
 			head_binds[i] = true
 			if bone_name.ends_with("Head"):
@@ -274,14 +278,20 @@ static func _bake(body: MeshInstance3D) -> Dictionary:
 			c1[v * 4 + 2] = sdata[4][v]
 		arrays[Mesh.ARRAY_CUSTOM0] = c0
 		arrays[Mesh.ARRAY_CUSTOM1] = c1
-		var flags := (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT) \
+		var flags := (
+			(Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
 			| (Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM1_SHIFT)
+		)
 		if sdata[3] == 8:
 			flags |= Mesh.ARRAY_FLAG_USE_8_BONE_WEIGHTS
 		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], {}, flags)
 
 	var result := {
-		"mesh": out, "center": center, "half": half, "bone": head_bone, "bind": head_bind,
+		"mesh": out,
+		"center": center,
+		"half": half,
+		"bone": head_bone,
+		"bind": head_bind,
 		"waist_y": bone_y.get("Hips", 0.68) + 0.02,
 		"ankle_y": (bone_y.get("LeftFoot", 0.12) + bone_y.get("RightFoot", 0.12)) * 0.5 - 0.01,
 	}

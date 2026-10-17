@@ -18,18 +18,12 @@ extends PopupPanel
 signal answered(bubble_id: String)
 
 const THEME := preload("res://ui/theme.tres")
-const AnswerButtonScript := preload("res://scenes/ui/answer_button.gd")
 const CLOSE_ICON := preload("res://assets/icons/x.svg")
 const KEY_ICON := preload("res://assets/icons/key-round.svg")
 const PR_ICON := preload("res://assets/icons/git-pull-request.svg")
 
 const INK := Color("292E50")
 const MUTED := Color("68738B")
-## bubble kind -> header tint
-const HEADER_COLORS := {
-	"ready": Color("E3F6EF"), "permission": Color("FFF6D6"), "confused": Color("F0ECFF"),
-	"struggling": Color("FFEDE0"), "tired": Color("FCEFD9"),
-}
 ## Text longer than this is cut off with a "Show more" link (_collapsible).
 const LONG_CODE := 160
 const LONG_QUOTE := 260
@@ -53,9 +47,11 @@ func _init() -> void:
 	style.border_color = Color("E8DFC0")
 	style.set_border_width_all(2)
 	add_theme_stylebox_override("panel", style)
-	Net.bubble_resolved.connect(func(id: String):
-		if id == bubble_id and visible:
-			hide())  # answered elsewhere, or it timed out
+	Net.bubble_resolved.connect(
+		func(id: String):
+			if id == bubble_id and visible:
+				hide()
+	)  # answered elsewhere, or it timed out
 
 
 ## Open the popup for one bubble (a dictionary from Net.island["bubbles"]).
@@ -75,7 +71,7 @@ func open(bubble: Dictionary) -> void:
 
 	var resident := Net.find_resident(str(bubble["agent"]))
 	var who := str(resident.get("name", bubble["agent"]))
-	var task := _find_task(bubble.get("task"))
+	var task := Net.find_task(bubble.get("task"))
 	_content.add_child(_header(bubble, resident))
 
 	var body := VBoxContainer.new()
@@ -91,13 +87,13 @@ func open(bubble: Dictionary) -> void:
 		"ready":
 			if not task.is_empty():
 				body.add_child(_task_card(task))
-			if not str(_or_empty(bubble.get("detail"))).is_empty():
+			if not Net.text_or_empty(bubble.get("detail")).is_empty():
 				body.add_child(_code(str(bubble["detail"])))  # what changed (git diff --stat)
 			_review_answer(body, options, who)
 		_:
 			if not task.is_empty():
 				body.add_child(_task_card(task))
-			if not str(_or_empty(bubble.get("detail"))).is_empty():
+			if not Net.text_or_empty(bubble.get("detail")).is_empty():
 				body.add_child(_code(str(bubble["detail"])))
 			_text_answer(body, options, who)
 
@@ -119,7 +115,7 @@ func _fit() -> void:
 ## Avatar, name, "Job · at the Workshop", "Mood: X" + tag, and the close button.
 func _header(bubble: Dictionary, resident: Dictionary) -> Control:
 	var panel := PanelContainer.new()
-	var style := _box(HEADER_COLORS.get(_kind, Color("F0ECFF")), 0, 20)
+	var style := _box(Protocol.bubble(_kind)["tint"], 0, 20)
 	style.corner_radius_top_left = 20
 	style.corner_radius_top_right = 20
 	style.content_margin_left = 22
@@ -130,8 +126,8 @@ func _header(bubble: Dictionary, resident: Dictionary) -> Control:
 	row.add_theme_constant_override("separation", 14)
 	panel.add_child(row)
 
-	var tag: Array = ResidentData.BUBBLE_TAGS.get(_kind, ["Needs you", null, "Answer"])
-	var tag_color: Color = BubbleCard.KIND_COLORS.get(_kind, Color("7553DF"))
+	var look := Protocol.bubble(_kind)
+	var tag_color: Color = look["color"]
 	var who := str(resident.get("name", bubble["agent"]))
 	var avatar := PanelContainer.new()
 	avatar.custom_minimum_size = Vector2(56, 56)
@@ -139,7 +135,8 @@ func _header(bubble: Dictionary, resident: Dictionary) -> Control:
 	var avatar_style: StyleBoxFlat = THEME.get_stylebox("panel", "AvatarCircle").duplicate()
 	avatar_style.bg_color = Color(str(resident.get("color", "#FFFFFF"))).lerp(Color.WHITE, 0.55)
 	avatar.add_theme_stylebox_override("panel", avatar_style)
-	var initial := _label(who.left(1), &"CardName")  # TODO(mvp): the resident's Mii face instead of an initial
+	# TODO(stretch): the resident's Mii headshot (Portraits) instead of an initial
+	var initial := _label(who.left(1), &"CardName")
 	initial.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	initial.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	avatar.add_child(initial)
@@ -155,7 +152,7 @@ func _header(bubble: Dictionary, resident: Dictionary) -> Control:
 	var mood_row := HBoxContainer.new()
 	mood_row.add_theme_constant_override("separation", 8)
 	mood_row.add_child(_label("Mood: %s" % ResidentData.vibe_word(resident).capitalize(), &"LabelMuted"))
-	mood_row.add_child(_tag(tag[0], tag[1], tag_color))
+	mood_row.add_child(_tag(look["tag"], look["icon"], tag_color))
 	text.add_child(mood_row)
 	row.add_child(text)
 
@@ -190,7 +187,7 @@ func _task_card(task: Dictionary) -> Control:
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	top.add_child(title)
-	var pr_url := str(_or_empty(task.get("pr_url")))
+	var pr_url := Net.text_or_empty(task.get("pr_url"))
 	if pr_url:
 		var link := LinkButton.new()
 		link.text = "Open on GitHub"
@@ -206,7 +203,7 @@ func _task_card(task: Dictionary) -> Control:
 	var issue = task.get("issue")
 	if issue != null:
 		pills.add_child(_pill("Closes #%s" % str(issue), Color("E8F7E8")))
-	var building := str(Net.find_building(str(_or_empty(task.get("building")))).get("name", ""))
+	var building := str(Net.find_building(Net.text_or_empty(task.get("building"))).get("name", ""))
 	if building:
 		pills.add_child(_pill("At the %s" % building, Color("FFF1D6")))
 	if not pr_url:
@@ -230,7 +227,7 @@ func _key_card(bubble: Dictionary, task: Dictionary) -> Control:
 	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	text.add_theme_constant_override("separation", 6)
 	text.add_child(_label("Key request", &"LabelStrong"))
-	var detail := str(_or_empty(bubble.get("detail")))
+	var detail := Net.text_or_empty(bubble.get("detail"))
 	if detail:
 		text.add_child(_code(detail))
 	if not task.is_empty():
@@ -269,10 +266,14 @@ func _permission_answer(body: VBoxContainer, options: Array, who: String) -> voi
 	body.add_child(cards)
 
 	var no := str(declines[0]) if declines else ""
-	_footer(body, "You can take back keys anytime in Residents → Keys.", [
-		["Not now", func(): _send(no)] if no else ["Later", hide],
-		["Lend the key", func(): _send(_choice)],
-	])
+	_footer(
+		body,
+		"You can take back keys anytime in Residents → Keys.",
+		[
+			["Not now", func(): _send(no)] if no else ["Later", hide],
+			["Lend the key", func(): _send(_choice)],
+		]
+	)
 
 
 ## Review answers: an optional note, the other options (Send back), and the first one (Approve).
@@ -290,8 +291,15 @@ func _review_answer(body: VBoxContainer, options: Array, who: String) -> void:
 		buttons.append([str(option), _send_with_note.bind(str(option))])
 	buttons.append([str(options[0]), _send_with_note.bind(str(options[0]))])
 	var merges := "merge" in str(options[0]).to_lower()
-	_footer(body, "Approving merges this work at the Post Office." if merges
-		else "Approving sends the package on to the next building.", buttons)
+	_footer(
+		body,
+		(
+			"Approving merges this work at the Post Office."
+			if merges
+			else "Approving sends the package on to the next building."
+		),
+		buttons
+	)
 
 
 ## Questions: option buttons when there are options, otherwise a text box.
@@ -308,19 +316,28 @@ func _text_answer(body: VBoxContainer, options: Array, who: String) -> void:
 	_reply.custom_minimum_size = Vector2(0, 76)
 	_reply.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
 	for state in ["normal", "focus", "read_only"]:
-		_reply.add_theme_stylebox_override(state, THEME.get_stylebox(state if state != "read_only" else "normal", "LineEdit"))
+		_reply.add_theme_stylebox_override(
+			state, THEME.get_stylebox(state if state != "read_only" else "normal", "LineEdit")
+		)
 	_reply.add_theme_color_override("font_color", INK)
 	_reply.add_theme_color_override("caret_color", INK)
 	_reply.add_theme_color_override("font_placeholder_color", MUTED)
-	_reply.placeholder_text = {
-		"tired": "e.g. “Keep going, you're close.” or “Stop here for today.”",
-		"struggling": "A hint, e.g. “The clock mock lives in tests/conftest.py.”",
-	}.get(_kind, "Type your answer…")
+	_reply.placeholder_text = (
+		{
+			"tired": "e.g. “Keep going, you're close.” or “Stop here for today.”",
+			"struggling": "A hint, e.g. “The clock mock lives in tests/conftest.py.”",
+		}
+		. get(_kind, "Type your answer…")
+	)
 	body.add_child(_reply)
-	_footer(body, "Your answer goes straight to %s." % who, [
-		["Not now", hide],
-		["Send", func(): _send(_reply.text)],
-	])
+	_footer(
+		body,
+		"Your answer goes straight to %s." % who,
+		[
+			["Not now", hide],
+			["Send", func(): _send(_reply.text)],
+		]
+	)
 	_reply.grab_focus.call_deferred()
 
 
@@ -341,7 +358,7 @@ func _footer(body: VBoxContainer, hint: String, buttons: Array) -> void:
 		if i == buttons.size() - 1:
 			button.theme_type_variation = &"AnswerButton"
 			button.custom_minimum_size = Vector2(maxf(120, 24 + 9 * button.text.length()), 38)
-			button.set_script(AnswerButtonScript)  # the wavy orange pill (painted in its _ready)
+			button.set_script(AnswerButton)  # the wavy orange pill (painted in its _ready)
 		else:
 			button.theme_type_variation = &"OutlineButton"
 			button.custom_minimum_size = Vector2(0, 38)
@@ -371,15 +388,6 @@ func _send(text: String) -> void:
 # --- Helpers ------------------------------------------------------------------------
 
 
-func _find_task(task_id) -> Dictionary:
-	if task_id == null:
-		return {}
-	for t in Net.island.get("tasks", []):
-		if str(t["id"]) == str(task_id):
-			return t
-	return {}
-
-
 static func _declines(option: String) -> bool:
 	var words := option.to_lower().replace("[", " ").split(" ", false)
 	return DECLINE_WORDS.any(func(w): return w in words)
@@ -393,10 +401,6 @@ static func _scope_hint(option: String) -> String:
 	if "once" in lower:
 		return "Only this one time"
 	return option
-
-
-static func _or_empty(value):
-	return "" if value == null else value
 
 
 func _context_style() -> StyleBoxFlat:
@@ -438,13 +442,17 @@ func _collapsible(content: Control, style: StyleBox, is_long: bool, more_text: S
 	more.text = more_text + "  ▾"
 	more.add_theme_color_override("font_color", Color("4D5BD6"))
 	more.add_theme_font_size_override("font_size", 13)
-	more.pressed.connect(func():
-		var opening := scroll.vertical_scroll_mode == ScrollContainer.SCROLL_MODE_SHOW_NEVER
-		scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO if opening else ScrollContainer.SCROLL_MODE_SHOW_NEVER
-		scroll.custom_minimum_size.y = EXPANDED_HEIGHT if opening else COLLAPSED_HEIGHT
-		scroll.scroll_vertical = 0
-		more.text = ("Show less  ▴" if opening else more_text + "  ▾")
-		_fit())
+	more.pressed.connect(
+		func():
+			var opening := scroll.vertical_scroll_mode == ScrollContainer.SCROLL_MODE_SHOW_NEVER
+			scroll.vertical_scroll_mode = (
+				ScrollContainer.SCROLL_MODE_AUTO if opening else ScrollContainer.SCROLL_MODE_SHOW_NEVER
+			)
+			scroll.custom_minimum_size.y = EXPANDED_HEIGHT if opening else COLLAPSED_HEIGHT
+			scroll.scroll_vertical = 0
+			more.text = ("Show less  ▴" if opening else more_text + "  ▾")
+			_fit()
+	)
 
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 4)

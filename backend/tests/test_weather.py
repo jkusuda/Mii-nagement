@@ -19,12 +19,27 @@ async def test_current_reads_recent_steps_and_sleepers(island):
     assert await weather.current("sunny") == "sunny"  # nothing happened yet
     t0 = utcnow() - timedelta(minutes=5)
     for i, outcome in enumerate(["pass"] * 3 + ["fail"] * 6):
-        await Step.objects.acreate(island_id="sunny", task_id="t_x", building_id="lab", building_type="lab",
-                                   resident_id="carlos", brain="mock", outcome=outcome,
-                                   started_at=t0, finished_at=t0 + timedelta(seconds=i))
+        await Step.objects.acreate(
+            island_id="sunny",
+            task_id="t_x",
+            building_id="lab",
+            building_type="lab",
+            resident_id="carlos",
+            brain="mock",
+            outcome=outcome,
+            started_at=t0,
+            finished_at=t0 + timedelta(seconds=i),
+        )
     assert await weather.current("sunny") == "rainy"
-    await Step.objects.acreate(island_id="sunny", task_id="t_y", building_id="lab", building_type="lab",
-                               resident_id="carlos", brain="mock", outcome="")  # still running: ignored
+    await Step.objects.acreate(
+        island_id="sunny",
+        task_id="t_y",
+        building_id="lab",
+        building_type="lab",
+        resident_id="carlos",
+        brain="mock",
+        outcome="",
+    )  # still running: ignored
     assert await weather.current("sunny") == "rainy"
     await Resident.objects.filter(island_id="sunny").aupdate(state="sleeping")
     assert await weather.current("sunny") == "night"

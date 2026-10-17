@@ -9,9 +9,19 @@ import asyncio
 import logging
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from mii.models import Event, Friendship, Island, Task, friendship_to_dict, island_to_dict, resident_to_dict, task_to_dict
+from mii.models import (
+    Event,
+    Friendship,
+    Island,
+    Resident,
+    Task,
+    friendship_to_dict,
+    island_to_dict,
+    resident_to_dict,
+    task_to_dict,
+)
 
 log = logging.getLogger(__name__)
 
@@ -28,8 +38,13 @@ def move(agent: str, from_building: str, to_building: str) -> dict:
 
 
 def bubble(
-    agent: str, kind: str, bubble_id: str, text: str, options: list[str] | None = None,
-    task: str | None = None, detail: str | None = None,
+    agent: str,
+    kind: str,
+    bubble_id: str,
+    text: str,
+    options: list[str] | None = None,
+    task: str | None = None,
+    detail: str | None = None,
 ) -> dict:
     event = {"type": "bubble", "agent": agent, "kind": kind, "id": bubble_id, "text": text}
     if options:
@@ -66,7 +81,7 @@ def task(t: Task) -> dict:
     return {"type": "task", **task_to_dict(t)}
 
 
-def resident(r) -> dict:
+def resident(r: Resident) -> dict:
     return {"type": "resident", "resident": resident_to_dict(r)}
 
 
@@ -100,6 +115,11 @@ def weather(kind: str) -> dict:
     return {"type": "weather", "weather": kind}
 
 
+def snapshot(island: dict, mock_agents: bool) -> dict:
+    """The full island (models.island_snapshot) plus whether every resident runs on the mock brain."""
+    return {"type": "snapshot", "island": {**island, "mock_agents": mock_agents}}
+
+
 def error(message: str) -> dict:
     """consumers.handle_message adds the client's `request_id`, when the message had one."""
     return {"type": "error", "message": message}
@@ -126,7 +146,7 @@ class EventBus:
         self.clients.pop(client, None)
 
     async def emit(self, island_id: str | None, event: dict) -> None:
-        event = {**event, "ts": datetime.now(timezone.utc).isoformat()}
+        event = {**event, "ts": datetime.now(UTC).isoformat()}
         await Event.objects.acreate(island_id=island_id, type=event["type"], payload=event)
         await self.broadcast(event, island_id)
 
@@ -172,14 +192,23 @@ class Bubbles:
         self.open: dict[str, OpenBubble] = {}
 
     async def ask(
-        self, island_id: str, agent: str, kind: str, text: str, timeout: float, options: list[str] | None = None,
-        task: str | None = None, detail: str | None = None,
+        self,
+        island_id: str,
+        agent: str,
+        kind: str,
+        text: str,
+        timeout: float,
+        options: list[str] | None = None,
+        task: str | None = None,
+        detail: str | None = None,
     ) -> str | None:
         """Show a bubble. Returns your answer, or None if nobody answered in time."""
         bubble_id = "b_" + uuid.uuid4().hex[:6]
         future = asyncio.get_running_loop().create_future()
-        asked_at = datetime.now(timezone.utc).isoformat()
-        self.open[bubble_id] = OpenBubble(bubble_id, island_id, agent, kind, text, options, future, task, detail, asked_at)
+        asked_at = datetime.now(UTC).isoformat()
+        self.open[bubble_id] = OpenBubble(
+            bubble_id, island_id, agent, kind, text, options, future, task, detail, asked_at
+        )
         await self.bus.emit(island_id, bubble(agent, kind, bubble_id, text, options, task, detail))
         response: str | None = None
         try:
@@ -202,8 +231,16 @@ class Bubbles:
     def for_island(self, island_id: str) -> list[dict]:
         """Open bubbles, in the shape the snapshot uses."""
         return [
-            {"id": b.id, "agent": b.agent, "kind": b.kind, "text": b.text, "options": b.options,
-             "task": b.task, "detail": b.detail, "asked_at": b.asked_at}
+            {
+                "id": b.id,
+                "agent": b.agent,
+                "kind": b.kind,
+                "text": b.text,
+                "options": b.options,
+                "task": b.task,
+                "detail": b.detail,
+                "asked_at": b.asked_at,
+            }
             for b in self.open.values()
             if b.island_id == island_id
         ]

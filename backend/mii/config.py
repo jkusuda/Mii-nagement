@@ -12,6 +12,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from mii.vocab import DEFAULT_GIT_AUTHOR
+
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 REPO_ROOT = BACKEND_DIR.parent
 
@@ -34,19 +36,13 @@ def _flag(name: str, default: str) -> bool:
 
 @dataclass(frozen=True)
 class Config:
-    mock_agents: bool  # True = every resident uses the mock brain, whatever its `brain` field says
-    islands_root: Path | None  # where new island repos are created (None = Documents/Mii-nagement)
+    """What the process needs before the database is up. Everything the user can change at
+    runtime (mock mode, islands folder, test command, keys...) is read by prefs.py instead."""
+
+    mock_agents: bool  # the starting value; prefs.get("mock_agents") is the live one
     worktree_root: Path  # where per-task worktrees of island repos go
     database_path: Path  # SQLite file
-
-    # OpenRouter (the direct `openrouter` brain, no CLI needed)
-    openrouter_api_key: str | None = None
-    openrouter_default_model: str = "anthropic/claude-sonnet-4.5"
-
-    # Real-mode plumbing
-    test_command: str | None = None  # what the Lab runs in the worktree, e.g. "uv run pytest -q"
-    keep_worktrees: bool = False  # keep a task's worktree after it finishes (debugging)
-    git_author: str = "Mii-nagement <mii@localhost>"  # author of the Workshop's commits
+    git_author: str = DEFAULT_GIT_AUTHOR  # author of the Workshop's commits
 
     # Pacing (seconds)
     walk_seconds: float = 2.0  # how long a walk between buildings takes (lets the game animate)
@@ -62,14 +58,9 @@ def load_config() -> Config:
     permission = _optional_str("PERMISSION_TIMEOUT")
     return Config(
         mock_agents=_flag("MOCK_AGENTS", "1"),
-        islands_root=_optional_path("ISLANDS_ROOT"),
         worktree_root=_optional_path("WORKTREE_ROOT") or BACKEND_DIR / ".worktrees",
         database_path=_optional_path("DATABASE_PATH") or BACKEND_DIR / "mii.db",
-        openrouter_api_key=_optional_str("OPENROUTER_API_KEY"),
-        openrouter_default_model=_optional_str("OPENROUTER_MODEL") or "anthropic/claude-sonnet-4.5",
-        test_command=_optional_str("TEST_COMMAND"),
-        keep_worktrees=_flag("KEEP_WORKTREES", "0"),
-        git_author=_optional_str("GIT_AUTHOR") or "Mii-nagement <mii@localhost>",
+        git_author=_optional_str("GIT_AUTHOR") or DEFAULT_GIT_AUTHOR,
         walk_seconds=float(os.getenv("WALK_SECONDS", "2.0")),
         bubble_timeout=float(os.getenv("BUBBLE_TIMEOUT", "30")),
         permission_timeout=float(permission) if permission else None,

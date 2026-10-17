@@ -1,10 +1,10 @@
 // Seasonal touches drawn over trees, bushes, and buildings: autumn colors,
 // spring blossoms, and winter snow. On buildings it also lights the windows
 // and doors at night (window_glow), following the global `night` value
-// (scenes/day_night.gd).
+// (scenes/island/day_night.gd).
 //
 // Godot concept: a GeometryInstance3D (any mesh node) has a `material_overlay`:
-// a second material drawn on top of the mesh's own. Seasons (scenes/seasons.gd)
+// a second material drawn on top of the mesh's own. Seasons (scenes/island/seasons.gd)
 // sets one per plant and building, so each island can have its own season
 // while the models keep their original textures underneath.
 //

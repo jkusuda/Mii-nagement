@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 """Django's command-line tool. Run from backend/:  uv run python manage.py <command>
 
-    migrate            create / update the SQLite tables
-    makemigrations mii after changing models.py
-    seed [--reset] [--loop]
-    watch
+migrate            create / update the SQLite tables
+makemigrations mii after changing models.py
+seed [--reset] [--loop]
+watch
 """
 
 import os

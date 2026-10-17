@@ -2,7 +2,7 @@
 
 Two judges with the same methods, so the engine never cares which one it has:
 
-    RuleJudge   today's behaviour in plain Python. The default; never touches the network.
+    RuleJudge   plain Python rules. The default; never touches the network.
     JevJudge    asks TypeSafe's Jev model, a fast classifier that answers typed questions
                 (pick one option, a score, or a yes/no probability) about a state dict in
                 about 100-500 ms, and falls back to RuleJudge on any error or timeout.
@@ -20,7 +20,7 @@ are the safety story; a probability is not). It decides flavour and small calls:
 A `typesafe_api_key` secret (TYPESAFE_API_KEY) switches JevJudge on; the `judge`
 setting ("auto" / "off") can switch it off again (runtime.reload()).
 
-API (verified 2026-10-17): POST https://api.typesafe.ai/v1/systemone with
+API: POST https://api.typesafe.ai/v1/systemone with
 {"model", "state", "questions": {id: {"type": "choice"|"score"|"noul", "instructions", "criteria"?}}}
 -> {"answers": {id: {"type", "choice"|"score"|"noul", "confidence"?, "probabilities"?}}}.
 """
@@ -32,6 +32,7 @@ import httpx
 
 from mii.agents import AgentJob, StepResult
 from mii.models import Building, Resident, Task
+from mii.vocab import JOB_BUILDINGS
 
 log = logging.getLogger(__name__)
 
@@ -53,11 +54,8 @@ MOODS = {
 }
 
 
-
 def natural_job(building_type: str) -> str | None:
-    """The job that normally works at this building type (residents.JOB_BUILDINGS), the first helper we look for."""
-    from mii.residents import JOB_BUILDINGS  # here, not at the top: residents.py imports the engine, which imports us
-
+    """The job that normally works at this building type, the first helper we look for."""
     return next((job for job, buildings in JOB_BUILDINGS.items() if building_type in buildings), None)
 
 
@@ -73,25 +71,32 @@ class HelpRequest:
 
 
 class RuleJudge:
-    """The rules the engine used before there was a judge. Free, offline, deterministic."""
+    """Fixed rules. Free, offline, deterministic."""
 
     name = "rules"
 
-    async def mood(self, resident: Resident, building: Building, result: StepResult, attempt: int,
-                   timed_out: bool, bubbles_raised: int) -> str:
+    async def mood(
+        self,
+        resident: Resident,
+        building: Building,
+        result: StepResult,
+        attempt: int,
+        timed_out: bool,
+        bubbles_raised: int,
+    ) -> str:
         if timed_out:
             return "tired"
         return "happy" if result.outcome == "pass" else "frustrated"
 
     async def verdict(self, job: AgentJob, result: StepResult) -> StepResult:
-        """No VERDICT line: the rules trust the agent (a pass), as parse_verdict always did."""
+        """No VERDICT line: the rules trust the agent (a pass)."""
         return result
 
     async def flaky(self, test_output: str, diff_stat: str) -> float:
         return 0.0
 
     async def tip(self, stats: dict, candidates: dict[str, str]) -> str:
-        """The first candidate: insights.tip_candidates lists them in the old first-match order."""
+        """The first candidate: insights.tip_candidates lists them best rule first."""
         return next(iter(candidates.values()))
 
     async def needs_help(self, building: Building, attempt: int, last_note: str) -> bool:
@@ -128,7 +133,8 @@ class JevJudge(RuleJudge):
         """POST one state + questions. Returns the `answers` dict, or None when Jev can't be used."""
         try:
             response = await self.http.post(
-                API_URL, json={"model": MODEL, "state": state, "questions": questions},
+                API_URL,
+                json={"model": MODEL, "state": state, "questions": questions},
                 headers={"Authorization": f"Bearer {self.api_key}"},
             )
             response.raise_for_status()
@@ -147,11 +153,22 @@ class JevJudge(RuleJudge):
 
     async def mood(self, resident, building, result, attempt, timed_out, bubbles_raised):
         state = {
-            "resident": {"name": resident.name, "job": resident.job, "bluntness": resident.bluntness,
-                         "caution": resident.caution, "chattiness": resident.chattiness, "creativity": resident.creativity},
+            "resident": {
+                "name": resident.name,
+                "job": resident.job,
+                "bluntness": resident.bluntness,
+                "caution": resident.caution,
+                "chattiness": resident.chattiness,
+                "creativity": resident.creativity,
+            },
             "building": {"name": building.name, "type": building.type},
-            "step": {"outcome": result.outcome, "attempt": attempt, "timed_out": timed_out,
-                     "bubbles_raised": bubbles_raised, "summary": _tail(result.summary)},
+            "step": {
+                "outcome": result.outcome,
+                "attempt": attempt,
+                "timed_out": timed_out,
+                "bubbles_raised": bubbles_raised,
+                "summary": _tail(result.summary),
+            },
         }
         answers = await self._ask(state, {"mood": _choice("How does this resident feel right after this step?", MOODS)})
         choice = _choice_of(answers, "mood")
@@ -166,12 +183,16 @@ class JevJudge(RuleJudge):
         if done is None:
             return await super().verdict(job, result)
         outcome = "fail" if done < VERDICT_FAIL_BELOW else "pass"
-        return replace(result, outcome=outcome, summary=f"{result.summary} (no verdict line; the judge said {outcome})".strip())
+        return replace(
+            result, outcome=outcome, summary=f"{result.summary} (no verdict line; the judge said {outcome})".strip()
+        )
 
     async def flaky(self, test_output, diff_stat):
         state = {"test_output": _tail(test_output), "changes": _tail(diff_stat)}
-        question = _noul("Is this test failure flaky or environmental (timeouts, network, ports, ordering, "
-                         "missing tools) rather than caused by the code changes?")
+        question = _noul(
+            "Is this test failure flaky or environmental (timeouts, network, ports, ordering, "
+            "missing tools) rather than caused by the code changes?"
+        )
         value = _noul_of(await self._ask(state, {"flaky": question}), "flaky")
         return value if value is not None else await super().flaky(test_output, diff_stat)
 
@@ -183,27 +204,36 @@ class JevJudge(RuleJudge):
         return candidates[choice] if choice in candidates else await super().tip(stats, candidates)
 
     async def needs_help(self, building, attempt, last_note):
-        state = {"building": {"name": building.name, "type": building.type}, "visit": attempt,
-                 "what_sent_it_back": _tail(last_note)}
-        question = _noul("The same resident has failed to get this package past the next check; would a "
-                         "different teammate taking this turn likely get it unblocked?")
+        state = {
+            "building": {"name": building.name, "type": building.type},
+            "visit": attempt,
+            "what_sent_it_back": _tail(last_note),
+        }
+        question = _noul(
+            "The same resident has failed to get this package past the next check; would a "
+            "different teammate taking this turn likely get it unblocked?"
+        )
         value = _noul_of(await self._ask(state, {"help": question}), "help")
         return value >= HELP_AT if value is not None else await super().needs_help(building, attempt, last_note)
 
     async def pick_helper(self, request, candidates):
         if not candidates:
             return None
+        asker = request.asker.name
         criteria = {
-            r.id: f"{r.name}: {r.job}, {r.state}, friendship with {request.asker.name} {request.friendship.get(r.id, 0.0):.2f}"
+            r.id: f"{r.name}: {r.job}, {r.state}, friendship with {asker} {request.friendship.get(r.id, 0.0):.2f}"
             for r in candidates
         }
         criteria["nobody"] = "nobody fits; leave it"
         state = {
-            "request": request.text, "task": request.task.title,
+            "request": request.text,
+            "task": request.task.title,
             "building": {"name": request.building.name, "type": request.building.type},
             "asker": {"name": request.asker.name, "job": request.asker.job},
         }
-        question = _choice("Who should come over and help at this building? Prefer a job that fits the building.", criteria)
+        question = _choice(
+            "Who should come over and help at this building? Prefer a job that fits the building.", criteria
+        )
         choice = _choice_of(await self._ask(state, {"helper": question}), "helper")
         if choice == "nobody":
             return None

@@ -1,4 +1,5 @@
 @tool
+class_name DashedButton
 extends Button
 ## A flat button with a dashed, rounded outline (the "Invite a resident" tile).
 ## StyleBoxFlat can't draw dashes, so we draw the outline ourselves.

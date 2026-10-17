@@ -12,9 +12,11 @@ extends Node3D
 signal arrived
 
 const MII_SCALE := 1.6
-const WALK_SPEED := 3.5    # units per second
+const WALK_SPEED := 3.5  # units per second
 const RUN_SPEED := 7.0
 const LONGEST_WALK := 3.5  # seconds: on long routes, run instead so we keep up with the server
+const FONT := preload("res://assets/font/DreamLife-V1.0.0_by_MaxiGamer.ttf")
+const INK := Color("292E50")  # the theme's dark text colour
 
 var resident_id := ""
 var state := "idle"
@@ -24,9 +26,6 @@ var is_walking := false
 var life_busy := false
 ## Where they stood before island_life took them for a stroll (so they can go back).
 var home_spot := Vector3.ZERO
-
-const FONT := preload("res://assets/font/DreamLife-V1.0.0_by_MaxiGamer.ttf")
-const INK := Color(0.161, 0.18, 0.314, 1)
 
 var _facing := 0.0  # radians around y, 0 = toward the camera
 var _work_tween: Tween
@@ -83,8 +82,8 @@ func show_resident(resident: Dictionary, open_bubble: Dictionary) -> void:
 	bubble.visible = not open_bubble.is_empty()
 	if bubble.visible:
 		var kind := str(open_bubble["kind"])
-		bubble_icon.texture = ResidentData.BUBBLE_TAGS.get(kind, ResidentData.BUBBLE_TAGS["confused"])[1]
-		bubble_icon.modulate = BubbleCard.KIND_COLORS.get(kind, Color("7553DF"))
+		bubble_icon.texture = Protocol.bubble(kind)["icon"]
+		bubble_icon.modulate = Protocol.bubble(kind)["color"]
 
 
 ## Walk through `points` (world positions), then emit `arrived`.
@@ -117,9 +116,11 @@ func walk(points: Array[Vector3]) -> void:
 		_walk_tween.tween_callback(_face_toward.bind(p))
 		_walk_tween.tween_property(self, "global_position", p, leg / speed)
 		last = p
-	_walk_tween.tween_callback(func():
-		is_walking = false
-		arrived.emit())
+	_walk_tween.tween_callback(
+		func():
+			is_walking = false
+			arrived.emit()
+	)
 
 
 ## Stand still at `spot` in a state: "idle", "working", or "sleeping".
@@ -137,10 +138,7 @@ func settle(spot: Vector3, new_state: String, look_at_point: Vector3) -> void:
 			_face_toward(look_at_point)
 			mii.play("idle")
 			_start_working()
-		"sleeping":
-			_facing = 0.0
-			mii.play("idle")
-		_:
+		_:  # idle, sleeping (the "z Z" shows above)
 			_facing = 0.0
 			mii.play("idle")
 

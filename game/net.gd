@@ -20,39 +20,54 @@ signal disconnected
 signal snapshot_received(island: Dictionary)
 signal agent_state_changed(agent: String, state: String, building: String)
 signal agent_moved(agent: String, from_building: String, to_building: String)
-signal bubble_shown(bubble: Dictionary)
 signal bubble_resolved(bubble_id: String)
 signal handoff_happened(from_agent: String, to_agent: String, task: String, outcome: String)
 signal mood_changed(agent: String, mood: String)
 ## One resident said something to another (a help request, the helper's reply, a note).
 signal chat_said(from_agent: String, to_agent: String, task: String, text: String)
-## The backend's weather for the island changed (sunny / cloudy / rainy / night).
-signal weather_changed(kind: String)
 signal task_updated(task: Dictionary)
 signal server_error(message: String)
 ## A resident was created or edited (by this client or another one).
 signal resident_updated(resident: Dictionary)
 ## A resident moved away (`resident_removed`).
 signal resident_removed(resident_id: String)
-signal activity_reported(agent: String, text: String)
 ## More of a package's train of thought arrived (Net.thinking[task_id]).
 signal thinking_received(task_id: String)
 ## Every event from the server, as it arrived (the News tab turns them into stories).
 signal event_received(event: Dictionary)
+## Something in `island` changed (after any of the signals above).
+signal island_changed
+
+const RECONNECT_SECONDS := 2.0
+const THINKING_KEEP := 400  # entries per task (Net.thinking)
+## The resident fields the server accepts (docs/protocol.md, create_resident).
+const RESIDENT_FIELDS := [
+	"id",
+	"name",
+	"job",
+	"color",
+	"catchphrase",
+	"brain",
+	"model",
+	"bluntness",
+	"caution",
+	"chattiness",
+	"creativity",
+	"keys",
+	"gifts",
+	"appearance",
+	"buildings"
+]
+
 ## Task id -> the residents' train of thought while carrying it: entries
 ## {"agent", "kind" ("thought" | "reply" | "tool"), "text"}, oldest first. Live
 ## `thinking` events add to it; building_panel.gd loads older ones on demand.
 var thinking := {}
-const THINKING_KEEP := 400  # entries per task
-
-## Something in `island` changed (after any of the signals above).
-signal island_changed
 
 ## Set MII_SERVER (e.g. "127.0.0.1:8001") to use another backend. The default is
 ## 127.0.0.1, not "localhost": on Windows, localhost can resolve to the IPv6
 ## address ::1 first, which the backend (uvicorn on 127.0.0.1) doesn't answer.
 var url := "ws://%s/ws" % (OS.get_environment("MII_SERVER") if OS.has_environment("MII_SERVER") else "127.0.0.1:8000")
-const RECONNECT_SECONDS := 2.0
 
 var is_online := false
 ## The latest island from the server: the last snapshot, kept up to date with
@@ -111,24 +126,14 @@ func _process(delta: float) -> void:
 				_try_connect()
 
 
-## The resident fields the server accepts (docs/protocol.md, create_resident).
-const RESIDENT_FIELDS := ["id", "name", "job", "color", "catchphrase", "brain", "model",
-	"bluntness", "caution", "chattiness", "creativity", "keys", "gifts", "appearance", "buildings"]
-
-
 ## Create a resident (no "id") or edit one (with "id"). The server answers with a
 ## `resident` event (-> resident_updated) or an `error` (-> server_error).
 func send_resident(resident: Dictionary) -> bool:
-	if not is_online:
-		push_warning("Not connected; resident not sent.")
-		return false
 	var data := {}
 	for field in RESIDENT_FIELDS:
 		if resident.has(field):
 			data[field] = resident[field]
-	var kind := "update_resident" if data.has("id") else "create_resident"
-	_socket.send_text(JSON.stringify({"type": kind, "resident": data}))
-	return true
+	return _send({"type": "update_resident" if data.has("id") else "create_resident", "resident": data})
 
 
 ## The backend's HTTP address for `path`, e.g. http_url("/brains").
@@ -142,21 +147,23 @@ func http_url(path: String) -> String:
 ##
 ## Godot concept: HTTPRequest is a node; request() returns right away and the
 ## `request_completed` signal fires later. This makes a throwaway one per call.
-func request_json(path: String, done: Callable, method := HTTPClient.METHOD_GET, body = null) -> void:
+func request_json(path: String, done: Callable, method := HTTPClient.METHOD_GET, body: Variant = null) -> void:
 	var http := HTTPRequest.new()
 	add_child(http)
-	http.request_completed.connect(func(result: int, code: int, _headers, raw: PackedByteArray):
-		http.queue_free()
-		# JSON.new().parse() reports bad input with an error code instead of printing
-		# an engine error (an old backend answers unknown paths with an HTML page).
-		var json := JSON.new()
-		var data = json.data if json.parse(raw.get_string_from_utf8()) == OK else null
-		if typeof(data) != TYPE_DICTIONARY:
-			data = {}
-		var ok := result == HTTPRequest.RESULT_SUCCESS and code == 200
-		if not ok and not data.has("error"):
-			data["error"] = "the backend is offline" if result != HTTPRequest.RESULT_SUCCESS else "HTTP %d" % code
-		done.call(ok, data))
+	http.request_completed.connect(
+		func(result: int, code: int, _headers, raw: PackedByteArray):
+			http.queue_free()
+			# JSON.new().parse() reports bad input (an HTML error page, say) with an error
+			# code instead of printing an engine error.
+			var json := JSON.new()
+			var data = json.data if json.parse(raw.get_string_from_utf8()) == OK else null
+			if typeof(data) != TYPE_DICTIONARY:
+				data = {}
+			var ok := result == HTTPRequest.RESULT_SUCCESS and code == 200
+			if not ok and not data.has("error"):
+				data["error"] = "the backend is offline" if result != HTTPRequest.RESULT_SUCCESS else "HTTP %d" % code
+			done.call(ok, data)
+	)
 	var headers := PackedStringArray(["Content-Type: application/json"] if body != null else [])
 	var error := http.request(http_url(path), headers, method, JSON.stringify(body) if body != null else "")
 	if error != OK:
@@ -185,11 +192,8 @@ func _send(message: Dictionary) -> bool:
 
 
 ## Answer a resident's bubble. The server replies with `bubble_resolved`.
-func send_answer(bubble_id: String, text: String) -> void:
-	if not is_online:
-		push_warning("Not connected; answer not sent.")
-		return
-	_socket.send_text(JSON.stringify({"type": "answer_bubble", "id": bubble_id, "response": text}))
+func send_answer(bubble_id: String, text: String) -> bool:
+	return _send({"type": "answer_bubble", "id": bubble_id, "response": text})
 
 
 func _try_connect() -> void:
@@ -226,28 +230,28 @@ func _handle_message(text: String) -> void:
 			_remember_resident(event["resident"])
 			resident_updated.emit(event["resident"])
 		"agent_state":
-			var building := _str(event.get("building"))
+			var building := text_or_empty(event.get("building"))
 			var changes := {"state": event["state"], "building": building}
 			if event["state"] == "idle":
 				changes["idle_since"] = Time.get_unix_time_from_system()
 			_patch_resident(event["agent"], changes)
 			agent_state_changed.emit(str(event["agent"]), str(event["state"]), building)
 		"move":
-			agent_moved.emit(str(event["agent"]), _str(event["from"]), _str(event["to"]))
+			agent_moved.emit(str(event["agent"]), text_or_empty(event["from"]), text_or_empty(event["to"]))
 		"bubble":
 			var bubble := {
-				"id": str(event["id"]), "agent": str(event["agent"]), "kind": str(event["kind"]),
-				"text": str(event["text"]), "options": event.get("options"),
-				"task": event.get("task"), "detail": event.get("detail"),
+				"id": str(event["id"]),
+				"agent": str(event["agent"]),
+				"kind": str(event["kind"]),
+				"text": str(event["text"]),
+				"options": event.get("options"),
+				"task": event.get("task"),
+				"detail": event.get("detail"),
 				"since": Time.get_unix_time_from_system(),
 			}
 			_bubbles().append(bubble)
-			bubble_shown.emit(bubble)
 		"bubble_resolved":
-			var open := _bubbles()
-			for i in range(open.size() - 1, -1, -1):
-				if open[i]["id"] == event["id"]:
-					open.remove_at(i)
+			_remove_id(_bubbles(), event["id"])
 			bubble_resolved.emit(str(event["id"]))
 		"handoff":
 			handoff_happened.emit(str(event["from"]), str(event["to"]), str(event["task"]), str(event["outcome"]))
@@ -257,21 +261,18 @@ func _handle_message(text: String) -> void:
 			mood_changed.emit(str(event["agent"]), str(event["mood"]))
 		"activity":
 			_patch_resident(event["agent"], {"activity": event["text"]})
-			activity_reported.emit(str(event["agent"]), str(event["text"]))
 		"chat":
-			chat_said.emit(str(event["from"]), str(event["to"]), _str(event.get("task")), str(event.get("text", "")))
+			chat_said.emit(
+				str(event["from"]), str(event["to"]), text_or_empty(event.get("task")), str(event.get("text", ""))
+			)
 			return  # nothing in `island` changes
 		"weather":
 			island["weather"] = str(event["weather"])
-			weather_changed.emit(str(event["weather"]))
 		"island":
 			# The header changed (renamed, repo linked, rules edited): replace those fields only.
 			island.merge(event["island"], true)
 		"resident_removed":
-			var residents: Array = island.get("residents", [])
-			for i in range(residents.size() - 1, -1, -1):
-				if residents[i]["id"] == event["id"]:
-					residents.remove_at(i)
+			_remove_id(island.get("residents", []), event["id"])
 			resident_removed.emit(str(event["id"]))
 		"friendship":
 			# Two residents handed a package over: replace that pair's entry.
@@ -335,13 +336,34 @@ func find_building(building_id: String) -> Dictionary:
 	return {}
 
 
+## The open (queued or in-progress) task with this id from `island`, or {}. `task_id` may be null.
+func find_task(task_id: Variant) -> Dictionary:
+	for t in island.get("tasks", []):
+		if task_id != null and str(t["id"]) == str(task_id):
+			return t
+	return {}
+
+
+## The open bubble of this resident, or {} if they don't need you right now.
+func bubble_of(agent_id: String) -> Dictionary:
+	for b in island.get("bubbles", []):
+		if b.get("agent") == agent_id:
+			return b
+	return {}
+
+
+## JSON null -> "" (instead of the string "<null>"); anything else as text.
+func text_or_empty(value: Variant) -> String:
+	return "" if value == null else str(value)
+
+
 func _bubbles() -> Array:
 	if not island.has("bubbles"):
 		island["bubbles"] = []
 	return island["bubbles"]
 
 
-func _patch_resident(agent_id, changes: Dictionary) -> void:
+func _patch_resident(agent_id: Variant, changes: Dictionary) -> void:
 	var r := find_resident(str(agent_id))
 	if not r.is_empty():
 		r.merge(changes, true)
@@ -360,9 +382,7 @@ func _remember_resident(data: Dictionary) -> void:
 ## The snapshot only lists queued and in-progress tasks; keep it that way.
 func _remember_task(event: Dictionary) -> void:
 	var tasks: Array = island.get("tasks", [])
-	for i in range(tasks.size() - 1, -1, -1):
-		if tasks[i]["id"] == event["id"]:
-			tasks.remove_at(i)
+	_remove_id(tasks, event["id"])
 	if event["status"] in ["queued", "in_progress"]:
 		var t := event.duplicate()
 		t.erase("type")
@@ -370,6 +390,7 @@ func _remember_task(event: Dictionary) -> void:
 	island["tasks"] = tasks
 
 
-## JSON null -> "" (instead of the string "<null>").
-func _str(value) -> String:
-	return "" if value == null else str(value)
+func _remove_id(list: Array, id: Variant) -> void:
+	for i in range(list.size() - 1, -1, -1):
+		if list[i]["id"] == id:
+			list.remove_at(i)

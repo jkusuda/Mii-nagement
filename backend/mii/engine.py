@@ -20,24 +20,29 @@ from pathlib import Path
 from django.db.models import Q
 
 from mii import events, github, weather
-from mii.agents import AgentJob, StepResult
+from mii.agents import AgentJob, AgentRunner, StepResult
 from mii.judge import HelpRequest, RuleJudge
 from mii.models import Building, Event, Friendship, Island, Resident, Road, Step, Task, utcnow
-from mii.sandbox import Sandbox, SandboxError, Sandboxes
+from mii.sandbox import Sandbox, SandboxError, Sandboxes, run_shell
+from mii.vocab import CHECK_STEPS, DEFAULT_GIT_AUTHOR, SEND_BACK
 
 log = logging.getLogger(__name__)
 
 MAX_STEPS = 20  # safety net against packages bouncing forever
-OUTPUT_LIMIT = 4000  # characters of command output we keep
 FLAKY_RERUN_AT = 0.7  # the judge's "this failure looks flaky" probability that earns the tests one more run
 MAX_HELPS = 2  # help visits per task (a stuck resident gets a neighbour's hand this many times)
-CHECK_TYPES = ("lab", "courthouse")  # buildings that judge work rather than do it (islands.CHECK_STEPS)
 RERUN_MIN_LEFT = 10.0  # seconds of step budget a flaky re-run needs before it is worth starting
 NOTES_CHARS = 1500  # a resident's diary (Resident.notes) keeps about this much; the oldest lines go first
 CHAT_CHARS = 200  # how much of a helper's report is said out loud (the `chat` back)
 
 # Mood a resident shows while a bubble of this kind is waiting.
-BUBBLE_MOODS = {"confused": "confused", "struggling": "frustrated", "permission": "focused", "ready": "proud", "tired": "tired"}
+BUBBLE_MOODS = {
+    "confused": "confused",
+    "struggling": "frustrated",
+    "permission": "focused",
+    "ready": "proud",
+    "tired": "tired",
+}
 
 
 # --- The island as a graph --------------------------------------------------------
@@ -75,10 +80,9 @@ class IslandGraph:
 
 # --- Building handlers (one class per building type) ------------------------------
 # A handler says what the resident should do there, and by default hands the work
-# to the runner. Override `run` for steps that do more than talk to an agent.
-# `engine` gives handlers the sandbox, the test command, and set_pr_url().
-
-VERDICT_RULE = "End your reply with one line: `VERDICT: PASS` or `VERDICT: FAIL`."
+# to the runner. Override `run` for steps that do more than talk to an agent; `engine`
+# gives them the test command, the git author, the step timeout, the judge, set_pr_url()
+# and approve() / approved(). Every prompt ends with the VERDICT rule (agents.build_prompt).
 
 
 class BuildingHandler:
@@ -87,7 +91,7 @@ class BuildingHandler:
     def instructions(self, task: Task) -> str:
         raise NotImplementedError
 
-    async def run(self, job: AgentJob, runner, engine: "WorkflowEngine") -> StepResult:
+    async def run(self, job: AgentJob, runner: AgentRunner, engine: "WorkflowEngine") -> StepResult:
         return await runner.run(job)
 
 
@@ -97,7 +101,10 @@ class Mailbox(BuildingHandler):
     read_only = True
 
     def instructions(self, task: Task) -> str:
-        return f"New request: {task.title}\n\n{task.description}\n\nWrite a short, numbered plan for the coder. Don't change files."
+        return (
+            f"New request: {task.title}\n\n{task.description}\n\n"
+            "Write a short, numbered plan for the coder. Don't change files."
+        )
 
 
 class Workshop(BuildingHandler):
@@ -106,10 +113,11 @@ class Workshop(BuildingHandler):
     def instructions(self, task: Task) -> str:
         return (
             f"Implement: {task.title}\n\n{task.description}\n\nFollow the plan in the notes. "
-            "If work was sent back, fix what was reported. Don't commit: your changes are committed for you when you're done."
+            "If work was sent back, fix what was reported. "
+            "Don't commit: your changes are committed for you when you're done."
         )
 
-    async def run(self, job: AgentJob, runner, engine: "WorkflowEngine") -> StepResult:
+    async def run(self, job: AgentJob, runner: AgentRunner, engine: "WorkflowEngine") -> StepResult:
         result = await runner.run(job)
         if job.sandbox and job.workdir:
             message = f"{job.task.title}\n\nStep by {job.resident.name} (attempt {job.attempt})."
@@ -129,9 +137,9 @@ class Lab(BuildingHandler):
     """
 
     def instructions(self, task: Task) -> str:
-        return f"Run the project's tests for: {task.title}\n\n{VERDICT_RULE}"
+        return f"Run the project's tests for: {task.title}"
 
-    async def run(self, job: AgentJob, runner, engine: "WorkflowEngine") -> StepResult:
+    async def run(self, job: AgentJob, runner: AgentRunner, engine: "WorkflowEngine") -> StepResult:
         if not (engine.test_command and job.workdir):
             return await runner.run(job)
         await job.report(f"Running: {engine.test_command}")
@@ -151,7 +159,9 @@ class Lab(BuildingHandler):
                 code, output = await run_shell(engine.test_command, job.workdir, timeout=left - 1.0)
                 tail = "\n".join(output.splitlines()[-20:])
                 if code == 0:
-                    return StepResult("pass", f"Tests passed on the second run (the first looked flaky).\n{tail}".strip(), flaky=True)
+                    return StepResult(
+                        "pass", f"Tests passed on the second run (the first looked flaky).\n{tail}".strip(), flaky=True
+                    )
         return StepResult("fail", f"Tests failed (exit {code}).\n{tail}".strip())
 
 
@@ -166,33 +176,30 @@ class Courthouse(BuildingHandler):
     """
 
     read_only = True
-    APPROVE, SEND_BACK = "Approve & merge", "Send back"
+    APPROVE = "Approve & merge"
 
     def instructions(self, task: Task) -> str:
-        return f"Review the changes on this branch for: {task.title}. If you fail it, say exactly what to fix.\n\n{VERDICT_RULE}"
+        return f"Review the changes on this branch for: {task.title}. If you fail it, say exactly what to fix."
 
-    async def run(self, job: AgentJob, runner, engine: "WorkflowEngine") -> StepResult:
+    async def run(self, job: AgentJob, runner: AgentRunner, engine: "WorkflowEngine") -> StepResult:
         if not (job.sandbox and job.workdir):
             return await runner.run(job)
         stat = await asyncio.to_thread(job.sandbox.diff_stat, job.task.id)
         job.instructions = f"{job.instructions}\n\nWhat changed on this branch (git log + diff --stat):\n{stat}"
         result = await runner.run(job)
-        island = await Island.objects.aget(pk=job.task.island_id)
-        if result.outcome != "pass" or not island.repo:
+        if result.outcome != "pass" or not job.island.repo:
             return result  # nothing to merge without a GitHub repo
         if not job.rules.get("merge_pr"):
-            engine._approved.add(job.task.id)  # house rule: merging needs no OK
+            engine.approve(job.task.id)  # house rule: merging needs no OK
             return result
 
-        verdict = " ".join(result.summary.split())
-        verdict = verdict if len(verdict) <= 220 else verdict[:220].rsplit(" ", 1)[0] + "…"
-        answer = await job.ask("ready", verdict or "All clear! It looks good to me.",
-                               [self.APPROVE, self.SEND_BACK], "\n".join(stat.splitlines()[-12:]))
-        if answer and answer.startswith(self.SEND_BACK):
-            note = answer[len(self.SEND_BACK):].lstrip(" :").strip()
+        verdict = _first_words(result.summary, 220) if result.summary.strip() else "All clear! It looks good to me."
+        answer = await job.ask("ready", verdict, [self.APPROVE, SEND_BACK], "\n".join(stat.splitlines()[-12:]))
+        if answer and answer.startswith(SEND_BACK):
+            note = answer[len(SEND_BACK) :].lstrip(" :").strip()
             return StepResult("fail", f"The island owner sent it back{': ' + note if note else '.'}")
         if answer:
-            engine._approved.add(job.task.id)
+            engine.approve(job.task.id)
             result.summary += " Approved: the Post Office will merge it."
         else:
             result.summary += " Nobody approved it in time, so the PR will stay open."
@@ -210,11 +217,11 @@ class PostOffice(BuildingHandler):
             "Put the title on the first line, then a blank line, then the description."
         )
 
-    async def run(self, job: AgentJob, runner, engine: "WorkflowEngine") -> StepResult:
+    async def run(self, job: AgentJob, runner: AgentRunner, engine: "WorkflowEngine") -> StepResult:
         result = await runner.run(job)
         if result.outcome != "pass" or not (job.sandbox and job.workdir and job.task.branch):
             return result
-        island = await Island.objects.aget(pk=job.task.island_id)
+        island = job.island
         if not island.repo:
             result.summary += " No GitHub repo linked to this island, so no PR was opened."
             return result
@@ -227,7 +234,7 @@ class PostOffice(BuildingHandler):
         except github.GitHubError as e:
             return StepResult("fail", f"Could not open the PR: {e}")
         task = await engine.set_pr_url(job.task, url)
-        if job.task.id not in engine._approved:
+        if not engine.approved(job.task.id):
             return StepResult("pass", f"Opened {url}")
         await job.report("Merging the pull request")
         try:
@@ -272,25 +279,6 @@ def split_pr_text(text: str, fallback_title: str) -> tuple[str, str]:
     return (title or fallback_title)[:200], body
 
 
-async def run_shell(command: str, cwd: Path, timeout: float) -> tuple[int, str]:
-    """Run a shell command in `cwd`. Returns (exit code, combined output, capped)."""
-    proc = await asyncio.create_subprocess_shell(
-        command, cwd=str(cwd), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
-    )
-    try:
-        raw, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-    except TimeoutError:
-        proc.kill()
-        return 124, "(timed out)"
-    except asyncio.CancelledError:  # the step timed out or the task was cancelled: no orphans
-        proc.kill()
-        raise
-    output = raw.decode(errors="replace")
-    if len(output) > OUTPUT_LIMIT:
-        output = "…" + output[-OUTPUT_LIMIT:]
-    return proc.returncode or 0, output
-
-
 # --- The engine ---------------------------------------------------------------------
 
 
@@ -316,7 +304,7 @@ class WorkflowEngine:
         self,
         bus: events.EventBus,
         bubbles: events.Bubbles,
-        runner,
+        runner: AgentRunner,
         *,
         sandboxes: Sandboxes | None = None,  # None in mock mode: no git at all
         walk_seconds: float = 2.0,
@@ -326,8 +314,8 @@ class WorkflowEngine:
         step_timeout: float = 600.0,
         test_command: str | None = None,
         keep_worktrees: bool = False,
-        git_author: str = "Mii-nagement <mii@localhost>",
-        judge=None,  # judge.RuleJudge (default) or judge.JevJudge: moods, missing verdicts, flaky runs, help
+        git_author: str = DEFAULT_GIT_AUTHOR,
+        judge: RuleJudge | None = None,  # RuleJudge (default) or JevJudge: moods, verdicts, flaky runs, help
     ):
         self.bus = bus
         self.bubbles = bubbles
@@ -354,8 +342,11 @@ class WorkflowEngine:
     async def submit(self, island_id: str, title: str, description: str = "", issue_number: int | None = None) -> Task:
         """Add a task to the queue. It starts at the island's mailbox."""
         task = await Task.objects.acreate(
-            id="t_" + uuid.uuid4().hex[:6], island_id=island_id, title=title,
-            description=description, issue_number=issue_number,
+            id="t_" + uuid.uuid4().hex[:6],
+            island_id=island_id,
+            title=title,
+            description=description,
+            issue_number=issue_number,
         )
         await self._emit(task, events.task(task))
         await self.queue.put(task.id)
@@ -380,6 +371,13 @@ class WorkflowEngine:
             await asyncio.wait([lane.current])
             return await self._get(Task, task_id)
         raise ValueError(f"task {task_id} is already {task.status}")
+
+    def approve(self, task_id: str) -> None:
+        """You (or the `merge_pr` house rule) approved this task's PR: the Post Office merges it."""
+        self._approved.add(task_id)
+
+    def approved(self, task_id: str) -> bool:
+        return task_id in self._approved
 
     def busy_islands(self) -> set[str]:
         """Islands with a package being worked on right now."""
@@ -503,12 +501,20 @@ class WorkflowEngine:
             # 0. Back here again after a failed check? The owner gets one retry of their own; after
             #    that the judge may send a free neighbour to take this turn (never at a check building:
             #    the Lab's tests and the Courthouse's review are the owner's call).
-            if (takeover is None and attempt >= 2 and building.type not in CHECK_TYPES and helps < MAX_HELPS
-                    and await self.judge.needs_help(building, attempt, history[-1] if history else "")):
+            if (
+                takeover is None
+                and attempt >= 2
+                and building.type not in CHECK_STEPS
+                and helps < MAX_HELPS
+                and await self.judge.needs_help(building, attempt, history[-1] if history else "")
+            ):
                 helper = await self._find_helper(task, building, owner, None)
                 if helper is not None:
-                    takeover = (helper, f"The package came back to the {building.name} again. "
-                                        f"{_first_words(history[-1], CHAT_CHARS)} Can you take this one?")
+                    takeover = (
+                        helper,
+                        f"The package came back to the {building.name} again. "
+                        f"{_first_words(history[-1], CHAT_CHARS)} Can you take this one?",
+                    )
             resident, request, helped = owner, None, None
             if takeover is not None:
                 resident, request = takeover
@@ -530,19 +536,22 @@ class WorkflowEngine:
             await self._emit(task, events.task(task))
 
             result, step = await self._run_step(
-                task, building, resident, attempt, history, workdir, sandbox, rules=island.rules,
-                request=request, helped=helped,
+                task, island, building, resident, attempt, history, workdir, sandbox, request=request, helped=helped
             )
             did = f"helped {owner.name} at" if helped else "at"
             history.append(f"{resident.name} {did} the {building.name}: {result.outcome.upper()}. {result.summary}")
             task = await self._get(Task, task.id)  # a handler may have set pr_url
             await self._update_weather(task.island_id)
             if helped:  # the helper reports back (the handoff to them already grew the friendship)
-                await self._emit(task, events.chat(resident.id, owner.id, task.id, _first_words(result.summary, CHAT_CHARS)))
+                await self._emit(
+                    task, events.chat(resident.id, owner.id, task.id, _first_words(result.summary, CHAT_CHARS))
+                )
 
             # 4. React.
-            resident = await self._set_mood(resident, await self.judge.mood(
-                resident, building, result, attempt, step.timed_out, step.bubbles_raised))
+            resident = await self._set_mood(
+                resident,
+                await self.judge.mood(resident, building, result, attempt, step.timed_out, step.bubbles_raised),
+            )
             previous, outcome = resident, result.outcome
 
             # 5. "HELP: ..." in a failed reply: a free neighbour redoes this building (MAX_HELPS per task).
@@ -567,16 +576,33 @@ class WorkflowEngine:
 
     # --- One step ------------------------------------------------------------------
 
-    async def _run_step(self, task, building, resident, attempt, history, workdir, sandbox=None, rules=None,
-                        *, request: str | None = None, helped: str | None = None) -> tuple[StepResult, Step]:
+    async def _run_step(
+        self,
+        task: Task,
+        island: Island,
+        building: Building,
+        resident: Resident,
+        attempt: int,
+        history: list[str],
+        workdir: Path | None,
+        sandbox: Sandbox | None,
+        *,
+        request: str | None = None,
+        helped: str | None = None,
+    ) -> tuple[StepResult, Step]:
         """Run one building visit with a timeout, and record it as a Step row.
 
         `request` + `helped`: this is a help visit; `resident` is the helper, `helped` the
         building's owner, and `request` what was asked (it goes on top of the instructions).
         """
         step = await Step.objects.acreate(
-            island_id=task.island_id, task_id=task.id, building_id=building.id,
-            building_type=building.type, resident_id=resident.id, brain=resident.brain, helped=helped,
+            island_id=task.island_id,
+            task_id=task.id,
+            building_id=building.id,
+            building_type=building.type,
+            resident_id=resident.id,
+            brain=resident.brain,
+            helped=helped,
         )
         bubbles_raised = 0
 
@@ -601,11 +627,23 @@ class WorkflowEngine:
         if request:
             instructions = f"{names.get(helped, 'A neighbour')} asked for your help: {request}\n\n{instructions}"
         job = AgentJob(
-            resident=resident, task=task, building=building, instructions=instructions,
-            ask=ask, report=partial(self._report, task, resident), attempt=attempt,
-            history=list(history), workdir=workdir, sandbox=sandbox, read_only=handler.read_only,
-            rules=rules or {}, notebook=partial(self._set_notebook, resident),
-            messages=messages, notes=resident.notes, neighbours=neighbours,
+            resident=resident,
+            task=task,
+            island=island,
+            building=building,
+            instructions=instructions,
+            ask=ask,
+            report=partial(self._report, task, resident),
+            attempt=attempt,
+            history=list(history),
+            workdir=workdir,
+            sandbox=sandbox,
+            read_only=handler.read_only,
+            rules=island.rules or {},
+            notebook=partial(self._set_notebook, resident),
+            messages=messages,
+            notes=resident.notes,
+            neighbours=neighbours,
             think=partial(self._think, task, resident),
         )
         timed_out = False
@@ -619,20 +657,37 @@ class WorkflowEngine:
             result = await self.judge.verdict(job, result)
         await self._after_step(task, resident, result, everyone)
 
-        step = await self._update(Step, step.id, outcome=result.outcome, summary=result.summary, timed_out=timed_out,
-                                  bubbles_raised=bubbles_raised, flaky=result.flaky, finished_at=utcnow())
+        step = await self._update(
+            Step,
+            step.id,
+            outcome=result.outcome,
+            summary=result.summary,
+            timed_out=timed_out,
+            bubbles_raised=bubbles_raised,
+            flaky=result.flaky,
+            finished_at=utcnow(),
+        )
         return result, step
 
-    async def _messages_for(self, task: Task, resident: Resident, names: dict[str, str], skip: str | None = None) -> list[str]:
+    async def _messages_for(
+        self, task: Task, resident: Resident, names: dict[str, str], skip: str | None = None
+    ) -> list[str]:
         """What neighbours said to this resident on this task since their last step here (`chat`
         events), oldest first. `skip`: a line already in the instructions (a help request)."""
-        chats = Event.objects.filter(island_id=task.island_id, type="chat", payload__task=task.id, payload__to=resident.id)
-        last = await Step.objects.filter(task_id=task.id, resident_id=resident.id, finished_at__isnull=False).order_by("-id").afirst()
+        chats = Event.objects.filter(
+            island_id=task.island_id, type="chat", payload__task=task.id, payload__to=resident.id
+        )
+        last = (
+            await Step.objects.filter(task_id=task.id, resident_id=resident.id, finished_at__isnull=False)
+            .order_by("-id")
+            .afirst()
+        )
         if last is not None:
             chats = chats.filter(created_at__gt=last.finished_at)
         return [
             f"{names.get(e.payload.get('from'), e.payload.get('from'))}: {e.payload.get('text', '')}"
-            async for e in chats.order_by("id") if e.payload.get("text") != skip
+            async for e in chats.order_by("id")
+            if e.payload.get("text") != skip
         ]
 
     async def _after_step(self, task: Task, resident: Resident, result: StepResult, everyone: list[Resident]) -> None:
@@ -662,17 +717,21 @@ class WorkflowEngine:
         so a friendly coder never waves their own work through review.
         """
         others = [
-            r async for r in Resident.objects.filter(island_id=task.island_id, state__in=["idle", "sleeping"])
-            .exclude(pk=asker.id).order_by("id")
+            r
+            async for r in Resident.objects.filter(island_id=task.island_id, state__in=["idle", "sleeping"])
+            .exclude(pk=asker.id)
+            .order_by("id")
         ]
-        if building.type in CHECK_TYPES:
+        if building.type in CHECK_STEPS:
             others = [r for r in others if r.job == asker.job]
         if not others:
             return None
         scores: dict[str, float] = {}
         async for f in Friendship.objects.filter(island_id=task.island_id).filter(Q(a=asker.id) | Q(b=asker.id)):
             scores[f.b if f.a == asker.id else f.a] = f.score
-        request = HelpRequest(asker, building, task, text or f"Can someone take the {building.name} for '{task.title}'?", scores)
+        request = HelpRequest(
+            asker, building, task, text or f"Can someone take the {building.name} for '{task.title}'?", scores
+        )
         return await self.judge.pick_helper(request, others)
 
     # --- Helpers -------------------------------------------------------------------
@@ -740,13 +799,13 @@ class WorkflowEngine:
             await self._set_state(resident, "sleeping")
             await self._set_mood(resident, "tired")
 
-    async def _get(self, model, row_id):
+    async def _get(self, model: type, row_id: str):
         try:
             return await model.objects.aget(pk=row_id)
         except model.DoesNotExist:
             raise KeyError(f"{model.__name__} {row_id} not found")
 
-    async def _update(self, model, row_id, **changes):
+    async def _update(self, model: type, row_id: str, **changes):
         """Change some fields of one row and return the updated row."""
         row = await self._get(model, row_id)
         for name, value in changes.items():

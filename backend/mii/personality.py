@@ -73,10 +73,7 @@ def build_system_prompt(resident) -> str:
         lines.append(f"- {sentences[level(getattr(resident, trait))]}")
 
     if resident.catchphrase:
-        lines.append(
-            f'- Your catchphrase is "{resident.catchphrase}". Use it now and then, '
-            "not in every message."
-        )
+        lines.append(f'- Your catchphrase is "{resident.catchphrase}". Use it now and then, not in every message.')
 
     lines += [
         "",

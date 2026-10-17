@@ -14,8 +14,9 @@ import random
 import httpx
 from django.db import transaction
 
-from mii.islands import SHAPES, STEP_NAMES, STEP_ORDER, default_map
+from mii.island_map import SHAPES, build_roads, default_map
 from mii.models import Building, Event, Island, Resident, Road, Step, Task
+from mii.vocab import STEP_NAMES, STEP_ORDER
 
 ISLAND_ID = "sunny"
 
@@ -26,19 +27,46 @@ def residents() -> list[Resident]:
     # A resident on the `openrouter` brain (any model, no CLI) is added later by the resident creator.
     return [
         Resident(
-            id="jun", island_id="sunny", name="Jun", job="planner", brain="gemini",
-            bluntness=0.3, caution=0.7, chattiness=0.6, creativity=0.5,
-            catchphrase="Let's map it out!", color="#F4A261", building_id="mailbox",
+            id="jun",
+            island_id=ISLAND_ID,
+            name="Jun",
+            job="planner",
+            brain="gemini",
+            bluntness=0.3,
+            caution=0.7,
+            chattiness=0.6,
+            creativity=0.5,
+            catchphrase="Let's map it out!",
+            color="#F4A261",
+            building_id="mailbox",
         ),
         Resident(
-            id="carlos", island_id="sunny", name="Carlos", job="coder", brain="claude-code",
-            bluntness=0.5, caution=0.4, chattiness=0.3, creativity=0.8,
-            catchphrase="Ship it... carefully!", color="#2A9D8F", building_id="workshop",
+            id="carlos",
+            island_id=ISLAND_ID,
+            name="Carlos",
+            job="coder",
+            brain="claude-code",
+            bluntness=0.5,
+            caution=0.4,
+            chattiness=0.3,
+            creativity=0.8,
+            catchphrase="Ship it... carefully!",
+            color="#2A9D8F",
+            building_id="workshop",
         ),
         Resident(
-            id="sydney", island_id="sunny", name="Sydney", job="reviewer", brain="codex",
-            bluntness=0.8, caution=0.8, chattiness=0.4, creativity=0.3,
-            catchphrase="Show me the tests.", color="#9B5DE5", building_id="courthouse",
+            id="sydney",
+            island_id=ISLAND_ID,
+            name="Sydney",
+            job="reviewer",
+            brain="codex",
+            bluntness=0.8,
+            caution=0.8,
+            chattiness=0.4,
+            creativity=0.3,
+            catchphrase="Show me the tests.",
+            color="#9B5DE5",
+            building_id="courthouse",
         ),
     ]
 
@@ -48,22 +76,26 @@ def buildings() -> list[Building]:
     lots = SHAPES["classic"]["lots"]
     who = {"mailbox": "jun", "workshop": "carlos", "lab": "carlos", "courthouse": "sydney", "post_office": "jun"}
     return [
-        Building(id=t, island_id="sunny", type=t, name=STEP_NAMES[t], x=lots[t][0], y=lots[t][1], facing=lots[t][2],
-                 resident_id=who[t])
+        Building(
+            id=t,
+            island_id=ISLAND_ID,
+            type=t,
+            name=STEP_NAMES[t],
+            x=lots[t][0],
+            y=lots[t][1],
+            facing=lots[t][2],
+            resident_id=who[t],
+        )
         for t in STEP_ORDER
     ]
 
 
 def roads() -> list[Road]:
-    rows = [
-        ("mailbox", "workshop", "always"),
-        ("workshop", "lab", "always"),
-        ("lab", "courthouse", "pass"),
-        ("lab", "workshop", "fail"),
-        ("courthouse", "post_office", "pass"),
-        ("courthouse", "workshop", "fail"),
+    """The classic workflow; building ids equal their types on the seed island."""
+    return [
+        Road(island_id=ISLAND_ID, from_building_id=a, to_building_id=b, condition=c)
+        for a, b, c in build_roads(STEP_ORDER)
     ]
-    return [Road(island_id="sunny", from_building_id=a, to_building_id=b, condition=c) for a, b, c in rows]
 
 
 def seed(reset: bool = False) -> str:

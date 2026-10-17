@@ -93,7 +93,13 @@ def test_secrets_live_in_the_keychain_not_the_database(memory_keyring, no_env):
     assert memory_keyring.store[(prefs.SERVICE, "openrouter_api_key")] == "sk-or-abc"
     assert Setting.objects.count() == 0
     snap = prefs.snapshot()
-    assert snap["secrets"] == {"openrouter_api_key": True, "typesafe_api_key": False, "anthropic_api_key": True, "openai_api_key": False, "gemini_api_key": False}
+    assert snap["secrets"] == {
+        "openrouter_api_key": True,
+        "typesafe_api_key": False,
+        "anthropic_api_key": True,
+        "openai_api_key": False,
+        "gemini_api_key": False,
+    }
     assert "sk-" not in json.dumps(snap)  # never echoed
     assert prefs.secrets_env() == {"ANTHROPIC_API_KEY": "sk-ant-1"}  # OpenRouter's key stays with the backend
     prefs.set_secret("openrouter_api_key", None)

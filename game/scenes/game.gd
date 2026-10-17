@@ -1,3 +1,4 @@
+class_name Game
 extends Control
 ## The main screen: top bar, the 3D island in a rounded frame, the bottom nav,
 ## and the Bubbles sidebar.
@@ -14,7 +15,7 @@ extends Control
 ## normal 2D UI instead of filling the whole window.
 ##
 ## The day pill and weather pill follow the Clock autoload (real time, the
-## island's founding day); 3D lighting follows it too (scenes/day_night.gd).
+## island's founding day); 3D lighting follows it too (scenes/island/day_night.gd).
 ##
 ## Click a building (or its name pill) and the camera glides to it while a
 ## BuildingPanel opens: the Mailbox lists open issues and sends new ones ("Send
@@ -27,12 +28,15 @@ const BuildingLabelScene := preload("res://scenes/ui/building_label.tscn")
 
 const SUN_ICON := preload("res://assets/icons/sun.svg")
 const MOON_ICON := preload("res://assets/icons/moon.svg")
+const CLOUD_ICON := preload("res://assets/icons/cloud.svg")
+const RAIN_ICON := preload("res://assets/icons/cloud-rain.svg")
 ## Weather kind (Clock.WEATHER) -> [day icon, night icon, color, night name].
 const WEATHER_LOOKS := {
 	"sunny": [SUN_ICON, MOON_ICON, Color("F2B33D"), "Clear"],
-	"partly_cloudy": [preload("res://assets/icons/cloud-sun.svg"), preload("res://assets/icons/cloud-moon.svg"), Color("F2B33D"), ""],
-	"cloudy": [preload("res://assets/icons/cloud.svg"), preload("res://assets/icons/cloud.svg"), Color("8C9EB5"), ""],
-	"rainy": [preload("res://assets/icons/cloud-rain.svg"), preload("res://assets/icons/cloud-rain.svg"), Color("4E9BE6"), ""],
+	"partly_cloudy":
+	[preload("res://assets/icons/cloud-sun.svg"), preload("res://assets/icons/cloud-moon.svg"), Color("F2B33D"), ""],
+	"cloudy": [CLOUD_ICON, CLOUD_ICON, Color("8C9EB5"), ""],
+	"rainy": [RAIN_ICON, RAIN_ICON, Color("4E9BE6"), ""],
 }
 const NIGHT_COLOR := Color("8E9BF0")
 
@@ -41,16 +45,6 @@ const NIGHT_COLOR := Color("8E9BF0")
 const FOCUS_ZOOM := 1.35
 const FOCUS_SHIFT := -0.36
 
-@onready var island: Node3D = %Island3D
-@onready var island_builder: IslandBuilder = %Island3D.get_node("Island")
-@onready var rig: CameraRig = %Island3D.get_node("CameraRig")
-@onready var labels_root: Control = %Labels
-@onready var residents_screen: ResidentsScreen = %ResidentsScreen
-@onready var creator: ResidentCreator = %ResidentCreator
-@onready var insights: InsightsScreen = %InsightsScreen
-@onready var news: NewsScreen = %NewsScreen
-@onready var home: Home = %Home
-@onready var island_creator: IslandCreator = %IslandCreator
 var dropdown := IslandDropdown.new()
 var building_panel := BuildingPanel.new()
 var picker: BuildingPicker
@@ -63,7 +57,6 @@ var toast := Toast.new()  # server errors no screen handled itself
 var screen := "island"
 ## True while the creator waits for the server to accept a resident.
 var _saving_resident := false
-var _saving_look := false  # the resident being saved carries an appearance
 ## The resident the creator asked to move away, until the server answers.
 var _removing_resident := ""
 ## The resident creator is making a draft for the island creator (not sent yet),
@@ -74,8 +67,19 @@ var _draft_index := -1
 var _move_in_island := ""
 var _move_in: Array = []
 var _labels := {}  # building type -> BuildingLabel
-var _layout_key := ""
-var _dev_pill: Control  # the debug-only time slider (hidden while building)  # what the 3D island was last built from
+var _layout_key := ""  # what the 3D island was last built from
+var _dev_pill: Control  # the debug-only time slider (hidden while building)
+
+@onready var island: Node3D = %Island3D
+@onready var island_builder: IslandBuilder = %Island3D.get_node("Island")
+@onready var rig: CameraRig = %Island3D.get_node("CameraRig")
+@onready var labels_root: Control = %Labels
+@onready var residents_screen: ResidentsScreen = %ResidentsScreen
+@onready var creator: ResidentCreator = %ResidentCreator
+@onready var insights: InsightsScreen = %InsightsScreen
+@onready var news: NewsScreen = %NewsScreen
+@onready var home: Home = %Home
+@onready var island_creator: IslandCreator = %IslandCreator
 
 
 func _ready() -> void:
@@ -89,17 +93,23 @@ func _ready() -> void:
 
 	# Clicking buildings on the island (see building_picker.gd and camera_rig.gd).
 	picker = BuildingPicker.new(island_builder.buildings, rig.camera)
-	rig.clicked.connect(func(at: Vector2):
-		if build_mode.is_open:
-			return  # build mode handles its own clicks
-		var type := BuildingData.type_of_node(picker.building_at(at))
-		if type:
-			open_building(type))
-	rig.hovered.connect(func(at: Vector2):
-		if build_mode.is_open:
-			return
-		var container := rig.get_viewport().get_parent() as Control  # the SubViewportContainer
-		container.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND if picker.building_at(at) else Control.CURSOR_ARROW)
+	rig.clicked.connect(
+		func(at: Vector2):
+			if build_mode.is_open:
+				return  # build mode handles its own clicks
+			var type := BuildingData.type_of_node(picker.building_at(at))
+			if type:
+				open_building(type)
+	)
+	rig.hovered.connect(
+		func(at: Vector2):
+			if build_mode.is_open:
+				return
+			var container := rig.get_viewport().get_parent() as Control  # the SubViewportContainer
+			container.mouse_default_cursor_shape = (
+				Control.CURSOR_POINTING_HAND if picker.building_at(at) else Control.CURSOR_ARROW
+			)
+	)
 
 	%ZoomIn.pressed.connect(func(): rig.zoom_by(CameraRig.ZOOM_STEP))
 	%ZoomOut.pressed.connect(func(): rig.zoom_by(-CameraRig.ZOOM_STEP))
@@ -127,11 +137,13 @@ func _ready() -> void:
 	home.settings_requested.connect(settings_popup.open)
 	add_child(settings_popup)
 	island_creator.closed.connect(show_screen.bind("home"))
-	island_creator.resident_requested.connect(func(resident: Dictionary, index: int):
-		_drafting = true
-		_draft_index = index
-		creator.open(resident, island_creator.island_name(), false)
-		show_screen("creator"))
+	island_creator.resident_requested.connect(
+		func(resident: Dictionary, index: int):
+			_drafting = true
+			_draft_index = index
+			creator.open(resident, island_creator.island_name(), false)
+			show_screen("creator")
+	)
 	island_creator.founded.connect(_on_island_founded)
 	Net.snapshot_received.connect(_move_residents_in)
 	add_child(dropdown)
@@ -139,21 +151,27 @@ func _ready() -> void:
 	dropdown.go_home.connect(show_screen.bind("home"))
 	dropdown.new_island.connect(_open_island_creator)
 	%SendPackage.pressed.connect(open_building.bind("mailbox", true))
-	%IslandSelector.gui_input.connect(func(event: InputEvent):
-		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-			dropdown.open_below(%IslandSelector))
+	%IslandSelector.gui_input.connect(
+		func(event: InputEvent):
+			if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+				dropdown.open_below(%IslandSelector)
+	)
 	residents_screen.new_resident_requested.connect(_open_creator)
 	residents_screen.edit_requested.connect(_open_creator)
 	residents_screen.action_requested.connect(_on_card_action)
 	creator.cancelled.connect(func(): show_screen("island_creator" if _drafting else "residents"))
 	creator.saved.connect(_save_resident)
-	creator.move_away_requested.connect(func(id: String):
-		if Net.send_delete_resident(id):
-			_removing_resident = id)
-	Net.resident_removed.connect(func(id: String):
-		if id == _removing_resident:
-			_removing_resident = ""
-			show_screen("residents"))
+	creator.move_away_requested.connect(
+		func(id: String):
+			if Net.send_delete_resident(id):
+				_removing_resident = id
+	)
+	Net.resident_removed.connect(
+		func(id: String):
+			if id == _removing_resident:
+				_removing_resident = ""
+				show_screen("residents")
+	)
 	dropdown.abandoned.connect(_on_island_abandoned)
 	dropdown.failed.connect(toast.show_message)
 
@@ -215,7 +233,6 @@ func _save_resident(resident: Dictionary) -> void:
 		return
 	if Net.send_resident(resident):
 		_saving_resident = true
-		_saving_look = resident.has("appearance")
 		return
 	if not resident.has("id"):
 		resident["id"] = "local_%d" % Time.get_ticks_msec()
@@ -229,11 +246,6 @@ func _on_resident_updated(resident: Dictionary) -> void:
 		residents_screen.add_or_update(resident)  # offline: Net.island doesn't have it
 	if _saving_resident:
 		_saving_resident = false
-		# A backend older than the Look page drops `appearance` without a word.
-		# Say so, instead of quietly showing the old look.
-		if _saving_look and not resident.has("appearance"):
-			creator.show_error("the backend didn't keep the look. Restart it so it picks up the new appearance field (it updates its database at startup).")
-			return
 		show_screen("residents")
 
 
@@ -252,8 +264,13 @@ func _on_server_error(message: String) -> void:
 ## island (Net needs one to watch) and show the Archipelago.
 func _on_island_abandoned(id: String, repo_path: String) -> void:
 	var island_name := str(Islands.find(id).get("name", id))
-	toast.show_message("%s was abandoned. Its git repository stays on disk (…/%s)." % [island_name, repo_path.get_file()] if repo_path
-		else "%s was abandoned." % island_name)
+	toast.show_message(
+		(
+			"%s was abandoned. Its git repository stays on disk (…/%s)." % [island_name, repo_path.get_file()]
+			if repo_path
+			else "%s was abandoned." % island_name
+		)
+	)
 	if id != str(Net.island.get("id", "")):
 		return
 	for island in Islands.islands:
@@ -288,8 +305,13 @@ func _show_island() -> void:
 
 	# Rebuild the 3D island when its layout or buildings changed (build mode, or
 	# another island). Other events (moods, tasks...) leave it alone.
-	var key := JSON.stringify([data.get("id"), data.get("map"), data.get("buildings", []).map(
-		func(b): return [b["type"], b.get("x"), b.get("y"), b.get("facing")])])
+	var key := JSON.stringify(
+		[
+			data.get("id"),
+			data.get("map"),
+			data.get("buildings", []).map(func(b): return [b["type"], b.get("x"), b.get("y"), b.get("facing")])
+		]
+	)
 	if key != _layout_key:
 		_layout_key = key
 		island_builder.build(IslandLayout.from_snapshot(data))
@@ -318,9 +340,12 @@ func _show_resident_summary(residents: Array) -> void:
 ## The back button: creator -> Residents, island -> archipelago, others -> island.
 func _go_back() -> void:
 	match screen:
-		"creator": show_screen("island_creator" if _drafting else "residents")
-		"island": show_screen("home")
-		_: show_screen("island")
+		"creator":
+			show_screen("island_creator" if _drafting else "residents")
+		"island":
+			show_screen("home")
+		_:
+			show_screen("island")
 
 
 ## Open a building's panel ("mailbox", "lab", ...) and glide the camera to it.
@@ -479,6 +504,8 @@ func _add_dev_time_slider() -> void:
 	row.add_child(live)
 
 	slider.value_changed.connect(func(value: float): Clock.dev_hour = value)
-	live.pressed.connect(func():
-		Clock.dev_hour = -1.0
-		slider.set_value_no_signal(Clock.hour()))
+	live.pressed.connect(
+		func():
+			Clock.dev_hour = -1.0
+			slider.set_value_no_signal(Clock.hour())
+	)

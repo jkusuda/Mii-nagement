@@ -11,29 +11,23 @@ import re
 import uuid
 
 from asgiref.sync import sync_to_async
-
-from mii.agents.acp import BRAINS, GIFTS
-from mii.layout import LayoutError, assign_buildings
 from django.db.models import Q
 
+from mii.agents.acp import GIFTS
+from mii.layout import LayoutError, assign_buildings
 from mii.models import DEFAULT_KEYS, Building, Friendship, Resident
 from mii.personality import JOBS
+from mii.vocab import BRAIN_NAMES, JOB_BUILDINGS
 
-# The building types each job works in (as in the seed island), first = home.
-JOB_BUILDINGS = {"planner": ["mailbox", "post_office"], "coder": ["workshop", "lab"], "reviewer": ["courthouse"]}
 SLIDERS = ("bluntness", "caution", "chattiness", "creativity")
 KEY_VALUES = ("yes", "ask", "no")
-MAX_NAME = 20
+MAX_RESIDENT_NAME = 20
 MAX_APPEARANCE_KEYS = 24
 HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 
 class ResidentError(ValueError):
     """The client sent something we can't use. The message goes back as an `error` event."""
-
-
-def known_brains() -> set[str]:
-    return {"mock", "openrouter", *BRAINS}
 
 
 def clean_fields(data: dict, partial: bool) -> dict:
@@ -44,15 +38,15 @@ def clean_fields(data: dict, partial: bool) -> dict:
     out: dict = {}
     if "name" in data or not partial:
         name = str(data.get("name", "")).strip()
-        if not 1 <= len(name) <= MAX_NAME:
-            raise ResidentError(f"name must be 1-{MAX_NAME} characters")
+        if not 1 <= len(name) <= MAX_RESIDENT_NAME:
+            raise ResidentError(f"name must be 1-{MAX_RESIDENT_NAME} characters")
         out["name"] = name
     if "job" in data:
         if str(data["job"]) not in JOBS:
             raise ResidentError(f"unknown job: {data['job']}")
         out["job"] = data["job"]
     if "brain" in data:
-        if str(data["brain"]) not in known_brains():
+        if str(data["brain"]) not in BRAIN_NAMES:
             raise ResidentError(f"unknown brain: {data['brain']}")
         out["brain"] = data["brain"]
     if "model" in data:

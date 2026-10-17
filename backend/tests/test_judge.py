@@ -4,7 +4,6 @@ import json
 import logging
 
 import httpx
-import pytest
 from conftest import make_job
 
 from mii import judge
@@ -46,7 +45,12 @@ async def test_rule_judge_needs_help_from_the_third_visit():
 
 async def test_rule_judge_picks_the_fitting_job_then_the_best_friend():
     rules = RuleJudge()
-    carlos, jun, sydney, mo = resident("carlos", "coder"), resident("jun", "planner"), resident("sydney", "reviewer"), resident("mo", "coder")
+    carlos, jun, sydney, mo = (
+        resident("carlos", "coder"),
+        resident("jun", "planner"),
+        resident("sydney", "reviewer"),
+        resident("mo", "coder"),
+    )
     assert await rules.pick_helper(request(carlos, "lab"), [jun, sydney, mo]) is mo  # a coder for the Lab
     friends = {"jun": 0.2, "sydney": 0.6}
     assert await rules.pick_helper(request(carlos, "lab", friends), [jun, sydney]) is sydney  # else the best friend
@@ -90,7 +94,9 @@ async def test_jev_judge_asks_typesafe_and_reads_the_answers():
 
     j, seen = jev({"tip": {"type": "choice", "choice": "lab"}})
     assert await j.tip({"tasks_done": 3}, {"bouncy": "A", "lab": "B", "steady": "C"}) == "B"
-    assert await j.tip({"tasks_done": 0}, {"quiet": "only one"}) == "only one" and len(seen) == 1  # no call for one candidate
+    assert (
+        await j.tip({"tasks_done": 0}, {"quiet": "only one"}) == "only one" and len(seen) == 1
+    )  # no call for one candidate
 
     j, seen = jev({"help": {"type": "noul", "noul": 0.8}})
     assert await j.needs_help(job.building, 2, "Carlos at the Lab: FAIL. 3 tests red")
@@ -119,7 +125,14 @@ async def test_jev_judge_falls_back_to_the_rules(caplog):
         j4, _ = jev(status=429)
         assert await j4.needs_help(job.building, 2, "x") is False
     assert [r for r in caplog.records if r.levelno == logging.WARNING and r.name == "mii.judge"]
-    assert sum(1 for r in caplog.records if r.levelno == logging.WARNING and "Jev is unavailable" in r.message and r.name == "mii.judge") == 3
+    assert (
+        sum(
+            1
+            for r in caplog.records
+            if r.levelno == logging.WARNING and "Jev is unavailable" in r.message and r.name == "mii.judge"
+        )
+        == 3
+    )
     # ... one per judge instance (j, j2, j4); the second failure of the same judge is only logged at DEBUG
     j5, _ = jev(status=500)
     caplog.clear()

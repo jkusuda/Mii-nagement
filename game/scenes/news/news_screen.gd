@@ -27,8 +27,10 @@ const MAX_FEED := 40
 const FILTERS := [["all", "Everything"], ["shipped", "Shipped"], ["packages", "Packages"], ["residents", "Residents"]]
 ## [insights field, label, card color]
 const WEEK := [
-	["prs_opened", "PRs opened", "FBF3CF"], ["prs_merged", "PRs merged", "E3F5EC"],
-	["bubbles_answered", "Bubbles answered", "EEEAFE"], ["keys_lent", "Keys lent", "FFF0DD"],
+	["prs_opened", "PRs opened", "FBF3CF"],
+	["prs_merged", "PRs merged", "E3F5EC"],
+	["bubbles_answered", "Bubbles answered", "EEEAFE"],
+	["keys_lent", "Keys lent", "FFF0DD"],
 ]
 const WEEKDAYS := ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 const REPLAY_SPEED := 4  # recorded runs play back this many times faster
@@ -42,30 +44,33 @@ var _last_seen := 0.0
 var _last_opened_day := ""
 var _week := {}  # the insights `island` section
 var _week_values := {}  # field -> value Label
-var _history := HTTPRequest.new()
-var _week_http := HTTPRequest.new()
+var _history_request := 0  # only the latest GET .../events reply counts
+var _week_request := 0  # same, for GET .../insights?range=week
 
 
 func _ready() -> void:
 	_load_settings()
-	add_child(_history)
-	add_child(_week_http)
-	_history.request_completed.connect(_on_history)
-	_week_http.request_completed.connect(_on_week)
 	_build_filters()
 	_build_week()
 
 	Net.event_received.connect(_on_event)
-	Net.snapshot_received.connect(func(island: Dictionary):
-		if island.get("id") != _island_id:  # another island: start a fresh paper
-			_island_id = str(island.get("id"))
-			_desk = NewsStories.new()
-			_live_events.clear()
-			_week = {}
-		_desk.know_residents(island.get("residents", []))
-		_history.cancel_request()
-		_history.request(Net.http_url("/islands/%s/events?limit=200" % island["id"])))
-	visibility_changed.connect(func(): if visible: _opened())
+	Net.snapshot_received.connect(
+		func(island: Dictionary):
+			if island.get("id") != _island_id:  # another island: start a fresh paper
+				_island_id = str(island.get("id"))
+				_desk = NewsStories.new()
+				_live_events.clear()
+				_week = {}
+			_desk.know_residents(island.get("residents", []))
+			_history_request += 1
+			var path := "/islands/%s/events?limit=200" % str(island["id"]).uri_encode()
+			Net.request_json(path, _on_history.bind(_history_request))
+	)
+	visibility_changed.connect(
+		func():
+			if visible:
+				_opened()
+	)
 	%GitHubLink.pressed.connect(func(): OS.shell_open(str(%GitHubLink.get_meta("url", ""))))
 	%Digest.button_pressed = _digest_on()
 	%Digest.toggled.connect(func(on: bool): _save("digest", on))
@@ -97,10 +102,9 @@ func _on_event(event: Dictionary) -> void:
 
 
 ## Older events from the backend: rebuild the paper from them plus this session's.
-func _on_history(result: int, code: int, _headers, body: PackedByteArray) -> void:
-	var data = JSON.parse_string(body.get_string_from_utf8()) if code == 200 else null
-	if result != HTTPRequest.RESULT_SUCCESS or typeof(data) != TYPE_DICTIONARY:
-		return  # backend unreachable: keep the live-only paper
+func _on_history(ok: bool, data: Dictionary, asked: int) -> void:
+	if not ok or asked != _history_request:
+		return  # backend unreachable (keep the live-only paper), or an older island's reply
 	var desk := NewsStories.new()
 	for event in data.get("events", []):
 		desk.add(event)
@@ -114,9 +118,10 @@ func _on_history(result: int, code: int, _headers, body: PackedByteArray) -> voi
 		_show()
 
 
-func _on_week(_result: int, code: int, _headers, body: PackedByteArray) -> void:
-	var data = JSON.parse_string(body.get_string_from_utf8()) if code == 200 else null
-	_week = data.get("island", {}) if typeof(data) == TYPE_DICTIONARY else {}
+func _on_week(ok: bool, data: Dictionary, asked: int) -> void:
+	if asked != _week_request:
+		return
+	_week = data.get("island", {}) if ok else {}
 	_show_week()
 
 
@@ -124,8 +129,9 @@ func _opened() -> void:
 	_mark_seen()
 	_save("opened_day", NewsStories.local_day(Time.get_unix_time_from_system()))
 	if not Net.island.is_empty():
-		_week_http.cancel_request()
-		_week_http.request(Net.http_url("/islands/%s/insights?range=week" % Net.island["id"]))
+		_week_request += 1
+		var path := "/islands/%s/insights?range=week" % str(Net.island["id"]).uri_encode()
+		Net.request_json(path, _on_week.bind(_week_request))
 	_show()
 
 
@@ -137,14 +143,21 @@ func _mark_seen() -> void:
 
 # --- Drawing -------------------------------------------------------------------
 
+
 func _show() -> void:
 	var island := str(Net.island.get("name", "Island"))
 	var now := Time.get_unix_time_from_system()
 	var today := NewsStories.local_day(now)
 	var todays := _desk.stories.filter(func(s): return NewsStories.local_day(s["when"]) == today)
 	%Title.text = "The %s Gazette" % island
-	%Edition.text = "%s edition · %d stor%s today" % [
-		WEEKDAYS[Time.get_datetime_dict_from_system()["weekday"]], todays.size(), "y" if todays.size() == 1 else "ies"]
+	%Edition.text = (
+		"%s edition · %d stor%s today"
+		% [
+			WEEKDAYS[Time.get_datetime_dict_from_system()["weekday"]],
+			todays.size(),
+			"y" if todays.size() == 1 else "ies"
+		]
+	)
 	_show_headline(island)
 	_show_feed(todays)
 	_show_week()
@@ -164,8 +177,10 @@ func _show_headline(island: String) -> void:
 		%Kicker.text = "HEADLINE · %s" % ("JUST SHIPPED" if ago == "just now" else "SHIPPED " + ago.to_upper())
 		%HeadlineTitle.text = "“%s” is done" % story.get("title", "A package")
 		var who := str(Net.find_resident(story["agent"]).get("name", ""))
-		%HeadlineBody.text = ("Delivered by %s." % who if who else "Delivered.") + \
-			(" The pull request is waiting on GitHub." if story.has("pr_url") else "")
+		%HeadlineBody.text = (
+			("Delivered by %s." % who if who else "Delivered.")
+			+ (" The pull request is waiting on GitHub." if story.has("pr_url") else "")
+		)
 		if story.has("pr_url"):
 			%GitHubLink.set_meta("url", story["pr_url"])
 	else:
@@ -184,8 +199,11 @@ func _show_feed(todays: Array) -> void:
 	list = list.filter(func(s): return _filter == "all" or s["section"] == _filter)
 	list.reverse()  # newest first
 	%FeedEmpty.visible = list.is_empty()
-	%FeedEmpty.text = "Nothing yet today. Stories show up here as residents work." if _filter == "all" \
+	%FeedEmpty.text = (
+		"Nothing yet today. Stories show up here as residents work."
+		if _filter == "all"
 		else "No %s stories yet." % _filter
+	)
 	for story in list.slice(0, MAX_FEED):
 		%Feed.add_child(_story_row(story))
 
@@ -197,7 +215,7 @@ func _story_row(story: Dictionary) -> Control:
 	row.custom_minimum_size.y = 40
 	row.add_theme_constant_override("separation", 12)
 
-	var time := _label(NewsStories.clock(story["when"]), 11, false)
+	var time := UI.label(NewsStories.clock(story["when"]), 11, false)
 	time.custom_minimum_size.x = 38
 	var resident := Net.find_resident(story["agent"])
 	var color := Color(str(resident.get("color", "#8A8FA8")))
@@ -208,17 +226,17 @@ func _story_row(story: Dictionary) -> Control:
 	circle.bg_color = color.lerp(Color.WHITE, 0.75)
 	circle.set_corner_radius_all(13)
 	avatar.add_theme_stylebox_override("panel", circle)
-	var initial := _label(str(resident.get("name", "•")).left(1), 13, true)
+	var initial := UI.label(str(resident.get("name", "•")).left(1), 13, true)
 	initial.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	initial.add_theme_color_override("font_color", color.darkened(0.2))
 	avatar.add_child(initial)
 
-	var text := _label(story["text"], 13, true)
+	var text := UI.label(story["text"], 13, true)
 	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	text.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	text.tooltip_text = story["text"]
 	text.mouse_filter = Control.MOUSE_FILTER_PASS
-	var tag := _label(story["tag"], 12, true)
+	var tag := UI.label(story["tag"], 12, true)
 	tag.add_theme_color_override("font_color", story["color"])
 
 	var parts: Array[Control] = [time, avatar, text, tag]
@@ -242,15 +260,21 @@ func _replay_button(task_id: String) -> Button:
 	button.theme_type_variation = &"FlatIconButton"
 	button.focus_mode = Control.FOCUS_NONE
 	button.tooltip_text = "Replay this package's run on the island (%dx speed, nothing is redone)" % REPLAY_SPEED
-	button.pressed.connect(func():
-		button.disabled = true
-		# The backend answers when the replay is over; the events stream in meanwhile.
-		Net.request_json("/replay/%s?speed=%d" % [task_id.uri_encode(), REPLAY_SPEED], func(ok: bool, data: Dictionary):
-			if is_instance_valid(button):
-				button.disabled = false
-			if not ok:
-				push_warning("Replay failed: %s" % data["error"]), HTTPClient.METHOD_POST)
-		replay_started.emit())
+	button.pressed.connect(
+		func():
+			button.disabled = true
+			# The backend answers when the replay is over; the events stream in meanwhile.
+			Net.request_json(
+				"/replay/%s?speed=%d" % [task_id.uri_encode(), REPLAY_SPEED],
+				func(ok: bool, data: Dictionary):
+					if is_instance_valid(button):
+						button.disabled = false
+					if not ok:
+						push_warning("Replay failed: %s" % data["error"]),
+				HTTPClient.METHOD_POST
+			)
+			replay_started.emit()
+	)
 	return button
 
 
@@ -271,17 +295,20 @@ func _ago(when: float) -> String:
 
 # --- Building the controls -----------------------------------------------------
 
+
 func _build_filters() -> void:
 	for f in FILTERS:
 		var chip := Button.new()
 		chip.text = f[1]
 		chip.focus_mode = Control.FOCUS_NONE
 		chip.set_meta("filter", f[0])
-		chip.pressed.connect(func():
-			_filter = f[0]
-			for c in %Filters.get_children():
-				c.theme_type_variation = &"FilterChipActive" if c.get_meta("filter") == _filter else &"FilterChip"
-			_show())
+		chip.pressed.connect(
+			func():
+				_filter = f[0]
+				for c in %Filters.get_children():
+					c.theme_type_variation = &"FilterChipActive" if c.get_meta("filter") == _filter else &"FilterChip"
+				_show()
+		)
 		chip.theme_type_variation = &"FilterChipActive" if f[0] == _filter else &"FilterChip"
 		%Filters.add_child(chip)
 
@@ -301,7 +328,7 @@ func _build_week() -> void:
 		value.theme_type_variation = &"StatValue"
 		value.add_theme_font_size_override("font_size", 26)
 		value.text = "—"
-		var label := _label(w[1], 12, false)
+		var label := UI.label(w[1], 12, false)
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		label.custom_minimum_size.x = 1
 		rows.add_child(value)
@@ -311,17 +338,10 @@ func _build_week() -> void:
 		_week_values[w[0]] = value
 
 
-func _label(text: String, size: int, strong: bool) -> Label:
-	var label := Label.new()
-	label.text = text
-	label.theme_type_variation = &"LabelStrong" if strong else &"LabelMuted"
-	label.add_theme_font_size_override("font_size", size)
-	return label
-
-
 # --- Settings (user://news.cfg) ------------------------------------------------
 # Godot concept: user:// is a per-user folder Godot gives every game for saves
 # and settings. ConfigFile reads and writes simple INI-style files.
+
 
 func _load_settings() -> void:
 	var config := ConfigFile.new()

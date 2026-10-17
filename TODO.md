@@ -3,8 +3,7 @@
 Code TODOs use `TODO(mvp)` / `TODO(stretch)`. To list them:
 
 ```bash
-grep -rn "TODO(mvp)" backend/mii game/net.gd game/scenes
-grep -rn "TODO(stretch)" backend/mii game/net.gd game/scenes
+grep -rn "TODO(" backend/mii game --include="*.py" --include="*.gd"
 ```
 
 ## ✅ Skeleton (boilerplate)
@@ -63,11 +62,12 @@ Backend design: [docs/architecture.md](docs/architecture.md).
       rules) + the `island` event; `GET /islands/{id}/issues` to start a task from a GitHub issue;
       `GET /meta` so the game stops hard-coding backend lists; `weather` in the snapshot and as an
       event; `activity`, `appearance` and bubble `asked_at` in the snapshot; `request_id` on errors.
-- [ ] **Game: use them**: island settings (rename / link repo), issue picker in the Mailbox, read
-      `/meta` instead of `ResidentData` constants, show the backend `weather`, send `appearance`.
-- [ ] **Build mode**: place the 5 building types and draw pass/fail roads.
-      Backend done: `set_layout` / `PUT /islands/{id}/layout` + the `layout` event (protocol.md).
-      The game still needs the editing UI.
+- [x] **Game: weather and looks**: the backend `weather` drives the weather pill; the creator
+      sends `appearance`.
+- [ ] **Game: use them**: island settings (rename / link repo through `PATCH /islands/{id}`),
+      issue picker in the Mailbox, read `/meta` instead of the `ResidentData` / `Protocol` constants.
+- [x] **Build mode**: land, lots, plants, steps, pond and season (`build_mode.gd`), saved with
+      `PUT /islands/{id}/layout` + a map. Roads follow the steps (`island_map.build_roads`).
 
 ## 🌈 Stretch
 
@@ -79,7 +79,8 @@ Backend design: [docs/architecture.md](docs/architecture.md).
 - [x] Archipelago home screen + island switcher (GET /islands, per-island events)
 - [x] Island creator: name, repo (via gh), branch, town plan, residents, house rules;
       every island gets its own git repository (`islands.py`)
-- [ ] Island looks (seasons), Caretaker
+- [x] Island looks (seasons: picked in build mode or the island creator)
+- [ ] Caretaker (the home screen's button is a placeholder)
 - [x] ACP runner honours island `branch` (worktrees + PRs) and house `rules` (`shell`, `install_packages`)
 - [ ] "Celebrating" island status (the events endpoint exists now; game side to do)
 - [x] Islands work in parallel (one package at a time per island)

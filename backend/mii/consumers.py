@@ -13,10 +13,10 @@ from channels.generic.websocket import AsyncJsonWebsocketConsumer
 
 from mii import events, islands, layout, residents, tasks
 from mii.models import Island, island_layout, island_snapshot
-from mii.runtime import get_runtime
+from mii.runtime import Runtime, get_runtime
 
 
-async def handle_message(runtime, island_id: str, message) -> dict | None:
+async def handle_message(runtime: Runtime, island_id: str, message: object) -> dict | None:
     """Client -> server messages (docs/protocol.md). Unknown types are ignored.
 
     Returns an `error` event for the sender only, or None. Anything every client
@@ -31,7 +31,7 @@ async def handle_message(runtime, island_id: str, message) -> dict | None:
     return reply
 
 
-async def _handle(runtime, island_id: str, message: dict) -> dict | None:
+async def _handle(runtime: Runtime, island_id: str, message: dict) -> dict | None:
     kind = message.get("type")
     if kind == "answer_bubble":
         bubble_id = str(message.get("id", ""))
@@ -57,9 +57,11 @@ async def _handle(runtime, island_id: str, message: dict) -> dict | None:
             return events.error(str(e))
         await runtime.bus.emit(island_id, events.resident_removed(resident_id))
     elif kind == "create_task":
-        island = await Island.objects.aget(pk=island_id)
         try:
+            island = await Island.objects.aget(pk=island_id)
             await tasks.submit_task(runtime.workflow, island, message.get("task"))  # emits the `task` event
+        except Island.DoesNotExist:
+            return events.error(f"no island {island_id!r}")
         except tasks.TaskError as e:
             return events.error(str(e))
     elif kind == "cancel_task":
@@ -83,6 +85,8 @@ async def _handle(runtime, island_id: str, message: dict) -> dict | None:
             return events.error("update_island needs an `island` object")
         try:
             island = await asyncio.to_thread(islands.update_island, island_id, data)
+        except Island.DoesNotExist:
+            return events.error(f"no island {island_id!r}")
         except islands.IslandError as e:
             return events.error(str(e))
         await runtime.bus.emit(island_id, events.island(island))
@@ -107,19 +111,18 @@ class IslandConsumer(AsyncJsonWebsocketConsumer):
             await self.close()
             return
         self.island_id = island_id
-        snapshot["mock_agents"] = runtime.mock_agents
-        await self.send_json({"type": "snapshot", "island": snapshot})
+        await self.send_json(events.snapshot(snapshot, runtime.mock_agents))
         runtime.bus.add_client(self, island_id)  # only this island's events
 
-    async def disconnect(self, code) -> None:
+    async def disconnect(self, code: int) -> None:
         get_runtime().bus.remove_client(self)
 
-    async def receive_json(self, message, **kwargs) -> None:
+    async def receive_json(self, message: object, **kwargs: object) -> None:
         reply = await handle_message(get_runtime(), self.island_id, message)
         if reply is not None:
             await self.send_json(reply)
 
-    async def decode_json(self, text_data):
+    async def decode_json(self, text_data: str) -> object:
         try:
             return await super().decode_json(text_data)
         except ValueError:

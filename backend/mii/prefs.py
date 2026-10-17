@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import stat
+from contextlib import suppress
 from pathlib import Path
 
 import keyring
@@ -149,10 +150,8 @@ def set_secret(name: str, value: str | None) -> None:
     value = (value or "").strip() or None
     try:
         if value is None:
-            try:
+            with suppress(keyring.errors.PasswordDeleteError):
                 keyring.delete_password(SERVICE, name)
-            except keyring.errors.PasswordDeleteError:
-                pass
         else:
             keyring.set_password(SERVICE, name, value)
     except keyring.errors.KeyringError:
@@ -186,7 +185,5 @@ def _file_secrets() -> dict:
 
 def _write_file_secrets(secrets: dict) -> None:
     SECRETS_FILE.write_text(json.dumps(secrets))
-    try:
+    with suppress(OSError):
         SECRETS_FILE.chmod(stat.S_IRUSR | stat.S_IWUSR)  # owner only
-    except OSError:
-        pass

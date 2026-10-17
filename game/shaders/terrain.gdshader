@@ -6,7 +6,7 @@
 // pixel's world position to decide its color, so the colors line up exactly
 // with the shapes the mesh was built from.
 //
-// Seasons (scenes/seasons.gd) change the grass colors and the snow.
+// Seasons (scenes/island/seasons.gd) change the grass colors and the snow.
 
 shader_type spatial;
 render_mode diffuse_burley, specular_schlick_ggx;

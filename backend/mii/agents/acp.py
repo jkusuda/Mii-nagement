@@ -47,9 +47,17 @@ from acp.schema import (
 )
 
 from mii import prefs
-from mii.agents import VERDICT_PATTERN, AgentJob, StepResult, ThinkingStream, build_prompt, parse_verdict, permission_for
+from mii.agents import (
+    VERDICT_PATTERN,
+    AgentJob,
+    StepResult,
+    ThinkingStream,
+    build_prompt,
+    parse_verdict,
+    permission_for,
+)
 from mii.personality import build_system_prompt
-from mii.sandbox import SandboxError, is_inside
+from mii.sandbox import SandboxError, inside, require_worktree
 
 log = logging.getLogger(__name__)
 
@@ -61,10 +69,8 @@ AUTH_REQUIRED = -32000  # ACP error code: the agent wants a login first
 #   api_key_env    the API key it accepts instead of a subscription login
 #   login_marker   a file that exists once the CLI is logged in (None = can't tell; macOS keychains)
 #   edit_mode / readonly_mode   the agent's own session modes we switch on (None = leave the default).
-#                  Claude Code's read-only steps also run in `acceptEdits`: MiiClient refuses edit
-#                  permissions and file writes there instead. Its `plan` mode doesn't work for us
-#                  (refusing "Approve plan" ends the turn as `cancelled` and the plan is lost) and in
-#                  `default` mode the first shell command never came back (the step timed out).
+#                  Claude Code runs read-only steps in `acceptEdits` too: MiiClient refuses edit
+#                  permissions and file writes there instead (its `plan` and `default` modes stall).
 #   env            extra environment for the process
 BRAINS = {
     "claude-code": {
@@ -106,50 +112,65 @@ BRAINS = {
 #   gh_token   put the user's `gh auth token` in this environment variable
 GIFTS = {
     "browser": {
-        "label": "Browser", "command": ["npx", "-y", "@playwright/mcp@latest"],
+        "label": "Browser",
+        "command": ["npx", "-y", "@playwright/mcp@latest"],
         "hint": "a web browser the resident can drive (Playwright MCP)",
     },
     "github": {
-        "label": "GitHub", "command": ["npx", "-y", "@modelcontextprotocol/server-github"],
-        "gh_token": "GITHUB_PERSONAL_ACCESS_TOKEN", "needs": "gh",
+        "label": "GitHub",
+        "command": ["npx", "-y", "@modelcontextprotocol/server-github"],
+        "gh_token": "GITHUB_PERSONAL_ACCESS_TOKEN",
+        "needs": "gh",
         "hint": "issues, PRs and repos through your `gh` login",
     },
     "docs": {
-        "label": "Docs", "command": ["npx", "-y", "@upstash/context7-mcp"],
+        "label": "Docs",
+        "command": ["npx", "-y", "@upstash/context7-mcp"],
         "hint": "up-to-date library documentation (Context7)",
     },
     "database": {
-        "label": "Database", "command": ["npx", "-y", "@bytebase/dbhub", "--dsn", "{DATABASE_URL}"],
+        "label": "Database",
+        "command": ["npx", "-y", "@bytebase/dbhub", "--dsn", "{DATABASE_URL}"],
         "needs_env": "DATABASE_URL",
         "hint": "query the database at DATABASE_URL (save it in settings)",
     },
     "terminal": {
-        "label": "Terminal", "command": ["npx", "-y", "mcp-server-commands"],
+        "label": "Terminal",
+        "command": ["npx", "-y", "mcp-server-commands"],
         "hint": "an extra shell tool (the ACP agents have their own too)",
     },
     # Animation and video work (the island's own game lives in game/, a Godot 4 project).
     "godot": {
-        "label": "Godot", "command": ["npx", "-y", "godot-mcp-runtime"],
+        "label": "Godot",
+        "command": ["npx", "-y", "godot-mcp-runtime"],
         "needs_env": "GODOT_PATH",
         "hint": "run, script and screenshot a Godot 4 project (set GODOT_PATH, the Godot executable, in settings)",
     },
     "video": {
-        "label": "Video", "command": ["npx", "-y", "ffmpeg-mcp"], "needs": "ffmpeg",
+        "label": "Video",
+        "command": ["npx", "-y", "ffmpeg-mcp"],
+        "needs": "ffmpeg",
         "hint": "convert, trim and thumbnail media with ffmpeg",
     },
 }
 
 # ACP tool kind -> house key (Resident.keys: "yes" = allow by itself, "ask" = ✋ bubble, "no" = reject).
 KEY_FOR_KIND = {
-    "read": "read", "search": "read", "think": "read",
-    "edit": "edit", "delete": "edit", "move": "edit",
+    "read": "read",
+    "search": "read",
+    "think": "read",
+    "edit": "edit",
+    "delete": "edit",
+    "move": "edit",
     "execute": "execute",
     "fetch": "fetch",
 }
 REPORT_EVERY = 1.0  # seconds between `activity` events, so the game isn't flooded
 
 
-def available_brains(openrouter_api_key: str | None = None, saved_keys: dict[str, str] | None = None) -> dict[str, dict]:
+def available_brains(
+    openrouter_api_key: str | None = None, saved_keys: dict[str, str] | None = None
+) -> dict[str, dict]:
     """Which brains can run on this machine. Best effort: `logged_in` is None when we can't tell.
 
     `saved_keys`: API keys saved in Settings, by environment variable (prefs.secrets_env()).
@@ -170,7 +191,9 @@ def available_brains(openrouter_api_key: str | None = None, saved_keys: dict[str
         }
     result["openrouter"] = {
         "ok": bool(openrouter_api_key),
-        "hint": "any OpenRouter model, no CLI needed" if openrouter_api_key else "save an OpenRouter API key in Settings",
+        "hint": "any OpenRouter model, no CLI needed"
+        if openrouter_api_key
+        else "save an OpenRouter API key in Settings",
     }
     return result
 
@@ -291,10 +314,10 @@ class MiiClient(Client):
     # --- files (worktree only) ---------------------------------------------------
 
     def _inside(self, path: str) -> Path:
-        full = Path(path) if os.path.isabs(path) else self.workdir / path
-        if not is_inside(full, self.workdir):
-            raise RequestError(-32602, f"{path} is outside the worktree")
-        return full
+        try:
+            return inside(self.workdir, path)
+        except SandboxError as e:
+            raise RequestError(-32602, str(e))
 
     async def read_text_file(
         self, session_id: str, path: str, line: int | None = None, limit: int | None = None, **kwargs: Any
@@ -352,8 +375,7 @@ async def spawn_agent(client: Client, command: list[str], *, cwd: Path, env: dic
 
     Like the SDK's `spawn_agent_process`, but the agent gets its own process group, so
     when the step ends (or times out) the whole tree goes: `npx` -> the adapter -> the
-    CLI. Killing only `npx` leaves a stuck CLI holding the stdout pipe, and the step
-    hangs for as long as it takes that CLI to give up (12 minutes, when we checked).
+    CLI. Killing only `npx` would leave the CLI holding the stdout pipe for minutes.
     """
     group = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {"start_new_session": True}
     proc = await asyncio.create_subprocess_exec(
@@ -427,19 +449,12 @@ class AcpRunner:
         self.command = command or self.spec["command"]  # tests pass a fake agent here
 
     async def run(self, job: AgentJob) -> StepResult:
-        if job.sandbox is None or job.workdir is None:
-            return StepResult("fail", f"The {self.brain} brain needs a worktree (MOCK_AGENTS=0 and an island repository).")
-        try:
-            job.sandbox.check_workdir(job.workdir)
-        except SandboxError as e:
-            return StepResult("fail", str(e))
+        if problem := require_worktree(job):
+            return StepResult("fail", problem)
 
-        # The SDK passes only a minimal environment by default; the agent needs the user's
-        # full one (PATH, HOME, keychain access). Vendor API keys saved in the app's keychain
-        # are added; the OpenRouter key stays with us.
-        # An empty key (e.g. `ANTHROPIC_API_KEY=` in .env) is left out: some CLIs treat a
-        # set-but-blank key as "use this key" and stop using your subscription login.
-        # Our own keys (OpenRouter, TypeSafe) stay with us: prefs.PRIVATE_ENV.
+        # The agent gets the user's full environment (PATH, HOME, keychain) plus the vendor keys
+        # saved in Settings, minus our own keys (prefs.PRIVATE_ENV) and minus blank keys (a
+        # set-but-empty ANTHROPIC_API_KEY makes some CLIs skip the subscription login).
         env = {k: v for k, v in os.environ.items() if k not in prefs.PRIVATE_ENV and not (_is_key(k) and not v.strip())}
         env = prefs.secrets_env() | env | self.spec["env"]
         client = MiiClient(job, job.workdir)
@@ -464,24 +479,27 @@ class AcpRunner:
                 prompt = f"{build_prompt(job, build_system_prompt(job.resident))}\n\n{QUESTION_RULE}"
                 for asked in range(MAX_QUESTIONS + 1):
                     client.text.clear()  # each turn's reply on its own: the last one carries the verdict
-                    response = await conn.prompt(session_id=session_id, prompt=[TextContentBlock(type="text", text=prompt)])
+                    response = await conn.prompt(
+                        session_id=session_id, prompt=[TextContentBlock(type="text", text=prompt)]
+                    )
                     if response.stop_reason != "end_turn":
                         return StepResult("fail", f"{self.brain} stopped early ({response.stop_reason}).")
                     question = find_question("".join(client.text))
                     if question is None or asked == MAX_QUESTIONS:
                         break
                     answer = await job.ask("confused", question)
-                    prompt = (f"The island owner answered: {answer}" if answer
-                              else "Nobody answered in time. Use your best judgement and carry on.")
+                    prompt = (
+                        f"The island owner answered: {answer}"
+                        if answer
+                        else "Nobody answered in time. Use your best judgement and carry on."
+                    )
                     prompt += "\n\nWhen you're done, end with one line: `VERDICT: PASS` or `VERDICT: FAIL`."
                 return parse_verdict("".join(client.text))
         except asyncio.CancelledError:
             # The engine's step timeout. Ask the agent to stop before the process is killed.
             if conn is not None and session_id is not None:
-                try:
+                with suppress(Exception):
                     await asyncio.wait_for(conn.cancel(session_id=session_id), timeout=1)
-                except Exception:
-                    pass
             raise
         except RequestError as e:
             if e.code != AUTH_REQUIRED:
@@ -517,5 +535,7 @@ class AcpRunner:
             if chosen:
                 await conn.set_config_option(config_id=option.id, session_id=session.session_id, value=chosen)
             else:
-                await job.report(f"Model {model} isn't offered by {self.brain} ({', '.join(values)}); using its default")
+                await job.report(
+                    f"Model {model} isn't offered by {self.brain} ({', '.join(values)}); using its default"
+                )
             return

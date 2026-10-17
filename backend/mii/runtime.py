@@ -31,10 +31,17 @@ class Runtime:
         self.bubbles = events.Bubbles(self.bus)
         self.judge = RuleJudge()  # reload() swaps in JevJudge when a TypeSafe key is saved
         self.workflow = WorkflowEngine(
-            self.bus, self.bubbles, make_runner(True), sandboxes=None, judge=self.judge,
-            walk_seconds=config.walk_seconds, bubble_timeout=config.bubble_timeout,
-            permission_timeout=config.permission_timeout, sleep_after=config.sleep_after,
-            step_timeout=config.step_timeout, git_author=config.git_author,
+            self.bus,
+            self.bubbles,
+            make_runner(True),
+            sandboxes=None,
+            judge=self.judge,
+            walk_seconds=config.walk_seconds,
+            bubble_timeout=config.bubble_timeout,
+            permission_timeout=config.permission_timeout,
+            sleep_after=config.sleep_after,
+            step_timeout=config.step_timeout,
+            git_author=config.git_author,
         )
         self.worker: asyncio.Task | None = None
 
@@ -58,7 +65,8 @@ class Runtime:
         self.workflow.sandboxes = self.sandboxes
         self.workflow.runner = make_runner(
             self.mock_agents,
-            openrouter_api_key=prefs.secret("openrouter_api_key"), openrouter_model=settings["openrouter_model"],
+            openrouter_api_key=await sync_to_async(prefs.secret)("openrouter_api_key"),  # keychain: off the loop
+            openrouter_model=settings["openrouter_model"],
         )
         self.workflow.test_command = settings["test_command"]
         self.workflow.keep_worktrees = settings["keep_worktrees"]

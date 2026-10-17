@@ -6,7 +6,6 @@ import time
 from pathlib import Path
 
 import pytest
-
 from conftest import RecordingAsk, RecordingReport, make_job
 
 from mii.agents import BrainRunner, StepResult, make_runner, parse_verdict, permission_for
@@ -54,7 +53,10 @@ def test_parse_verdict_uses_the_last_verdict_line():
 
 
 def test_parse_verdict_reads_help_say_and_remember_lines():
-    text = "Tried twice.\nHELP: the auth tests hang\nSAY TO Sydney: I touched config.py\nremember: tests are slow\nVERDICT: FAIL"
+    text = (
+        "Tried twice.\nHELP: the auth tests hang\nSAY TO Sydney: I touched config.py\n"
+        "remember: tests are slow\nVERDICT: FAIL"
+    )
     result = parse_verdict(text)
     assert result.outcome == "fail" and result.explicit is True
     assert result.help_request == "the auth tests hang"
@@ -82,8 +84,10 @@ async def test_acp_runner_against_fake_agent(sandbox):
     assert (workdir / "hello.txt").read_text() == "hi\n"
     assert "Reading hello.py" in report.lines
     assert "gifts: none" in result.summary
-    assert ask.asked == [("permission", "Run `npm test`", ["Allow once", "Reject"]),
-                         ("permission", "Edit hello.py", ["Allow once", "Reject"])]
+    assert ask.asked == [
+        ("permission", "Run `npm test`", ["Allow once", "Reject"]),
+        ("permission", "Edit hello.py", ["Allow once", "Reject"]),
+    ]
     assert "edit permission: allow" in result.summary
     assert ask.details[0] == "npm test"  # the exact command, for the permission popup
 

@@ -78,9 +78,7 @@ def island_summary(tasks: list[Task], steps: list[Step] | None = None) -> dict:
     for s in steps or []:
         if s.finished_at and (s.task_id not in last_finish or s.finished_at > last_finish[s.task_id]):
             last_finish[s.task_id] = s.finished_at
-    durations = [
-        (last_finish[t.id] - t.created_at).total_seconds() for t in tasks if t.pr_url and t.id in last_finish
-    ]
+    durations = [(last_finish[t.id] - t.created_at).total_seconds() for t in tasks if t.pr_url and t.id in last_finish]
     return {
         "tasks_done": sum(t.status == "done" for t in tasks),
         "tasks_failed": sum(t.status == "failed" for t in tasks),
@@ -96,7 +94,10 @@ def per_day(tasks: list[Task], start: datetime, days: int) -> list[dict]:
         if t.status == "done":
             counts[finished(t).astimezone().strftime("%Y-%m-%d")] += 1
     return [
-        {"day": (start + timedelta(days=i)).strftime("%Y-%m-%d"), "done": counts[(start + timedelta(days=i)).strftime("%Y-%m-%d")]}
+        {
+            "day": (start + timedelta(days=i)).strftime("%Y-%m-%d"),
+            "done": counts[(start + timedelta(days=i)).strftime("%Y-%m-%d")],
+        }
         for i in range(days)
     ]
 
@@ -122,13 +123,17 @@ async def bubble_stats(island_id: str, start: datetime, end: datetime) -> dict:
     async for e in Event.objects.filter(island_id=island_id, type="bubble", created_at__gte=start, created_at__lt=end):
         shown[e.payload.get("id")] = e
     answered, waits, keys_lent = 0, [], 0
-    async for e in Event.objects.filter(island_id=island_id, type="bubble_resolved", created_at__gte=start, payload__answered=True):
+    async for e in Event.objects.filter(
+        island_id=island_id, type="bubble_resolved", created_at__gte=start, payload__answered=True
+    ):
         bubble = shown.get(e.payload.get("id"))
         if bubble is None:
             continue
         answered += 1
         waits.append((e.created_at - bubble.created_at).total_seconds())
-        if bubble.payload.get("kind") == "permission" and not REJECT_PATTERN.match(str(e.payload.get("response") or "")):
+        if bubble.payload.get("kind") == "permission" and not REJECT_PATTERN.match(
+            str(e.payload.get("response") or "")
+        ):
             keys_lent += 1
     return {"shown": len(shown), "answered": answered, "answer_seconds": _avg(waits), "keys_lent": keys_lent}
 
@@ -163,18 +168,28 @@ def tip_candidates(payload: dict, bubbles: dict, names: dict[str, str], range_na
     bouncy = [b for b in payload["buildings"] if b["visits"] >= 2 and b["fail_rate"] >= 0.5]
     if bouncy:
         worst = max(bouncy, key=lambda b: b["fail_rate"])
-        tips["bouncy"] = f"The {names.get(worst['building'], worst['building'])} sends most packages back. Worth a look at what it's asking for."
+        where = names.get(worst["building"], worst["building"])
+        tips["bouncy"] = f"The {where} sends most packages back. Worth a look at what it's asking for."
     unanswered = bubbles["shown"] - bubbles["answered"]
     if bubbles["shown"] >= 2 and unanswered / bubbles["shown"] > 0.5:
-        tips["unanswered"] = f"{unanswered} bubbles went unanswered {when}. Check the Bubbles sidebar more often, or lend more house keys."
+        tips["unanswered"] = (
+            f"{unanswered} bubbles went unanswered {when}. "
+            "Check the Bubbles sidebar more often, or lend more house keys."
+        )
     chatty = max(payload["residents"], key=lambda r: r["bubbles"], default=None)
     if chatty and chatty["bubbles"] >= 3:
-        tips["chatty"] = f"{names.get(chatty['resident'], chatty['resident'])} keeps asking ({chatty['bubbles']} bubbles). Clearer task descriptions or more house keys would help."
+        who = names.get(chatty["resident"], chatty["resident"])
+        tips["chatty"] = (
+            f"{who} keeps asking ({chatty['bubbles']} bubbles). "
+            "Clearer task descriptions or more house keys would help."
+        )
     rate = island["tests_pass_rate"]
-    if rate is not None and rate < 0.7 and sum(b["visits"] for b in payload["buildings"] if b["type"] == "lab") >= 3:
+    lab_visits = sum(b["visits"] for b in payload["buildings"] if b["type"] == "lab")
+    if rate is not None and rate < 0.7 and lab_visits >= 3:
         tips["lab"] = f"The Lab fails {round((1 - rate) * 100)}% of its runs. A more careful coder might help."
     if island["tasks_done"] > island["tasks_done_before"]:
-        tips["humming"] = f"{island['tasks_done']} packages delivered {when}, up from {island['tasks_done_before']}. The island is humming."
+        done, before = island["tasks_done"], island["tasks_done_before"]
+        tips["humming"] = f"{done} packages delivered {when}, up from {before}. The island is humming."
     tips["steady"] = f"A steady stretch {when}. Nothing needs fixing right now."
     return tips
 

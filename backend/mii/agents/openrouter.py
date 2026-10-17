@@ -7,7 +7,6 @@ read or written inside the task's worktree; shell commands are gated by a ✋
 bubble, like the ACP brains' own commands.
 """
 
-import asyncio
 import json
 from pathlib import Path
 
@@ -15,7 +14,7 @@ import httpx
 
 from mii.agents import AgentJob, StepResult, build_prompt, parse_verdict, permission_for
 from mii.personality import build_system_prompt
-from mii.sandbox import SandboxError, is_inside
+from mii.sandbox import SandboxError, inside, is_inside, require_worktree, run_shell
 
 API_URL = "https://openrouter.ai/api/v1"
 MAX_TURNS = 40  # round trips to the model per step
@@ -23,16 +22,50 @@ MAX_OUTPUT = 4000  # characters of tool output we send back
 COMMAND_TIMEOUT = 120.0
 
 TOOLS = [
-    {"type": "function", "function": {"name": "list_files", "description": "List files in the worktree matching a glob (default: everything).",
-     "parameters": {"type": "object", "properties": {"glob": {"type": "string"}}}}},
-    {"type": "function", "function": {"name": "read_file", "description": "Read a text file from the worktree.",
-     "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}},
-    {"type": "function", "function": {"name": "write_file", "description": "Create or overwrite a text file in the worktree.",
-     "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}}},
-    {"type": "function", "function": {"name": "run_command", "description": "Run a shell command in the worktree (the user is asked first).",
-     "parameters": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}}},
-    {"type": "function", "function": {"name": "ask_user", "description": "Ask the user a question when something is unclear.",
-     "parameters": {"type": "object", "properties": {"question": {"type": "string"}}, "required": ["question"]}}},
+    {
+        "type": "function",
+        "function": {
+            "name": "list_files",
+            "description": "List files in the worktree matching a glob (default: everything).",
+            "parameters": {"type": "object", "properties": {"glob": {"type": "string"}}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_file",
+            "description": "Read a text file from the worktree.",
+            "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "write_file",
+            "description": "Create or overwrite a text file in the worktree.",
+            "parameters": {
+                "type": "object",
+                "properties": {"path": {"type": "string"}, "content": {"type": "string"}},
+                "required": ["path", "content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_command",
+            "description": "Run a shell command in the worktree (the user is asked first).",
+            "parameters": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "ask_user",
+            "description": "Ask the user a question when something is unclear.",
+            "parameters": {"type": "object", "properties": {"question": {"type": "string"}}, "required": ["question"]},
+        },
+    },
 ]
 
 
@@ -59,13 +92,11 @@ class OpenRouterRunner:
 
     async def run(self, job: AgentJob) -> StepResult:
         if not self.api_key:
-            return StepResult("fail", "The openrouter brain needs an OpenRouter API key (Settings, or OPENROUTER_API_KEY).")
-        if job.sandbox is None or job.workdir is None:
-            return StepResult("fail", "The openrouter brain needs a worktree (MOCK_AGENTS=0 and an island repository).")
-        try:
-            job.sandbox.check_workdir(job.workdir)
-        except SandboxError as e:
-            return StepResult("fail", str(e))
+            return StepResult(
+                "fail", "The openrouter brain needs an OpenRouter API key (Settings, or OPENROUTER_API_KEY)."
+            )
+        if problem := require_worktree(job):
+            return StepResult("fail", problem)
 
         model = job.resident.model or self.default_model
         messages = [
@@ -100,11 +131,16 @@ class OpenRouterRunner:
             if self.http is None:
                 await http.aclose()
 
-    async def _chat(self, http: httpx.AsyncClient, model: str, messages: list[dict], job: AgentJob) -> dict | StepResult:
+    async def _chat(
+        self, http: httpx.AsyncClient, model: str, messages: list[dict], job: AgentJob
+    ) -> dict | StepResult:
         """One round trip. Returns the assistant message, or a StepResult when the API says no."""
         try:
-            response = await http.post("/chat/completions", headers=_headers(self.api_key),
-                                       json={"model": model, "messages": messages, "tools": TOOLS})
+            response = await http.post(
+                "/chat/completions",
+                headers=_headers(self.api_key),
+                json={"model": model, "messages": messages, "tools": TOOLS},
+            )
         except httpx.HTTPError as e:
             return StepResult("fail", f"OpenRouter is unreachable: {e}")
         if response.status_code in (401, 402, 429):
@@ -129,11 +165,11 @@ class OpenRouterRunner:
                 paths = [p for p in workdir.glob(pattern) if is_inside(p, workdir) and ".git" not in p.parts]
                 return "\n".join(str(p.relative_to(workdir)) for p in sorted(paths)[:500]) or "(no files)"
             if name == "read_file":
-                return self._inside(workdir, args.get("path", "")).read_text(errors="replace")
+                return inside(workdir, args.get("path", "")).read_text(errors="replace")
             if name == "write_file":
                 if job.read_only:
                     return "error: this step is read-only"
-                path = self._inside(workdir, args.get("path", ""))
+                path = inside(workdir, args.get("path", ""))
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(args.get("content", ""))
                 return f"wrote {path.relative_to(workdir)}"
@@ -142,9 +178,13 @@ class OpenRouterRunner:
                 key = permission_for(job, "execute", command)  # house keys + house rules
                 if key == "no":
                     return "denied: this resident's house key says no to running commands"
-                if key == "ask" and await job.ask("permission", f"May I run `{command}`?", ["Allow", "Deny"], command) != "Allow":
+                if (
+                    key == "ask"
+                    and await job.ask("permission", f"May I run `{command}`?", ["Allow", "Deny"], command) != "Allow"
+                ):
                     return "denied: the user did not allow this command"
-                return await _run(command, workdir)
+                code, output = await run_shell(command, workdir, COMMAND_TIMEOUT, limit=MAX_OUTPUT)
+                return f"exit code {code}\n{output}"
             if name == "ask_user":
                 answer = await job.ask("confused", args.get("question", "?"))
                 return answer or "(nobody answered; use your best judgement)"
@@ -152,17 +192,16 @@ class OpenRouterRunner:
         except (SandboxError, OSError) as e:
             return f"error: {e}"
 
-    @staticmethod
-    def _inside(workdir: Path, path: str) -> Path:
-        full = Path(path) if Path(path).is_absolute() else workdir / path
-        if not is_inside(full, workdir):
-            raise SandboxError(f"{path} is outside the worktree")
-        return full
-
 
 def _describe(name: str, args: dict) -> str:
     target = args.get("path") or args.get("command") or args.get("glob") or args.get("question") or ""
-    verb = {"list_files": "Listing", "read_file": "Reading", "write_file": "Writing", "run_command": "Running", "ask_user": "Asking"}
+    verb = {
+        "list_files": "Listing",
+        "read_file": "Reading",
+        "write_file": "Writing",
+        "run_command": "Running",
+        "ask_user": "Asking",
+    }
     return f"{verb.get(name, name)} {target}"[:120]
 
 
@@ -171,16 +210,3 @@ def _api_error(response: httpx.Response) -> str:
         return str(response.json().get("error", {}).get("message") or response.text[:200])
     except ValueError:
         return response.text[:200]
-
-
-async def _run(command: str, cwd: Path) -> str:
-    proc = await asyncio.create_subprocess_shell(
-        command, cwd=str(cwd), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
-    )
-    try:
-        raw, _ = await asyncio.wait_for(proc.communicate(), timeout=COMMAND_TIMEOUT)
-    except TimeoutError:
-        proc.kill()
-        return "error: command timed out"
-    output = raw.decode(errors="replace")
-    return f"exit code {proc.returncode}\n{output[-MAX_OUTPUT:]}"

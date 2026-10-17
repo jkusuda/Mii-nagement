@@ -1,6 +1,8 @@
-"""Build mode: change an island's buildings and roads (`set_layout`, docs/protocol.md).
+"""The workflow graph by hand: replace an island's buildings and roads (`set_layout`,
+PUT /islands/{id}/layout without a "map"), or give a resident a building.
 
-The game sends the whole layout (every building and road). Buildings keep
+The game's own build mode sends a map instead (islands.set_map); this is the API
+form. The client sends the whole layout (every building and road). Buildings keep
 their ids, so a building that's already there is updated in place (its resident
 and its Step history survive); buildings left out are removed; new ones are
 created. Roads are replaced. The engine loads the graph when a task starts, so
@@ -11,11 +13,10 @@ import re
 
 from django.db import transaction
 
-from mii.engine import HANDLERS
 from mii.models import Building, Resident, Road, Task, building_to_dict, road_to_dict
+from mii.vocab import ROAD_CONDITIONS, STEP_NAMES, STEP_ORDER
 
-CONDITIONS = ("always", "pass", "fail")
-MAX_NAME = 30
+MAX_BUILDING_NAME = 30
 BUILDING_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
@@ -31,22 +32,23 @@ def clean_layout(island_id: str, data: dict) -> tuple[list[dict], list[dict]]:
         raise LayoutError("`buildings` and `roads` must be lists")
     clean_buildings: list[dict] = []
     for i, b in enumerate(buildings):
-        if not isinstance(b, dict) or str(b.get("type", "")) not in HANDLERS:
-            raise LayoutError(f"building {i}: type must be one of {list(HANDLERS)}")
+        if not isinstance(b, dict) or str(b.get("type", "")) not in STEP_ORDER:
+            raise LayoutError(f"building {i}: type must be one of {list(STEP_ORDER)}")
         btype = str(b["type"])
         bid = str(b.get("id") or f"{island_id}_{btype}_{i}")
         if not BUILDING_ID.match(bid):
             raise LayoutError(f"building {i}: bad id {bid!r}")
-        name = str(b.get("name") or btype.replace("_", " ").title()).strip()
-        if not 1 <= len(name) <= MAX_NAME:
-            raise LayoutError(f"building {bid}: name must be 1-{MAX_NAME} characters")
+        name = str(b.get("name") or STEP_NAMES[btype]).strip()
+        if not 1 <= len(name) <= MAX_BUILDING_NAME:
+            raise LayoutError(f"building {bid}: name must be 1-{MAX_BUILDING_NAME} characters")
         try:
             x, y = int(b.get("x", 0)), int(b.get("y", 0))
         except (TypeError, ValueError):
             raise LayoutError(f"building {bid}: x and y must be whole numbers") from None
         resident = b.get("resident")
-        clean_buildings.append({"id": bid, "type": btype, "name": name, "x": x, "y": y,
-                                "resident": str(resident) if resident else None})
+        clean_buildings.append(
+            {"id": bid, "type": btype, "name": name, "x": x, "y": y, "resident": str(resident) if resident else None}
+        )
     ids = [b["id"] for b in clean_buildings]
     if len(set(ids)) != len(ids):
         raise LayoutError("building ids must be unique")
@@ -60,8 +62,8 @@ def clean_layout(island_id: str, data: dict) -> tuple[list[dict], list[dict]]:
         a, b, condition = str(r.get("from", "")), str(r.get("to", "")), str(r.get("condition", "always"))
         if a not in ids or b not in ids:
             raise LayoutError(f"road {i}: from/to must be building ids on this island")
-        if condition not in CONDITIONS:
-            raise LayoutError(f"road {i}: condition must be one of {list(CONDITIONS)}")
+        if condition not in ROAD_CONDITIONS:
+            raise LayoutError(f"road {i}: condition must be one of {list(ROAD_CONDITIONS)}")
         if a == b:
             raise LayoutError(f"road {i}: a road can't lead back to the same building")
         clean_roads.append({"from": a, "to": b, "condition": condition})
@@ -81,19 +83,32 @@ def save_layout(island_id: str, buildings: list[dict], roads: list[dict]) -> dic
             raise LayoutError(f"a package is at {task.building_id} right now; wait for it to move on")
         # Residents live where they work: anyone whose home is being removed moves to the mailbox.
         mailbox = next(b["id"] for b in buildings if b["type"] == "mailbox")
-        homeless = list(Resident.objects.filter(island_id=island_id).exclude(building_id__in=keep)
-                        .exclude(building_id=None).values_list("id", flat=True))
+        homeless = list(
+            Resident.objects.filter(island_id=island_id)
+            .exclude(building_id__in=keep)
+            .exclude(building_id=None)
+            .values_list("id", flat=True)
+        )
         Building.objects.filter(island_id=island_id).exclude(id__in=keep).delete()  # roads cascade
         for b in buildings:
             Building.objects.update_or_create(
-                id=b["id"], defaults={"island_id": island_id, "type": b["type"], "name": b["name"],
-                                      "x": b["x"], "y": b["y"], "resident_id": b["resident"]},
+                id=b["id"],
+                defaults={
+                    "island_id": island_id,
+                    "type": b["type"],
+                    "name": b["name"],
+                    "x": b["x"],
+                    "y": b["y"],
+                    "resident_id": b["resident"],
+                },
             )
         Road.objects.filter(island_id=island_id).delete()
-        Road.objects.bulk_create([
-            Road(island_id=island_id, from_building_id=r["from"], to_building_id=r["to"], condition=r["condition"])
-            for r in roads
-        ])
+        Road.objects.bulk_create(
+            [
+                Road(island_id=island_id, from_building_id=r["from"], to_building_id=r["to"], condition=r["condition"])
+                for r in roads
+            ]
+        )
         Resident.objects.filter(id__in=homeless).update(building_id=mailbox)
         return {
             "buildings": [building_to_dict(b) for b in Building.objects.filter(island_id=island_id).order_by("id")],

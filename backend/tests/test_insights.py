@@ -10,35 +10,78 @@ pytestmark = db_test
 
 SECTIONS = {"range", "island", "per_day", "tip", "residents", "brains", "buildings"}
 ISLAND_FIELDS = {
-    "tasks_done", "tasks_failed", "prs_opened", "avg_issue_to_pr_seconds", "tasks_done_before", "prs_opened_before",
-    "prs_merged", "answer_seconds", "answer_seconds_before", "bubbles_answered", "keys_lent", "tests_pass_rate", "flaky_tests",
+    "tasks_done",
+    "tasks_failed",
+    "prs_opened",
+    "avg_issue_to_pr_seconds",
+    "tasks_done_before",
+    "prs_opened_before",
+    "prs_merged",
+    "answer_seconds",
+    "answer_seconds_before",
+    "bubbles_answered",
+    "keys_lent",
+    "tests_pass_rate",
+    "flaky_tests",
 }
 
 
 async def test_insights_has_every_section_and_counts_tasks(island):
     t0 = utcnow() - timedelta(minutes=5)
-    t1 = await Task.objects.acreate(id="t1", island_id="sunny", title="A", status="done", pr_url="https://example.com/pr/1",
-                                    created_at=t0, finished_at=t0 + timedelta(seconds=20))
+    t1 = await Task.objects.acreate(
+        id="t1",
+        island_id="sunny",
+        title="A",
+        status="done",
+        pr_url="https://example.com/pr/1",
+        created_at=t0,
+        finished_at=t0 + timedelta(seconds=20),
+    )
     await Task.objects.acreate(id="t2", island_id="sunny", title="B", status="failed", finished_at=utcnow())
-    for i, (building, outcome, who, brain, secs) in enumerate([
-        ("workshop", "pass", "carlos", "claude-code", 10), ("lab", "fail", "carlos", "claude-code", 4),
-        ("workshop", "pass", "carlos", "claude-code", 6), ("lab", "pass", "carlos", "claude-code", 4),
-        ("courthouse", "pass", "sydney", "codex", 20),
-    ]):
-        await Step.objects.acreate(island_id="sunny", task_id=t1.id, building_id=building, building_type=building,
-                                   resident_id=who, brain=brain, outcome=outcome, bubbles_raised=i % 2,
-                                   started_at=t0, finished_at=t0 + timedelta(seconds=secs))
+    for i, (building, outcome, who, brain, secs) in enumerate(
+        [
+            ("workshop", "pass", "carlos", "claude-code", 10),
+            ("lab", "fail", "carlos", "claude-code", 4),
+            ("workshop", "pass", "carlos", "claude-code", 6),
+            ("lab", "pass", "carlos", "claude-code", 4),
+            ("courthouse", "pass", "sydney", "codex", 20),
+        ]
+    ):
+        await Step.objects.acreate(
+            island_id="sunny",
+            task_id=t1.id,
+            building_id=building,
+            building_type=building,
+            resident_id=who,
+            brain=brain,
+            outcome=outcome,
+            bubbles_raised=i % 2,
+            started_at=t0,
+            finished_at=t0 + timedelta(seconds=secs),
+        )
 
     data = await island_insights("sunny", "week")
 
     assert set(data) == SECTIONS and data["range"] == "week"
     assert set(data["island"]) == ISLAND_FIELDS
-    assert data["island"] | {"tasks_done": 1, "tasks_failed": 1, "prs_opened": 1, "avg_issue_to_pr_seconds": 20.0} == data["island"]
+    assert (
+        data["island"] | {"tasks_done": 1, "tasks_failed": 1, "prs_opened": 1, "avg_issue_to_pr_seconds": 20.0}
+        == data["island"]
+    )
     assert data["island"]["tasks_done_before"] == 0 and data["island"]["prs_merged"] == 0
     assert data["island"]["tests_pass_rate"] == 0.5 and data["island"]["flaky_tests"] == 1  # lab failed, then passed
-    assert len(data["per_day"]) == 7 and data["per_day"][-1]["done"] == 1 and sum(d["done"] for d in data["per_day"]) == 1
+    assert (
+        len(data["per_day"]) == 7 and data["per_day"][-1]["done"] == 1 and sum(d["done"] for d in data["per_day"]) == 1
+    )
     carlos = next(r for r in data["residents"] if r["resident"] == "carlos")
-    assert carlos == {"resident": "carlos", "brain": "claude-code", "steps": 4, "pass_rate": 0.75, "avg_seconds": 6.0, "bubbles": 2}
+    assert carlos == {
+        "resident": "carlos",
+        "brain": "claude-code",
+        "steps": 4,
+        "pass_rate": 0.75,
+        "avg_seconds": 6.0,
+        "bubbles": 2,
+    }
     lab = next(b for b in data["buildings"] if b["building"] == "lab")
     assert lab == {"building": "lab", "type": "lab", "visits": 2, "fail_rate": 0.5}
     codex_review = next(b for b in data["brains"] if b["brain"] == "codex")
@@ -48,7 +91,9 @@ async def test_insights_has_every_section_and_counts_tasks(island):
 
 async def test_insights_ranges_and_previous_range(island):
     now = utcnow()
-    await Task.objects.acreate(id="old", island_id="sunny", title="Old", status="done", finished_at=now - timedelta(days=10))
+    await Task.objects.acreate(
+        id="old", island_id="sunny", title="Old", status="done", finished_at=now - timedelta(days=10)
+    )
     await Task.objects.acreate(id="new", island_id="sunny", title="New", status="done", finished_at=now)
     week = (await island_insights("sunny", "week"))["island"]
     assert (week["tasks_done"], week["tasks_done_before"]) == (1, 1)
@@ -86,8 +131,12 @@ async def test_insights_counts_answered_bubbles_and_keys_lent(island):
 
 async def test_insights_asks_gh_about_open_prs(island, monkeypatch):
     now = utcnow()
-    await Task.objects.acreate(id="pr", island_id="sunny", title="PR", status="done", pr_url="https://github.com/o/r/pull/1", finished_at=now)
-    monkeypatch.setattr(insights.github, "pr_merged_at", lambda url: "2026-10-17T10:00:00Z" if url.endswith("/1") else None)
+    await Task.objects.acreate(
+        id="pr", island_id="sunny", title="PR", status="done", pr_url="https://github.com/o/r/pull/1", finished_at=now
+    )
+    monkeypatch.setattr(
+        insights.github, "pr_merged_at", lambda url: "2026-10-17T10:00:00Z" if url.endswith("/1") else None
+    )
     assert (await island_insights("sunny", "month"))["island"]["prs_merged"] == 1
     assert (await Task.objects.aget(pk="pr")).merged_at is not None  # remembered, so gh isn't asked again
 

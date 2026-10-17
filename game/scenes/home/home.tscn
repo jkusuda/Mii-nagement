@@ -7,7 +7,7 @@
 [ext_resource type="Texture2D" path="res://assets/icons/user.svg" id="5_user"]
 [ext_resource type="Texture2D" path="res://assets/icons/settings.svg" id="6_settings"]
 [ext_resource type="Script" path="res://scenes/ui/dashed_button.gd" id="7_dashed"]
-[ext_resource type="Script" path="res://scenes/sea/sea_view.gd" id="8_sea"]
+[ext_resource type="Script" path="res://scenes/home/sea_view.gd" id="8_sea"]
 
 [node name="Home" type="Control"]
 layout_mode = 3

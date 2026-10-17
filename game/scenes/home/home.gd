@@ -6,19 +6,12 @@ extends Control
 ## island, grouped by island. Click an island, its plate, or "Visit" to go there.
 ##
 ## Everything comes from the Islands autoload (GET /islands + each island's
-## snapshot). Settings opens SettingsPopup (game.gd); Caretaker isn't built yet.
+## snapshot). Settings opens SettingsPopup (game.gd). The Caretaker button is a
+## placeholder (TODO.md).
 
 signal visit(island_id: String)
 signal new_island_requested
 signal settings_requested
-
-const AnswerButtonScript := preload("res://scenes/ui/answer_button.gd")
-
-## bubble kind -> how the sidebar says it
-const ASKS := {
-	"confused": "%s has a question", "struggling": "%s is stuck", "permission": "%s wants a key",
-	"ready": "%s finished something", "tired": "%s needs a nap",
-}
 
 var _plates := {}  # island id -> IslandPlate
 
@@ -30,15 +23,21 @@ func _ready() -> void:
 	%NewIsland.pressed.connect(new_island_requested.emit)
 	%NewIslandNav.pressed.connect(new_island_requested.emit)
 	%Settings.pressed.connect(settings_requested.emit)
-	Islands.changed.connect(func(): if is_visible_in_tree(): _show())
+	Islands.changed.connect(
+		func():
+			if is_visible_in_tree():
+				_show()
+	)
 	Clock.ticked.connect(_show_time)
 	_show_time()
 	Net.connected.connect(_show_connection)
 	Net.disconnected.connect(_show_connection)
-	visibility_changed.connect(func():
-		if visible:
-			Islands.refresh()
-			_show())
+	visibility_changed.connect(
+		func():
+			if visible:
+				Islands.refresh()
+				_show()
+	)
 	_show()
 
 
@@ -61,8 +60,7 @@ func _show_connection() -> void:
 
 
 func _show_islands(islands: Array) -> void:
-	var entries := islands.map(func(i): return {
-		"id": str(i["id"]), "layout": IslandLayout.from_snapshot(i)})
+	var entries := islands.map(func(i): return {"id": str(i["id"]), "layout": IslandLayout.from_snapshot(i)})
 	sea.show_islands(entries, true)
 
 	var ids := entries.map(func(e): return e["id"])
@@ -104,8 +102,14 @@ func _show_waiting(islands: Array) -> void:
 		child.queue_free()
 	var waiting := islands.filter(func(i): return not i.get("bubbles", []).is_empty())
 	var total := Islands.all_bubbles().size()
-	%WaitingSummary.text = "%d bubble%s across %d island%s" % [total, "" if total == 1 else "s",
-		waiting.size(), "" if waiting.size() == 1 else "s"] if total else "Nobody's waiting. Enjoy the quiet!"
+	%WaitingSummary.text = (
+		(
+			"%d bubble%s across %d island%s"
+			% [total, "" if total == 1 else "s", waiting.size(), "" if waiting.size() == 1 else "s"]
+		)
+		if total
+		else "Nobody's waiting. Enjoy the quiet!"
+	)
 	for island in waiting:
 		%Groups.add_child(_group(island))
 
@@ -118,11 +122,11 @@ func _group(island: Dictionary) -> Control:
 	card.add_child(rows)
 
 	var header := HBoxContainer.new()
-	var title := _label(str(island.get("name", "")), 16, true)
+	var title := UI.label(str(island.get("name", "")), 16, true)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var pill := PanelContainer.new()
 	pill.theme_type_variation = &"NeedPill"
-	var count := _label(str(island["bubbles"].size()), 12, true)
+	var count := UI.label(str(island["bubbles"].size()), 12, true)
 	count.theme_type_variation = &"NeedText"
 	pill.add_child(count)
 	header.add_child(title)
@@ -136,7 +140,7 @@ func _group(island: Dictionary) -> Control:
 		rows.add_child(_bubble_row(bubble, residents.get(bubble["agent"], {})))
 
 	var go := Button.new()
-	go.set_script(AnswerButtonScript)  # the wavy orange button
+	go.set_script(AnswerButton)  # the wavy orange button
 	go.theme_type_variation = &"AnswerButton"
 	go.custom_minimum_size = Vector2(258, 34)
 	go.text = "Visit %s" % island.get("name", "")
@@ -157,32 +161,25 @@ func _bubble_row(bubble: Dictionary, resident: Dictionary) -> Control:
 	circle.bg_color = color.lerp(Color.WHITE, 0.75)
 	circle.set_corner_radius_all(12)
 	avatar.add_theme_stylebox_override("panel", circle)
-	var initial := _label(who.left(1), 12, true)
+	var initial := UI.label(who.left(1), 12, true)
 	initial.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	initial.add_theme_color_override("font_color", color.darkened(0.2))
 	avatar.add_child(initial)
 
 	var kind := str(bubble["kind"])
-	var text := _label(ASKS.get(kind, "%s needs you") % who, 13, true)
+	var look := Protocol.bubble(kind)
+	var text := UI.label(look["ask"] % who, 13, true)
 	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	text.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	text.tooltip_text = str(bubble.get("text", ""))
 	text.mouse_filter = Control.MOUSE_FILTER_PASS
-	var tag := _label(ResidentData.BUBBLE_TAGS.get(kind, ["Needs you"])[0], 11, true)
-	tag.add_theme_color_override("font_color", BubbleCard.KIND_COLORS.get(kind, Color("7553DF")))
+	var tag := UI.label(look["tag"], 11, true)
+	tag.add_theme_color_override("font_color", look["color"])
 
 	for part in [avatar, text, tag]:
 		part.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		row.add_child(part)
 	return row
-
-
-func _label(text: String, size: int, strong: bool) -> Label:
-	var label := Label.new()
-	label.text = text
-	label.theme_type_variation = &"LabelStrong" if strong else &"LabelMuted"
-	label.add_theme_font_size_override("font_size", size)
-	return label
 
 
 ## The day pill: the real time (or the dev slider's), with a sun or moon.

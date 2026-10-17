@@ -18,14 +18,14 @@ class_name IslandTerrain
 ## Godot concept: an ArrayMesh is a mesh built in code from lists of vertices,
 ## normals, and triangle indices, instead of being loaded from a model file.
 
-const MARGIN := 4     # tiles of sea around the grid that the field also covers
-const RES := 6        # field pixels per tile
+const MARGIN := 4  # tiles of sea around the grid that the field also covers
+const RES := 6  # field pixels per tile
 const GRASS_Y := 0.0
-const EDGE_DROP := 0.42   # the grass edge rounds down this far to the beach
-const EDGE_WIDTH := 0.7   # over this many units
-const BEACH_SLOPE := 0.38 # beach drop per unit outward
-const BEACH_END := 3.0    # then the sea floor drops faster
-const PATH_DIP := 0.06    # paths sit a touch lower than the grass
+const EDGE_DROP := 0.42  # the grass edge rounds down this far to the beach
+const EDGE_WIDTH := 0.7  # over this many units
+const BEACH_SLOPE := 0.38  # beach drop per unit outward
+const BEACH_END := 3.0  # then the sea floor drops faster
+const PATH_DIP := 0.06  # paths sit a touch lower than the grass
 const POND_DEPTH := 0.75
 const POND_RADIUS := 1.4  # how round the pond's corners are (world units)
 ## The water level in island_3d.tscn; the beach meets the sea where the ground crosses it.
@@ -44,7 +44,9 @@ static func build(layout: IslandLayout) -> Dictionary:
 	var field := _make_field(layout)
 	var size := Vector2(IslandLayout.GRID_W + 2 * MARGIN, IslandLayout.GRID_H + 2 * MARGIN) * IslandLayout.TILE
 	var rect := Rect2(-size / 2.0, size)
-	var result := {"field": ImageTexture.create_from_image(field), "rect": rect, "mesh": _make_mesh(field, rect, layout)}
+	var result := {
+		"field": ImageTexture.create_from_image(field), "rect": rect, "mesh": _make_mesh(field, rect, layout)
+	}
 	if _cache.size() > 24:
 		_cache.clear()  # don't keep every island ever seen
 	_cache[key] = result
@@ -59,8 +61,10 @@ static func pond_shape(layout: IslandLayout) -> Dictionary:
 	var low := IslandLayout.tile_to_world(Vector2(p["x"], p["y"]))
 	var high := IslandLayout.tile_to_world(Vector2(p["x"] + p["w"], p["y"] + p["h"]))
 	var inset := 0.25  # a little grass between the pond and the paths around it
-	return {"center": Vector2((low.x + high.x) / 2.0, (low.z + high.z) / 2.0),
-		"half": Vector2((high.x - low.x) / 2.0 - inset, (high.z - low.z) / 2.0 - inset)}
+	return {
+		"center": Vector2((low.x + high.x) / 2.0, (low.z + high.z) / 2.0),
+		"half": Vector2((high.x - low.x) / 2.0 - inset, (high.z - low.z) / 2.0 - inset)
+	}
 
 
 ## Signed distance to the pond's rounded rectangle: + inside, - outside.
@@ -101,7 +105,7 @@ static func _make_field(layout: IslandLayout) -> Image:
 			var t := Vector2(c, r)
 			var mine := is_land.has(Vector2i(c, r))
 			var nearest := INF
-			for e in (sea_edge if mine else land_edge):
+			for e in sea_edge if mine else land_edge:
 				nearest = minf(nearest, t.distance_squared_to(e))
 			# Halfway between a land cell and a sea cell is the coast: distance 0.
 			var d := (sqrt(nearest) - 0.5) if nearest < INF else float(w)

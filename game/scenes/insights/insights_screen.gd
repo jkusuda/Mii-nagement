@@ -4,9 +4,8 @@ extends PanelContainer
 ## are waiting, and a comfort report.
 ##
 ## Numbers come from the backend's GET /islands/{id}/insights (shape in
-## docs/architecture.md, "Insights payload"). The backend only fills a few of
-## them so far; anything missing shows a dash and "Not tracked yet", so new
-## fields light up here as soon as the backend sends them.
+## docs/http-api.md, "Insights payload"). A missing field shows a dash and
+## "Not tracked yet".
 ##
 ## "Where packages are waiting" and the residents' moods come straight from the
 ## live snapshot (Net.island), so those are always current.
@@ -14,7 +13,9 @@ extends PanelContainer
 signal see_residents
 
 const RANGES := [["today", "Today"], ["week", "This week"], ["month", "This month"]]
-const RANGE_NAMES := {"today": ["today", "yesterday"], "week": ["this week", "last week"], "month": ["this month", "last month"]}
+const RANGE_NAMES := {
+	"today": ["today", "yesterday"], "week": ["this week", "last week"], "month": ["this month", "last month"]
+}
 
 ## [key, title, card color, note color]
 const STATS := [
@@ -31,24 +32,33 @@ const QUIET_COLOR := Color("A0A6BE")
 const BAR_MAX_HEIGHT := 150.0
 
 var _range := "week"
-var _data := {}         # the last insights response ({} = none yet)
+var _data := {}  # the last insights response ({} = none yet)
 var _reachable := true  # did the last request work?
 var _loading := false
-var _stats := {}        # stat key -> [value label, note label]
-var _http := HTTPRequest.new()
+var _stats := {}  # stat key -> [value label, note label]
 
 
 func _ready() -> void:
-	add_child(_http)
-	_http.request_completed.connect(_on_response)
 	_build_ranges()
 	_build_stats()
 	%SeeResidents.pressed.connect(see_residents.emit)
 
 	# Refresh when the screen opens and when a task changes while it's open.
-	visibility_changed.connect(func(): if visible: refresh())
-	Net.task_updated.connect(func(_task): if is_visible_in_tree(): refresh())
-	Net.island_changed.connect(func(): if is_visible_in_tree(): _show_live())
+	visibility_changed.connect(
+		func():
+			if visible:
+				refresh()
+	)
+	Net.task_updated.connect(
+		func(_task):
+			if is_visible_in_tree():
+				refresh()
+	)
+	Net.island_changed.connect(
+		func():
+			if is_visible_in_tree():
+				_show_live()
+	)
 	_show()
 
 
@@ -59,15 +69,13 @@ func refresh() -> void:
 		return
 	_loading = true
 	var path := "/islands/%s/insights?range=%s" % [str(Net.island["id"]).uri_encode(), _range]
-	if _http.request(Net.http_url(path)) != OK:
-		_loading = false
+	Net.request_json(path, _on_response)
 
 
-func _on_response(result: int, code: int, _headers, body: PackedByteArray) -> void:
+func _on_response(ok: bool, data: Dictionary) -> void:
 	_loading = false
-	var parsed = JSON.parse_string(body.get_string_from_utf8()) if code == 200 else null
-	_reachable = result == HTTPRequest.RESULT_SUCCESS and typeof(parsed) == TYPE_DICTIONARY
-	_data = parsed if _reachable else {}
+	_reachable = ok
+	_data = data if ok else {}
 	_show()
 
 
@@ -89,6 +97,7 @@ func _show_live() -> void:
 
 
 # --- Stat cards ----------------------------------------------------------------
+
 
 func _show_stats() -> void:
 	var island: Dictionary = _data.get("island", {})
@@ -149,14 +158,16 @@ func _duration(seconds: float) -> String:
 
 # --- Packages delivered per day ------------------------------------------------
 
+
 func _show_per_day() -> void:
 	for child in %Bars.get_children():
 		child.queue_free()
 	var days: Array = _data.get("per_day", [])
 	%ChartEmpty.visible = days.is_empty()
 	if days.is_empty():
-		%ChartEmpty.text = "No deliveries recorded yet. They'll show up here." if _reachable \
-			else "Couldn't reach the backend."
+		%ChartEmpty.text = (
+			"No deliveries recorded yet. They'll show up here." if _reachable else "Couldn't reach the backend."
+		)
 		return
 
 	var most := 1
@@ -172,7 +183,7 @@ func _show_per_day() -> void:
 		column.alignment = BoxContainer.ALIGNMENT_END
 		column.add_theme_constant_override("separation", 4)
 
-		var number := _label(str(count) if few else "", 12, true)
+		var number := UI.label(str(count) if few else "", 12, true)
 		number.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		var bar := Panel.new()
 		bar.custom_minimum_size = Vector2(0, maxf(4.0, BAR_MAX_HEIGHT * count / most))
@@ -182,7 +193,7 @@ func _show_per_day() -> void:
 		style.corner_radius_top_left = 8
 		style.corner_radius_top_right = 8
 		bar.add_theme_stylebox_override("panel", style)
-		var day := _label("Today" if is_today else _day_name(str(days[i].get("day", "")), few), 12, false)
+		var day := UI.label("Today" if is_today else _day_name(str(days[i].get("day", "")), few), 12, false)
 		day.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
 		column.add_child(number)
@@ -203,16 +214,22 @@ func _day_name(date: String, short_list: bool) -> String:
 
 # --- Where packages are waiting (live) -----------------------------------------
 
+
 func _show_waiting() -> void:
 	for child in %Waiting.get_children():
 		child.queue_free()
 
 	# Open tasks per building, from the live snapshot.
+	# A queued package isn't at a building yet: it waits at the Mailbox (on other islands
+	# the mailbox's id is "<island>_mailbox", so look it up by type).
 	var waiting := {}
+	var mailbox := ""
 	for b in Net.island.get("buildings", []):
 		waiting[b["id"]] = 0
+		if b.get("type") == "mailbox":
+			mailbox = str(b["id"])
 	for t in Net.island.get("tasks", []):
-		var where := str(t.get("building", "")) if t.get("building") else "mailbox"
+		var where := str(t["building"]) if t.get("building") else mailbox
 		waiting[where] = waiting.get(where, 0) + 1
 
 	var order: Array = waiting.keys()
@@ -223,7 +240,7 @@ func _show_waiting() -> void:
 		total += waiting[id]
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 10)
-		var title := _label(str(Net.find_building(id).get("name", id.capitalize())), 13, true)
+		var title := UI.label(str(Net.find_building(id).get("name", id.capitalize())), 13, true)
 		title.custom_minimum_size.x = 92
 		var bar := ProgressBar.new()
 		bar.theme_type_variation = &"NotebookBar"
@@ -240,7 +257,7 @@ func _show_waiting() -> void:
 		var bg: StyleBoxFlat = get_theme_stylebox("background", "NotebookBar").duplicate()
 		bg.bg_color = Color(1, 1, 1, 0)  # the mockup has no track behind the bars
 		bar.add_theme_stylebox_override("background", bg)
-		var count := _label(str(waiting[id]), 13, false)
+		var count := UI.label(str(waiting[id]), 13, false)
 		count.custom_minimum_size.x = 18
 		count.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		row.add_child(title)
@@ -255,13 +272,16 @@ func _show_waiting() -> void:
 	elif total == 0:
 		%Tip.text = "No packages waiting. A calm day on the island."
 	elif waiting[order[0]] >= 3:
-		%Tip.text = "The %s is looking busy. Another resident could lend a hand." % \
-			Net.find_building(order[0]).get("name", "island")
+		%Tip.text = (
+			"The %s is looking busy. Another resident could lend a hand."
+			% Net.find_building(order[0]).get("name", "island")
+		)
 	else:
 		%Tip.text = "Packages are moving along nicely."
 
 
 # --- Comfort report (live moods + answered bubbles) ----------------------------
+
 
 func _show_comfort() -> void:
 	var parts := ["Comfort report:"]
@@ -278,15 +298,18 @@ func _show_comfort() -> void:
 
 # --- Building the controls -----------------------------------------------------
 
+
 func _build_ranges() -> void:
 	for r in RANGES:
 		var chip := Button.new()
 		chip.text = r[1]
 		chip.focus_mode = Control.FOCUS_NONE
-		chip.pressed.connect(func():
-			_range = r[0]
-			_style_ranges()
-			refresh())
+		chip.pressed.connect(
+			func():
+				_range = r[0]
+				_style_ranges()
+				refresh()
+		)
 		chip.set_meta("range", r[0])
 		%Ranges.add_child(chip)
 	_style_ranges()
@@ -308,11 +331,11 @@ func _build_stats() -> void:
 
 		var rows := VBoxContainer.new()
 		rows.add_theme_constant_override("separation", 0)
-		var title := _label(s[1], 14, true)
+		var title := UI.label(s[1], 14, true)
 		var value := Label.new()
 		value.theme_type_variation = &"StatValue"
 		value.text = "—"
-		var note := _label("", 12, false)
+		var note := UI.label("", 12, false)
 		note.add_theme_color_override("font_color", Color(s[3]))
 		note.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		rows.add_child(title)
@@ -321,11 +344,3 @@ func _build_stats() -> void:
 		card.add_child(rows)
 		%Stats.add_child(card)
 		_stats[s[0]] = [value, note]
-
-
-func _label(text: String, size: int, strong: bool) -> Label:
-	var label := Label.new()
-	label.text = text
-	label.theme_type_variation = &"LabelStrong" if strong else &"LabelMuted"
-	label.add_theme_font_size_override("font_size", size)
-	return label

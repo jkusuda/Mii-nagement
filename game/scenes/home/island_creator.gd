@@ -19,65 +19,93 @@ signal founded(island: Dictionary, residents: Array)
 ## hands the result back with put_resident().
 signal resident_requested(resident: Dictionary, index: int)
 
-const NAMES := ["Fern Harbor", "Maple Hollow", "Driftwood Isle", "Sunny Shoals", "Pebble Cove",
-	"Coral Key", "Willow Reach", "Mossy Point", "Tidepool Isle", "Lantern Bay"]
+const NAMES := [
+	"Fern Harbor",
+	"Maple Hollow",
+	"Driftwood Isle",
+	"Sunny Shoals",
+	"Pebble Cove",
+	"Coral Key",
+	"Willow Reach",
+	"Mossy Point",
+	"Tidepool Isle",
+	"Lantern Bay"
+]
 ## plan id -> [title, description, building types]: quick picks of steps.
 ## Must match PLANS in backend/mii/islands.py.
 const PLANS := {
-	"classic": ["Classic town", "Mailbox · Workshop · Lab · Courthouse · Post Office",
-		["mailbox", "workshop", "lab", "courthouse", "post_office"]],
-	"quick_fixes": ["Quick fixes", "Mailbox · Workshop · Post Office\nSmall chores, no tests or review stop.",
-		["mailbox", "workshop", "post_office"]],
+	"classic":
+	[
+		"Classic town",
+		"Mailbox · Workshop · Lab · Courthouse · Post Office",
+		["mailbox", "workshop", "lab", "courthouse", "post_office"]
+	],
+	"quick_fixes":
+	[
+		"Quick fixes",
+		"Mailbox · Workshop · Post Office\nSmall chores, no tests or review stop.",
+		["mailbox", "workshop", "post_office"]
+	],
 }
 ## [rule, label, ask by default]. Must match RULES in backend/mii/islands.py.
-const RULES := [["merge_pr", "Merging a PR", true], ["install_packages", "Installing packages", true],
-	["shell", "Running shell commands", false]]
+const RULES := [
+	["merge_pr", "Merging a PR", true],
+	["install_packages", "Installing packages", true],
+	["shell", "Running shell commands", false]
+]
 ## [season, swatch color]: the island's season (changeable later in build mode).
 const LOOKS := [["spring", "F4A6C8"], ["summer", "9BD77A"], ["autumn", "E0A85C"], ["winter", "DDE6F2"]]
 const TOGGLE_ON := preload("res://assets/ui/toggle_on.svg")
 const TOGGLE_OFF := preload("res://assets/ui/toggle_off.svg")
 const CHECK := preload("res://assets/icons/check.svg")
-const DashedButton := preload("res://scenes/ui/dashed_button.gd")
 const REPO_PATTERN := "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
 ## [mode, chip label]: where the island's code comes from (POST /islands sends
 ## nothing, "repo", or "existing_repo").
-const REPO_MODES := [["new", "New empty repository"], ["github", "Clone from GitHub"],
-	["folder", "Use a folder on this computer"]]
+const REPO_MODES := [
+	["new", "New empty repository"], ["github", "Clone from GitHub"], ["folder", "Use a folder on this computer"]
+]
 
 var _step := 1
-var _repos: Array = []    # [{"repo", "private", "updated_at"}] from the backend
-var _repo_mode := "new"   # a REPO_MODES id
-var _repo := ""           # chosen "owner/name" ("" = none)
+var _repos: Array = []  # [{"repo", "private", "updated_at"}] from the backend
+var _repo_mode := "new"  # a REPO_MODES id
+var _repo := ""  # chosen "owner/name" ("" = none)
 var _mode_row: HFlowContainer  # the REPO_MODES chips (built in code)
-var _folder_edit: LineEdit     # the path, for "folder" mode
-var _mode_hint: Label          # one line about the chosen mode
+var _folder_edit: LineEdit  # the path, for "folder" mode
+var _mode_hint: Label  # one line about the chosen mode
 var _branch := "main"
-var _plan := "classic"     # the plan card that matches _steps ("" = a custom mix)
+var _plan := "classic"  # the plan card that matches _steps ("" = a custom mix)
 var _steps: Array = IslandLayout.STEP_ORDER.duplicate()
 var _shape := "classic"
 var _season := "summer"
-var _step_toggles := {}       # building type -> Button
+var _step_toggles := {}  # building type -> Button
 var _rules := {}
 var _residents: Array = []  # drafts from the resident creator
 var _busy := false
-var _repo_http := HTTPRequest.new()
-var _branch_http := HTTPRequest.new()
-var _found_http := HTTPRequest.new()
+var _repo_request := 0  # only the latest GET /github/repos reply counts
+var _branch_request := 0  # same, for GET /github/branches
 
 
 func _ready() -> void:
-	for http in [_repo_http, _branch_http, _found_http]:
-		add_child(http)
-	_repo_http.request_completed.connect(_on_repos)
-	_branch_http.request_completed.connect(_on_branches)
-	_found_http.request_completed.connect(_on_founded)
-
 	%Close.pressed.connect(closed.emit)
-	%Cancel.pressed.connect(func(): closed.emit() if _step == 1 else _go_to(1))
-	%Next.pressed.connect(func(): _go_to(2) if _step == 1 else _found())
-	%Shuffle.pressed.connect(func():
-		%NameEdit.text = NAMES.pick_random()
-		_refresh())
+	%Cancel.pressed.connect(
+		func():
+			if _step == 1:
+				closed.emit()
+			else:
+				_go_to(1)
+	)
+	%Next.pressed.connect(
+		func():
+			if _step == 1:
+				_go_to(2)
+			else:
+				_found()
+	)
+	%Shuffle.pressed.connect(
+		func():
+			%NameEdit.text = NAMES.pick_random()
+			_refresh()
+	)
 	%NameEdit.text_changed.connect(func(_t): _refresh())
 	%SearchEdit.text_changed.connect(func(_t): _show_repos())
 	%BranchEdit.text_changed.connect(func(text: String): _branch = text.strip_edges())
@@ -113,8 +141,8 @@ func open() -> void:
 	_show_repo_mode()
 	_go_to(1)
 	%GhStatus.text = "Asking GitHub…"
-	_repo_http.cancel_request()
-	_repo_http.request(Net.http_url("/github/repos"))
+	_repo_request += 1
+	Net.request_json("/github/repos", _on_repos.bind(_repo_request))
 	%NameEdit.grab_focus()
 
 
@@ -133,6 +161,7 @@ func island_name() -> String:
 
 
 # --- Steps -------------------------------------------------------------------
+
 
 func _go_to(step: int) -> void:
 	_step = step
@@ -157,11 +186,21 @@ func _refresh() -> void:
 		%Next.text = "Next: town plan"
 		match _repo_mode:
 			"github":
-				_set_note("Residents work on a copy of %s and send their work back as pull requests." % _repo
-					if _repo else "Pick the repo to clone.")
+				_set_note(
+					(
+						"Residents work on a copy of %s and send their work back as pull requests." % _repo
+						if _repo
+						else "Pick the repo to clone."
+					)
+				)
 			"folder":
-				_set_note("Residents work in their own git worktrees; your checkout stays as it is."
-					if _folder_path() else "Paste the path of a git folder.")
+				_set_note(
+					(
+						"Residents work in their own git worktrees; your checkout stays as it is."
+						if _folder_path()
+						else "Paste the path of a git folder."
+					)
+				)
 			_:
 				_set_note("A fresh repository with a README. Clone or pick a folder to work on code you have.")
 	else:
@@ -206,6 +245,7 @@ func _process(_delta: float) -> void:
 
 # --- Step 1: where the code comes from -------------------------------------------
 
+
 ## The REPO_MODES chips, a path field for "folder" mode, and a hint line, built
 ## in code just under the name row. An HFlowContainer is like an HBoxContainer
 ## that wraps its children onto a new line when they don't fit.
@@ -222,7 +262,7 @@ func _build_repo_modes() -> void:
 	_folder_edit.placeholder_text = "/path/to/your/project (a git folder)"
 	_folder_edit.clear_button_enabled = true
 	_folder_edit.text_changed.connect(func(_t): _refresh())
-	_mode_hint = _label("", 12, false)
+	_mode_hint = UI.label("", 12, false)
 	_mode_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	var nodes: Array[Control] = [label, _mode_row, _folder_edit, _mode_hint]
 	for i in nodes.size():
@@ -239,10 +279,12 @@ func _show_repo_mode() -> void:
 		chip.text = mode[1]
 		chip.focus_mode = Control.FOCUS_NONE
 		chip.theme_type_variation = &"FilterChipActive" if mode[0] == _repo_mode else &"FilterChip"
-		chip.pressed.connect(func():
-			_repo_mode = mode[0]
-			_show_repo_mode()
-			_refresh())
+		chip.pressed.connect(
+			func():
+				_repo_mode = mode[0]
+				_show_repo_mode()
+				_refresh()
+		)
 		_mode_row.add_child(chip)
 	var github := _repo_mode == "github"
 	for node in ["RepoHeader", "SearchEdit", "RepoScroll", "BranchLabel", "BranchRow"]:
@@ -254,8 +296,10 @@ func _show_repo_mode() -> void:
 		"github":
 			_mode_hint.text = "Cloned with your gh login. Residents open pull requests against the branch below."
 		"folder":
-			_mode_hint.text = ("Residents branch off whatever is checked out there. If it pushes to GitHub, "
-				+ "they open pull requests too.")
+			_mode_hint.text = (
+				"Residents branch off whatever is checked out there. If it pushes to GitHub, "
+				+ "they open pull requests too."
+			)
 	if _repo_mode == "folder":
 		_folder_edit.grab_focus.call_deferred()
 
@@ -276,15 +320,16 @@ func _folder_path() -> String:
 
 # --- Step 1: repos and branches --------------------------------------------------
 
-func _on_repos(result: int, code: int, _headers, body: PackedByteArray) -> void:
-	var data = JSON.parse_string(body.get_string_from_utf8())
-	if result == HTTPRequest.RESULT_SUCCESS and code == 200 and typeof(data) == TYPE_DICTIONARY:
+
+func _on_repos(ok: bool, data: Dictionary, asked: int) -> void:
+	if asked != _repo_request:
+		return
+	if ok:
 		_repos = data.get("repos", [])
 		%GhStatus.text = "From your GitHub (gh) · %d repos" % _repos.size()
 	else:
 		_repos = []
-		var why: String = str(data.get("error", data.get("detail", ""))) if typeof(data) == TYPE_DICTIONARY else "backend offline"
-		%GhStatus.text = "Couldn't list repos (%s). Type owner/name." % why
+		%GhStatus.text = "Couldn't list repos (%s). Type owner/name." % data["error"]
 	_show_repos()
 
 
@@ -302,7 +347,7 @@ func _show_repos() -> void:
 	for r in shown.slice(0, 30):
 		%Repos.add_child(_repo_row(r))
 	if shown.is_empty():
-		var empty := _label("No matching repos." if _repos else "Type a repo as owner/name.", 13, false)
+		var empty := UI.label("No matching repos." if _repos else "Type a repo as owner/name.", 13, false)
 		%Repos.add_child(empty)
 
 
@@ -312,25 +357,31 @@ func _repo_row(r: Dictionary) -> Control:
 	row.theme_type_variation = &"IslandRowHere" if repo == _repo else &"IslandRow"
 	row.custom_minimum_size.y = 40
 	row.focus_mode = Control.FOCUS_NONE
-	row.pressed.connect(func():
-		_repo = "" if _repo == repo else repo  # click again to unlink
-		_show_repos()
-		_show_branches([])
-		if _repo:
-			_branch_http.cancel_request()
-			_branch_http.request(Net.http_url("/github/branches?repo=%s" % _repo.uri_encode()))
-		_refresh())
+	row.pressed.connect(
+		func():
+			_repo = "" if _repo == repo else repo  # click again to unlink
+			_show_repos()
+			_show_branches([])
+			if _repo:
+				_branch_request += 1
+				var path := "/github/branches?repo=%s" % _repo.uri_encode()
+				Net.request_json(path, _on_branches.bind(_branch_request))
+			_refresh()
+	)
 	var line := HBoxContainer.new()
 	line.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	line.offset_left = 12
 	line.offset_right = -12
 	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var name_label := _label(repo, 14, true)
+	var name_label := UI.label(repo, 14, true)
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var detail := "typed in" if r.get("typed") else "%s · updated %s" % [
-		"Private" if r.get("private") else "Public", _ago(str(r.get("updated_at", "")))]
+	var detail := (
+		"typed in"
+		if r.get("typed")
+		else "%s · updated %s" % ["Private" if r.get("private") else "Public", _ago(str(r.get("updated_at", "")))]
+	)
 	line.add_child(name_label)
-	line.add_child(_label(detail, 11, false))
+	line.add_child(UI.label(detail, 11, false))
 	if repo == _repo:
 		var check := TextureRect.new()
 		check.texture = CHECK
@@ -346,9 +397,9 @@ func _repo_row(r: Dictionary) -> Control:
 	return row
 
 
-func _on_branches(_result: int, code: int, _headers, body: PackedByteArray) -> void:
-	var data = JSON.parse_string(body.get_string_from_utf8()) if code == 200 else null
-	_show_branches(data.get("branches", []) if typeof(data) == TYPE_DICTIONARY else [])
+func _on_branches(ok: bool, data: Dictionary, asked: int) -> void:
+	if asked == _branch_request:
+		_show_branches(data.get("branches", []) if ok else [])
 
 
 ## Branch chips: main first, a few others, then "Other…" to type one.
@@ -366,20 +417,23 @@ func _show_branches(names: Array) -> void:
 		chip.focus_mode = Control.FOCUS_NONE
 		var on: bool = (b == _branch) or (b == "Other…" and %BranchEdit.visible)
 		chip.theme_type_variation = &"FilterChipActive" if on else &"FilterChip"
-		chip.pressed.connect(func():
-			if b == "Other…":
-				%BranchEdit.visible = true
-				%BranchEdit.text = ""
-				_branch = ""
-				%BranchEdit.grab_focus()
-			else:
-				_branch = b
-				%BranchEdit.visible = false
-			_show_branches(names))
+		chip.pressed.connect(
+			func():
+				if b == "Other…":
+					%BranchEdit.visible = true
+					%BranchEdit.text = ""
+					_branch = ""
+					%BranchEdit.grab_focus()
+				else:
+					_branch = b
+					%BranchEdit.visible = false
+				_show_branches(names)
+		)
 		%Branches.add_child(chip)
 
 
 # --- Step 2: plan, residents, rules -------------------------------------------
+
 
 func _build_plans() -> void:
 	var group := ButtonGroup.new()
@@ -392,12 +446,14 @@ func _build_plans() -> void:
 		card.custom_minimum_size = Vector2(0, 92)
 		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		card.set_meta("plan", id)
-		card.toggled.connect(func(on: bool):
-			if on:
-				_plan = id
-				_steps = PLANS[id][2].duplicate()
-				_style_choices()
-				_refresh())
+		card.toggled.connect(
+			func(on: bool):
+				if on:
+					_plan = id
+					_steps = PLANS[id][2].duplicate()
+					_style_choices()
+					_refresh()
+		)
 		var rows := VBoxContainer.new()
 		rows.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		rows.offset_left = 16
@@ -406,7 +462,7 @@ func _build_plans() -> void:
 		rows.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		var top := HBoxContainer.new()
 		top.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		var title := _label(PLANS[id][0], 17, true)
+		var title := UI.label(PLANS[id][0], 17, true)
 		title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		top.add_child(title)
 		if id == "classic":
@@ -415,11 +471,11 @@ func _build_plans() -> void:
 			var style: StyleBoxFlat = get_theme_stylebox("panel", "TagPill").duplicate()
 			style.bg_color = Color("7553DF")
 			pill.add_theme_stylebox_override("panel", style)
-			var text := _label("Recommended", 11, true)
+			var text := UI.label("Recommended", 11, true)
 			text.add_theme_color_override("font_color", Color.WHITE)
 			pill.add_child(text)
 			top.add_child(pill)
-		var description := _label(PLANS[id][1], 12, false)
+		var description := UI.label(PLANS[id][1], 12, false)
 		description.add_theme_color_override("font_color", Color("292E50"))
 		rows.add_child(top)
 		rows.add_child(description)
@@ -447,9 +503,9 @@ func _show_residents() -> void:
 	content.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	content.alignment = BoxContainer.ALIGNMENT_CENTER
 	content.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var plus := _label("+", 26, true)
+	var plus := UI.label("+", 26, true)
 	plus.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	var text := _label("Make your own", 14, true)
+	var text := UI.label("Make your own", 14, true)
 	text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	content.add_child(plus)
 	content.add_child(text)
@@ -479,13 +535,13 @@ func _resident_tile(resident: Dictionary, index: int) -> Control:
 	var circle: StyleBoxFlat = get_theme_stylebox("panel", "AvatarCircle").duplicate()
 	circle.bg_color = color.lerp(Color.WHITE, 0.7)
 	avatar.add_theme_stylebox_override("panel", circle)
-	var initial := _label(str(resident.get("name", "?")).left(1), 22, true)
+	var initial := UI.label(str(resident.get("name", "?")).left(1), 22, true)
 	initial.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	initial.add_theme_color_override("font_color", color.darkened(0.2))
 	avatar.add_child(initial)
-	var name_label := _label(str(resident.get("name", "")), 16, true)
+	var name_label := UI.label(str(resident.get("name", "")), 16, true)
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	var job := _label(str(resident.get("job", "")).capitalize(), 12, true)
+	var job := UI.label(str(resident.get("job", "")).capitalize(), 12, true)
 	job.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	job.add_theme_color_override("font_color", color.darkened(0.2))
 	rows.add_child(avatar)
@@ -502,9 +558,11 @@ func _resident_tile(resident: Dictionary, index: int) -> Control:
 	remove.offset_left = -30
 	remove.offset_top = 6
 	remove.offset_right = -6
-	remove.pressed.connect(func():
-		_residents.remove_at(index)
-		_show_residents())
+	remove.pressed.connect(
+		func():
+			_residents.remove_at(index)
+			_show_residents()
+	)
 	tile.add_child(remove)
 	return tile
 
@@ -599,15 +657,17 @@ func _choice_tile(title: String, group: ButtonGroup, on_pick: Callable) -> Butto
 	tile.button_group = group
 	tile.focus_mode = Control.FOCUS_NONE
 	tile.custom_minimum_size = Vector2(76, 70)
-	tile.toggled.connect(func(on: bool):
-		if on:
-			on_pick.call()
-			_refresh())
+	tile.toggled.connect(
+		func(on: bool):
+			if on:
+				on_pick.call()
+				_refresh()
+	)
 	var rows := VBoxContainer.new()
 	rows.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	rows.alignment = BoxContainer.ALIGNMENT_CENTER
 	rows.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var name_label := _label(title, 12, true)
+	var name_label := UI.label(title, 12, true)
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	rows.add_child(name_label)
 	tile.add_child(rows)
@@ -622,7 +682,7 @@ func _build_step_toggles() -> void:
 	var step2: Control = %Plans.get_parent()
 	step2.add_child(row)
 	step2.move_child(row, %Plans.get_index() + 1)
-	row.add_child(_label("Buildings:", 13, true))
+	row.add_child(UI.label("Buildings:", 13, true))
 	for type in IslandLayout.STEP_ORDER:
 		var button := Button.new()
 		button.text = IslandLayout.STEP_NAMES[type]
@@ -671,40 +731,40 @@ func _style_choices() -> void:
 
 # --- Founding -------------------------------------------------------------------
 
+
 func _found() -> void:
 	if _busy:
 		return
 	_busy = true
 	_refresh()
-	var body := {"name": %NameEdit.text.strip_edges(), "shape": _shape, "steps": _steps, "season": _season,
-		"rules": _rules}
+	var body := {
+		"name": %NameEdit.text.strip_edges(), "shape": _shape, "steps": _steps, "season": _season, "rules": _rules
+	}
 	match _repo_mode:
-		"github":  # the backend clones it (can take a while; HTTPRequest has no timeout by default)
+		"github":  # the backend clones it (can take a while; Net.request_json has no timeout)
 			body["repo"] = _repo
 			body["branch"] = _branch if _branch else null
 		"folder":  # adopt it; the backend reads owner/name from its origin and uses its branch
 			body["existing_repo"] = _folder_path()
-	var error := _found_http.request(Net.http_url("/islands"), ["Content-Type: application/json"],
-		HTTPClient.METHOD_POST, JSON.stringify(body))
-	if error != OK:
-		_busy = false
-		_refresh()
-		_set_note("Couldn't reach the backend.", true)
+	Net.request_json("/islands", _on_founded, HTTPClient.METHOD_POST, body)
 
 
-func _on_founded(result: int, code: int, _headers, body: PackedByteArray) -> void:
+func _on_founded(ok: bool, data: Dictionary) -> void:
 	_busy = false
-	var data = JSON.parse_string(body.get_string_from_utf8())
-	if result == HTTPRequest.RESULT_SUCCESS and code == 200 and typeof(data) == TYPE_DICTIONARY:
+	if ok:
 		founded.emit(data, _residents.duplicate(true))
 		return
-	var why: String = str(data.get("error", data.get("detail", ""))) if typeof(data) == TYPE_DICTIONARY else "the backend is offline"
+	var why := str(data["error"])
 	# Repo problems (gh not logged in, a bad path, a missing branch) are fixed on step 1.
-	_go_to(1) if _repo_mode != "new" else _refresh()
+	if _repo_mode != "new":
+		_go_to(1)
+	else:
+		_refresh()
 	_set_note("Hmm, that didn't work: %s" % why, true)
 
 
 # --- Little helpers ---------------------------------------------------------------
+
 
 func _ago(iso: String) -> String:
 	if iso.length() < 19:
@@ -715,12 +775,3 @@ func _ago(iso: String) -> String:
 	if hours < 48:
 		return "%dh ago" % int(hours)
 	return "%dd ago" % int(hours / 24.0)
-
-
-func _label(text: String, size: int, strong: bool) -> Label:
-	var label := Label.new()
-	label.text = text
-	label.theme_type_variation = &"LabelStrong" if strong else &"LabelMuted"
-	label.add_theme_font_size_override("font_size", size)
-	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	return label

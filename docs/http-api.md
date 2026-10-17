@@ -1,0 +1,125 @@
+# HTTP API
+
+Every endpoint of the backend (`backend/mii/urls.py` → `backend/mii/views.py`).
+The WebSocket messages are in [protocol.md](protocol.md); how the pieces fit is in
+[architecture.md](architecture.md). All bodies are JSON; an error is
+`{"error": "<readable reason>"}` with a 4xx/5xx status.
+
+## Endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `WS /ws?island=<id>` | snapshot + live events; the game sends `answer_bubble`, `create_resident`, `update_resident`, `delete_resident`, `create_task`, `cancel_task`, `set_layout`, `update_island` |
+| `GET /health` | is the server up, which mode, which judge (`rules` / `jev`) |
+| `GET /meta` | the vocabulary the game shows pickers for: jobs, traits, brains, gifts, keys, building types, job buildings, road conditions, town plans, island shapes, house rules, bubble kinds, moods, states, task statuses, weather kinds (all from `backend/mii/vocab.py`) |
+| `GET /brains` | `{brain: true/false}`: which brains can run here (the creator greys out the rest) |
+| `GET /brains/detail` | per brain: `ok`, `installed`, `logged_in` (best effort), `api_key`, `hint` |
+| `GET /gifts` | per gift (MCP server): `ok`, `label`, `hint` (the creator greys out the rest) |
+| `GET /models` | the OpenRouter catalogue (needs `OPENROUTER_API_KEY`) |
+| `GET /islands` | every island (id, name, repo, created_at, ...: the Archipelago screen), plus `default_folder` for new repositories |
+| `POST /islands` | found an island: `{"name", "repo"?, "branch"?, "shape"?, "steps"? \| "plan"?: "classic" \| "quick_fixes", "season"?, "rules"?, "folder"?, "existing_repo"?}` → its snapshot (400 `{"error"}` with a readable reason). The repository comes one of three ways: no `repo` → a new repo with a README in `<folder>/<id>`; `repo` → `gh repo clone owner/name <folder>/<id>` (needs `gh` installed and logged in; the folder must be empty or missing; checks out `branch`, default the repo's default branch; an empty GitHub repo gets a first README commit); `existing_repo` → that git folder as is (needs a commit; `repo` is read from its GitHub `origin` when not given, `branch` defaults to its checked-out branch). Then it lays out the shape's lots and the roads for the steps. Cloning runs in a worker thread and can take a while |
+| `GET /github/repos?q=` | the user's repos, through their logged-in `gh` (island creator) |
+| `GET /github/branches?repo=` | a repo's branches, through `gh` |
+| `GET /islands/{id}` | the island snapshot (plus `mock_agents`), the same object the `snapshot` event carries |
+| `PATCH /islands/{id}` | `{"name"?, "repo"?, "branch"?, "rules"?}`: rename, link a repo (also sets the repository's `origin`), change the branch or house rules → the island header, and an `island` event to every client |
+| `GET /islands/{id}/issues?limit=50` | the linked repo's open GitHub issues through `gh` (400 without a repo), to start a task from one |
+| `DELETE /islands/{id}` | abandon the island (rows go, the git repository stays on disk). 409 while a task runs there or if it is the last island |
+| `DELETE /islands/{id}/residents/{resident_id}` | the resident moves away (409 if a building still counts on them) |
+| `GET /islands/{id}/tasks` | the island's tasks, newest first, each with its `steps` (`?status=done,failed&limit=50`) |
+| `POST /islands/{id}/tasks` | `{"title": ..., "description": ...}` or `{"issue": 42}` → the queued task. The engine runs it through the island's residents' brains |
+| `GET /islands/{id}/tasks/{task_id}` | one task: `steps` (building, resident, brain, outcome, `summary` = what the resident reported) + `events` (the stored events while it ran) |
+| `POST /islands/{id}/tasks/{task_id}/cancel` | cancel a queued task or stop the running one (409 if it already finished) |
+| `GET /islands/{id}/insights?range=week` | stats for the Insights screen and News' "This week" (`today` / `week` / `month`) |
+| `GET /islands/{id}/events?limit=200` | stored events, oldest first, for the News tab (see "Events history") |
+| `PUT /islands/{id}/layout` | build mode over HTTP: `{"buildings", "roads"}` → the saved layout (same rules as `set_layout` in protocol.md); or the game's form `{"map", "buildings": [{type, x, y, facing}]}` → the new snapshot (also sent to every client as a stored `snapshot` event), 400 / 409 (steps changing during a task), see protocol.md "Island map" |
+| `GET /settings` | effective settings (incl. `judge`, `godot_path`), what `.env` locks, which API keys are set (incl. `typesafe_api_key`) |
+| `PUT /settings` | `{"settings": {...}, "secrets": {"openrouter_api_key": "sk-..." \| null}}`; keys go to the keychain and are never echoed |
+| `POST /replay/{task_id}?speed=4` | replay a recorded task (demo safety net) |
+
+## Tasks over HTTP
+
+`POST /islands/{id}/tasks` is how work reaches the island without the game: a
+curl, a script, or a GitHub issue number. The reply is the queued task; the
+engine worker picks it up and each building's resident does their step through
+their brain (an ACP agent such as Claude Code when `mock_agents` is off). The
+`steps` of `GET /islands/{id}/tasks/{task_id}` show the result of every visit,
+with `summary` holding what the resident said: the planner's plan, the coder's
+commit note, the test output, the review, the PR text.
+
+```json
+{
+  "id": "t_d5d447", "title": "Add hello.txt", "status": "done", "building": "post_office", "agent": "jun",
+  "pr_url": null, "description": "...", "issue": null, "branch": "mii/t_d5d447", "created_at": "...",
+  "steps": [
+    {"building": "mailbox", "building_type": "mailbox", "resident": "jun", "brain": "claude-code",
+     "outcome": "pass", "summary": "1. Create hello.txt ...", "timed_out": false, "bubbles_raised": 0,
+     "started_at": "...", "finished_at": "...", "seconds": 21.4}
+  ],
+  "events": [{"event_id": 41, "type": "activity", "agent": "carlos", "text": "Write hello.txt", "ts": "..."}]
+}
+```
+
+`events` is the island's stored event stream between the task's `in_progress`
+and its last `task` event (`done`, `failed` or `cancelled`; an island runs one task at a
+time, so that window is the task's), in the shape of `GET /islands/{id}/events`
+(`replay.task_window` finds it; replay uses the same window).
+
+## Insights payload
+
+`GET /islands/{id}/insights?range=today|week|month` feeds the game's Insights
+screen (`game/scenes/insights/`) and the News tab's "This week" box. Every
+field below is filled in (`insights.py`); the game still puts a dash on
+anything `null`. The range is the last 1 / 7 / 30 local calendar days ending
+today; `*_before` is the same number for the range before that.
+
+```json
+{
+  "range": "week",
+  "island": {
+    "tasks_done": 12, "tasks_failed": 1, "prs_opened": 9,
+    "tasks_done_before": 8, "prs_opened_before": 6,
+    "answer_seconds": 360, "answer_seconds_before": 420,
+    "tests_pass_rate": 0.96, "flaky_tests": 2,
+    "bubbles_answered": 11, "keys_lent": 4, "prs_merged": 7, "avg_issue_to_pr_seconds": 1840
+  },
+  "per_day": [{"day": "2026-10-12", "done": 3}, {"day": "2026-10-13", "done": 5}],
+  "tip": "The Mailbox is looking busy. Another Planner could sort some letters.",
+  "residents": [], "brains": [], "buildings": []
+}
+```
+
+- `*_before`: the same number for the previous range ("↑ 4 on last week").
+- `answer_seconds`: average time from a bubble appearing to your answer, from
+  the stored `bubble` / `bubble_resolved` events. `bubbles_answered` counts
+  bubbles that didn't time out; `keys_lent` counts permission bubbles answered
+  with anything but a rejection.
+- `tests_pass_rate` (0-1): Lab visits that passed. `flaky_tests`: tasks whose
+  tests failed at least once and then passed.
+- `prs_merged`: PRs merged in the range. `insights.py` asks `gh pr view` about
+  up to 10 unmerged github.com PRs per request and remembers `Task.merged_at`.
+- `per_day`: tasks finished per day in the range, oldest first, today last.
+- `tip`: one friendly suggestion from a short list of rules (nothing this
+  range, a building that bounces packages, unanswered bubbles, a resident who
+  asks a lot, a failing Lab, more deliveries than last time).
+- `residents` / `brains` / `buildings` cover the steps in the range.
+- "Where packages are waiting" doesn't need anything here: the game counts the
+  open tasks in the live snapshot by `building`.
+
+## Events history (for Island News)
+
+`GET /islands/{id}/events?limit=200` lets the game's News tab
+(`game/scenes/news/`) show what happened before it connected. It's one query
+on the `Event` table (`limit` is capped at 2000):
+
+```json
+{"events": [
+  {"event_id": 41, "type": "task", "id": "t_12", "title": "Fix login typo", "status": "done", "agent": "jun", "pr_url": "https://github.com/...", "ts": "2026-10-16T09:40:12+00:00"},
+  {"event_id": 42, "type": "bubble", "agent": "carlos", "kind": "confused", "id": "b_3f2a", "text": "Which test file?", "ts": "2026-10-16T09:41:03+00:00"}
+]}
+```
+
+- Each entry is the stored event payload exactly as it was broadcast (protocol
+  shapes, with `ts`), plus the row's `id` as `event_id`. Oldest first, the
+  newest `limit` events.
+- The game decides what's a story and how to word it; the backend doesn't
+  need to know about News.

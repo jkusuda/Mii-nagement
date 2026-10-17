@@ -7,17 +7,19 @@ updates the tables through migrations:
     uv run python manage.py migrate              # apply (the server also does this at startup)
 
 The engine is async, so it uses Django's async ORM methods (`aget`, `asave`,
-`acreate`, `async for`). Table models don't validate values, so personality.py
-clamps the sliders when it reads them.
+`acreate`, `async for`). Table models don't validate values: residents.py checks
+what the game sends, and personality.py clamps the sliders when it reads them.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from django.db import models
 
+from mii.island_map import default_map
+
 
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 # --- Tables -----------------------------------------------------------------
@@ -36,12 +38,12 @@ class Island(models.Model):
     repo = models.CharField(max_length=200, null=True, blank=True)  # GitHub "owner/name"
     repo_path = models.CharField(max_length=1000, null=True, blank=True)  # the local git repo (see islands.py)
     branch = models.CharField(max_length=200, default="main")  # residents branch off from here
-    plan = models.CharField(max_length=50, default="classic")  # the town plan its steps match, or "custom" (islands.py PLANS)
-    # House rules from the island creator: True = ask me before doing this.
-    # True = ask me first: merge_pr (Courthouse approval), install_packages and shell (house keys).
+    plan = models.CharField(max_length=50, default="classic")  # the town plan its steps match, or "custom"
+    # House rules (vocab.RULES), True = ask me first: merge_pr (Courthouse approval),
+    # install_packages and shell (tighten the residents' house keys).
     rules = models.JSONField(default=dict)
     created_at = models.DateTimeField(default=utcnow)  # "Day 1" in the game
-    # Land tiles, pond, plants, season: see "Island map" in islands.py. {} = the classic island.
+    # Land tiles, pond, plants, season: see island_map.py. {} = the classic island.
     map = models.JSONField(default=dict)
 
 
@@ -58,12 +60,12 @@ class Resident(models.Model):
     creativity = models.FloatField(default=0.5)
 
     brain = models.CharField(max_length=50, default="mock")  # mock | claude-code | codex | gemini | openrouter
-    model = models.CharField(max_length=200, null=True, blank=True)  # optional model override; None = the brain's default
+    model = models.CharField(max_length=200, null=True, blank=True)  # model override; None = the brain's default
     catchphrase = models.CharField(max_length=200, blank=True, default="")
     color = models.CharField(max_length=20, default="#FFFFFF")
 
     # Set in the resident creator (see docs/mii-customization.md):
-    # keys = what the agent may do without asking (honoured by the ACP runner), gifts = extra MCP server ids (stored only).
+    # keys = what the agent may do without asking (honoured by the ACP runner), gifts = extra MCP server ids.
     keys = models.JSONField(default=default_keys)
     gifts = models.JSONField(default=list)
     # How their Mii looks (skin, hair, eyes, ...). Only the game reads it; see MiiParts in the game.
@@ -105,8 +107,9 @@ class Task(models.Model):
     title = models.CharField(max_length=500)
     description = models.TextField(blank=True, default="")
     status = models.CharField(max_length=20, default="queued")  # queued | in_progress | done | failed | cancelled
-    building = models.ForeignKey(Building, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")  # where the package is now
-    agent = models.ForeignKey(Resident, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")  # who is carrying it
+    # Where the package is now, and who is carrying it.
+    building = models.ForeignKey(Building, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    agent = models.ForeignKey(Resident, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     issue_number = models.IntegerField(null=True, blank=True)  # the GitHub issue it came from
     branch = models.CharField(max_length=200, null=True, blank=True)  # mii/<task_id>, in the task's worktree
     pr_url = models.CharField(max_length=500, null=True, blank=True)  # set by the post office
@@ -129,7 +132,7 @@ class Step(models.Model):
     resident_id = models.CharField(max_length=64)
     brain = models.CharField(max_length=50)
     outcome = models.CharField(max_length=10, blank=True, default="")  # pass | fail
-    summary = models.TextField(blank=True, default="")  # what the resident reported (the plan, the commit, the review...)
+    summary = models.TextField(blank=True, default="")  # what the resident reported (plan, commit, review...)
     timed_out = models.BooleanField(default=False)
     bubbles_raised = models.IntegerField(default=0)
     flaky = models.BooleanField(default=False)  # the Lab's tests failed, then passed on their one re-run
@@ -210,7 +213,7 @@ def resident_to_dict(r: Resident) -> dict:
 
 
 def island_to_dict(i: Island) -> dict:
-    """The island's header fields: the top of the snapshot, and the `island` event."""
+    """The island's header fields: the top of the snapshot, the `island` event, the rows of GET /islands."""
     return {
         "id": i.id,
         "name": i.name,
@@ -244,7 +247,6 @@ def task_detail_dict(t: Task, steps: list[Step]) -> dict:
     return {
         **task_to_dict(t),
         "description": t.description,
-        "issue": t.issue_number,
         "branch": t.branch,
         "created_at": t.created_at.isoformat(),
         "finished_at": t.finished_at.isoformat() if t.finished_at else None,
@@ -271,8 +273,15 @@ def step_to_dict(s: Step) -> dict:
 
 
 def building_to_dict(b: Building) -> dict:
-    return {"id": b.id, "type": b.type, "name": b.name, "x": b.x, "y": b.y, "facing": b.facing,
-            "resident": b.resident_id}
+    return {
+        "id": b.id,
+        "type": b.type,
+        "name": b.name,
+        "x": b.x,
+        "y": b.y,
+        "facing": b.facing,
+        "resident": b.resident_id,
+    }
 
 
 def road_to_dict(r: Road) -> dict:
@@ -289,8 +298,7 @@ async def island_layout(island_id: str) -> dict:
 
 async def island_snapshot(island_id: str, open_bubbles: list[dict]) -> dict:
     """Full island state for the `snapshot` event. Raises Island.DoesNotExist."""
-    from mii import weather  # here, not at the top: weather.py imports this module
-    from mii.islands import default_map  # same reason: islands.py imports this module
+    from mii import weather  # here, not at the top: weather.py reads these tables
 
     island = await Island.objects.aget(pk=island_id)
     return {
@@ -303,7 +311,9 @@ async def island_snapshot(island_id: str, open_bubbles: list[dict]) -> dict:
         "bubbles": open_bubbles,
         "tasks": [
             task_to_dict(t)
-            async for t in Task.objects.filter(island_id=island_id, status__in=["queued", "in_progress"]).order_by("created_at")
+            async for t in Task.objects.filter(island_id=island_id, status__in=["queued", "in_progress"]).order_by(
+                "created_at"
+            )
         ],
         "friendships": [
             friendship_to_dict(f) async for f in Friendship.objects.filter(island_id=island_id).order_by("a", "b")

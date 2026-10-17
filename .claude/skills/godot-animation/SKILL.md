@@ -19,9 +19,9 @@ The owner is new to Godot: explain each Godot concept the first time it appears 
 | `game/scenes/island/island_life.gd` | Ambient Tomodachi-style life between packages: strolls, visits + chats, pond/tree gazing, muttering, sleep shifts, waves, and emotes on `mood` / `handoff` / `task done`. Weighted by personality sliders and `DayNight.night`. |
 | `game/scenes/island/life_lines.gd` | The canned lines (by vibe, job, weather, season) and short chat scripts. |
 | `game/scenes/island/island_paths.gd` | `route(layout, from, to)` and `nearest(layout, p)`: points along the sand paths. |
-| `game/scenes/apple_tree.tscn`, `bush.tscn` + `swaying_plant.gd` | Plants sway. |
-| `game/scenes/day_night.gd` | `DayNight.night` (0-1) moves the sun and recolours light and water. |
-| `game/scenes/seasons.gd`, `shaders/season_overlay.gdshader` | Per-season looks: blossoms, autumn colours, snow, lit windows at night. |
+| `game/scenes/plants/apple_tree.tscn`, `bush.tscn` + `swaying_plant.gd` (scenes/plants/) | Plants sway. |
+| `game/scenes/island/day_night.gd` | `DayNight.night` (0-1) moves the sun and recolours light and water. |
+| `game/scenes/island/seasons.gd`, `shaders/season_overlay.gdshader` | Per-season looks: blossoms, autumn colours, snow, lit windows at night. |
 | `game/scenes/residents/resident_data.gd` | `vibe(resident)`: the mood word shown (backend moods + sleepy / excited / lonely / bored / relaxed read off the snapshot), `VIBES` colours. |
 
 ## The one rule: the server always wins
@@ -59,9 +59,10 @@ echoed by the backend; the game owns its meaning).
 ## Checking your work
 
 ```bash
-/Applications/Godot.app/Contents/MacOS/Godot --headless --path game --quit     # parse check
-/Applications/Godot.app/Contents/MacOS/Godot --path game                       # play (backend on :8000)
-cd backend && uv run python manage.py seed --loop                              # a lively mock island
+make check                          # lint + backend tests + Godot script check (fails on script errors)
+make fmt                            # gdformat + ruff format
+make                                # backend + simulator + game: a lively mock island
+# Godot not on PATH or in /Applications? Add GODOT=/path/to/Godot to any make command.
 ```
 
 Keep `*.gd.uid` files next to new scripts (Godot 4.4+ makes them on import:

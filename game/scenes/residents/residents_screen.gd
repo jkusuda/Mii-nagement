@@ -28,7 +28,11 @@ var _filter := "all"
 func _ready() -> void:
 	# Hidden screens skip rebuilding (events can come several times a second);
 	# catch up when shown.
-	visibility_changed.connect(func(): if visible: _rebuild())
+	visibility_changed.connect(
+		func():
+			if visible:
+				_rebuild()
+	)
 	%NewButton.pressed.connect(new_resident_requested.emit)
 	%InviteButton.pressed.connect(new_resident_requested.emit)
 	_rebuild()
@@ -93,7 +97,9 @@ func _build_filters() -> void:
 		var chip := Button.new()
 		chip.text = f[1] % needs if "%d" in f[1] else f[1]
 		chip.theme_type_variation = &"FilterChipActive" if f[0] == _filter else &"FilterChip"
-		chip.pressed.connect(func():
-			_filter = f[0]
-			_rebuild())
+		chip.pressed.connect(
+			func():
+				_filter = f[0]
+				_rebuild()
+		)
 		%Filters.add_child(chip)

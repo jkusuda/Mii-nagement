@@ -1,8 +1,12 @@
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["pillow", "numpy", "scipy"]
+# ///
 """Turn the raw Mii Maker rips into the game's Mii parts.
 
-    python tools/build_mii_parts.py "<folder with the rips>"
+    uv run tools/build_mii_parts.py "<folder with the rips>"
 
-Needs Pillow, NumPy and SciPy (`pip install pillow numpy scipy`). Reads from the rip folder:
+(uv installs Pillow, NumPy and SciPy from the header above.) Reads from the rip folder:
 
     Wii U - Wii U Menu - Mii Maker - Mii Eyes.png   eyes, 3 x 20 grid
     eyebrows.png                                     brows, 4 x 6 grid

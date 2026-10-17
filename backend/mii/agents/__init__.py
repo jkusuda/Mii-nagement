@@ -11,11 +11,16 @@ engine never needs to know which brain it's talking to.
 
 import re
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Awaitable, Callable, Protocol
+from typing import TYPE_CHECKING, Protocol
 
-from mii.models import Building, Resident, Task
+from mii.models import Building, Island, Resident, Task
+from mii.vocab import DEFAULT_MODEL
+
+if TYPE_CHECKING:
+    from mii.sandbox import Sandbox
 
 
 @dataclass
@@ -52,10 +57,11 @@ class AgentJob:
     instructions: str  # what to do at this building (from the building handler)
     ask: AskFn
     report: ReportFn
+    island: Island | None = None  # the task's island (repo, branch, rules); None in runner unit tests
     attempt: int = 1  # 2+ means the package came back here after a fail
     history: list[str] = field(default_factory=list)  # notes from earlier steps
     workdir: Path | None = None  # the task's worktree (None in mock mode)
-    sandbox: object | None = None  # the island's Sandbox, for path checks (None in mock mode)
+    sandbox: "Sandbox | None" = None  # the island's Sandbox, for path checks (None in mock mode)
     read_only: bool = False  # True at buildings where the resident must not change files
     rules: dict = field(default_factory=dict)  # the island's house rules (see permission_for)
     notebook: NotebookFn | None = None  # how full the agent's context window is (ACP usage updates)
@@ -116,7 +122,8 @@ def permission_for(job: "AgentJob", kind: str, title: str = "") -> str:
     keys = getattr(job.resident, "keys", None) or {}
     answer = keys.get(kind, "ask")
     if answer == "yes" and kind == "execute":
-        if job.rules.get("shell") or (job.rules.get("install_packages") and INSTALL_PATTERN.search(title)):
+        install = job.rules.get("install_packages") and INSTALL_PATTERN.search(title)
+        if job.rules.get("shell") or install:
             return "ask"
     return answer
 
@@ -145,15 +152,23 @@ def parse_verdict(text: str, summary_chars: int = 400) -> StepResult:
     summary = summary.strip()
     if len(summary) > summary_chars:
         summary = "…" + summary[-summary_chars:]
-    return StepResult(outcome, summary, explicit=bool(verdicts), help_request=helps[-1].strip() if helps else None,
-                      says=says, remember=remember)
+    return StepResult(
+        outcome,
+        summary,
+        explicit=bool(verdicts),
+        help_request=helps[-1].strip() if helps else None,
+        says=says,
+        remember=remember,
+    )
 
 
 def build_prompt(job: AgentJob, system_prompt: str) -> str:
     """Personality + instructions + notes from earlier steps, as one text block."""
     parts = [system_prompt]
     if job.notes:
-        parts += ["", "Things you remember from earlier tasks (your diary):"] + [f"- {line}" for line in job.notes.splitlines() if line.strip()]
+        parts += ["", "Things you remember from earlier tasks (your diary):"] + [
+            f"- {line}" for line in job.notes.splitlines() if line.strip()
+        ]
     parts += ["", job.instructions]
     if job.history:
         parts += ["", "Notes from earlier steps on this task:"] + [f"- {note}" for note in job.history]
@@ -166,7 +181,8 @@ def build_prompt(job: AgentJob, system_prompt: str) -> str:
     parts += [
         "You may also add single lines anywhere in your reply:",
         "- `HELP: <what you are stuck on>` if you fail and a neighbour coming over would help.",
-        f"- `SAY TO <Name>: <message>` to leave a note a neighbour sees on their next step (your neighbours: {neighbours}).",
+        f"- `SAY TO <Name>: <message>` to leave a note a neighbour sees on their next step "
+        f"(your neighbours: {neighbours}).",
         "- `REMEMBER: <something>` to write a short line in your diary for future tasks.",
     ]
     return "\n".join(parts)
@@ -189,8 +205,9 @@ class BrainRunner:
         return await runner.run(job)
 
 
-def make_runner(mock: bool, *, openrouter_api_key: str | None = None,
-                openrouter_model: str = "anthropic/claude-sonnet-4.5") -> AgentRunner:
+def make_runner(
+    mock: bool, *, openrouter_api_key: str | None = None, openrouter_model: str = DEFAULT_MODEL
+) -> AgentRunner:
     """MOCK_AGENTS=1 puts every resident on the mock brain, whatever they're set to."""
     from mii.agents.acp import BRAINS, AcpRunner
     from mii.agents.mock import MockRunner

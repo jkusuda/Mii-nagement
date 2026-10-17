@@ -13,24 +13,21 @@ extends Node
 
 signal changed
 
-const IslandScene := preload("res://scenes/island_3d.tscn")
+const IslandScene := preload("res://scenes/island/island_3d.tscn")
 const POLL_SECONDS := 5.0
 const THUMB_SIZE := Vector2i(480, 300)
 
 var islands: Array[Dictionary] = []
-var reachable := false  # did the last GET /islands work?
 
-var _order: Array = []     # island ids from GET /islands
-var _by_id := {}           # id -> snapshot
-var _list := HTTPRequest.new()
-var _fetchers := {}        # id -> HTTPRequest
-var _thumbs := {}          # id -> SubViewport
+var _order: Array = []  # island ids from GET /islands
+var _by_id := {}  # id -> snapshot
+var _listing := false  # GET /islands is on its way
+var _fetching := {}  # id -> true while that island's snapshot is on its way
+var _thumbs := {}  # id -> SubViewport
 var _dirty := false
 
 
 func _ready() -> void:
-	add_child(_list)
-	_list.request_completed.connect(_on_list)
 	Net.connected.connect(refresh)
 	Net.island_changed.connect(func(): _dirty = true)  # merged in _process, at most once a frame
 
@@ -50,8 +47,9 @@ func _process(_delta: float) -> void:
 
 ## Ask the backend for the island list (and then each island's snapshot).
 func refresh() -> void:
-	if _list.get_http_client_status() == HTTPClient.STATUS_DISCONNECTED:
-		_list.request(Net.http_url("/islands"))
+	if not _listing:
+		_listing = true
+		Net.request_json("/islands", _on_list)
 
 
 func find(id: String) -> Dictionary:
@@ -108,11 +106,10 @@ func thumbnail(id: String) -> Texture2D:
 	return viewport.get_texture()
 
 
-func _on_list(result: int, code: int, _headers, body: PackedByteArray) -> void:
-	var data = JSON.parse_string(body.get_string_from_utf8()) if code == 200 else null
-	reachable = result == HTTPRequest.RESULT_SUCCESS and typeof(data) == TYPE_DICTIONARY
-	if not reachable:
-		# Old backend or offline: we only know the island we're connected to.
+func _on_list(ok: bool, data: Dictionary) -> void:
+	_listing = false
+	if not ok:
+		# Offline: we only know the island we're connected to.
 		_order = [Net.island["id"]] if not Net.island.is_empty() else []
 		_rebuild()
 		return
@@ -120,18 +117,15 @@ func _on_list(result: int, code: int, _headers, body: PackedByteArray) -> void:
 	for id in _order:
 		if id == Net.island.get("id"):
 			continue  # live already
-		if not _fetchers.has(id):
-			_fetchers[id] = HTTPRequest.new()
-			add_child(_fetchers[id])
-			_fetchers[id].request_completed.connect(_on_island.bind(id))
-		if _fetchers[id].get_http_client_status() == HTTPClient.STATUS_DISCONNECTED:
-			_fetchers[id].request(Net.http_url("/islands/%s" % id.uri_encode()))
+		if not _fetching.get(id, false):
+			_fetching[id] = true
+			Net.request_json("/islands/%s" % id.uri_encode(), _on_island.bind(id))
 	_rebuild()
 
 
-func _on_island(result: int, code: int, _headers, body: PackedByteArray, id: String) -> void:
-	var data = JSON.parse_string(body.get_string_from_utf8()) if code == 200 else null
-	if result == HTTPRequest.RESULT_SUCCESS and typeof(data) == TYPE_DICTIONARY:
+func _on_island(ok: bool, data: Dictionary, id: String) -> void:
+	_fetching.erase(id)
+	if ok:
 		_by_id[id] = data
 		_rebuild()
 
@@ -158,7 +152,7 @@ func _make_thumbnail() -> SubViewport:
 	var world: Node3D = IslandScene.instantiate()
 	for part in ["Residents", "Water", "CameraRig"]:  # just the island and its buildings
 		world.get_node(part).free()
-	world.get_node("Island").detail = "far"
+	world.get_node("Island").detail = IslandBuilder.Detail.FAR
 	var sky: WorldEnvironment = world.get_node("WorldEnvironment")
 	var env: Environment = sky.environment.duplicate()
 	env.background_mode = Environment.BG_COLOR

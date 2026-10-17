@@ -15,7 +15,15 @@ from uuid import uuid4
 
 from acp import Agent, InitializeResponse, NewSessionResponse, PromptResponse, RequestError, run_agent
 from acp.interfaces import Client
-from acp.schema import AgentMessageChunk, AgentThoughtChunk, PermissionOption, TextContentBlock, ToolCallStart, ToolCallUpdate, UsageUpdate
+from acp.schema import (
+    AgentMessageChunk,
+    AgentThoughtChunk,
+    PermissionOption,
+    TextContentBlock,
+    ToolCallStart,
+    ToolCallUpdate,
+    UsageUpdate,
+)
 
 
 class FakeAgent(Agent):
@@ -53,7 +61,12 @@ class FakeAgent(Agent):
         text = " ".join(getattr(block, "text", "") for block in prompt)
 
         async def say(line: str) -> None:
-            await self._conn.session_update(session_id=session_id, update=AgentMessageChunk(session_update="agent_message_chunk", content=TextContentBlock(type="text", text=line)))
+            await self._conn.session_update(
+                session_id=session_id,
+                update=AgentMessageChunk(
+                    session_update="agent_message_chunk", content=TextContentBlock(type="text", text=line)
+                ),
+            )
 
         # `please ask`: stop to ask the island owner first; the runner prompts again with the answer.
         if "please ask" in text and "island owner answered" not in text and "Nobody answered" not in text:
@@ -63,12 +76,19 @@ class FakeAgent(Agent):
             await say(f"Thanks! Going with: {text.strip()[:80]}\nVERDICT: PASS")
             return PromptResponse(stop_reason="end_turn")
 
-        await self._conn.session_update(session_id=session_id, update=AgentThoughtChunk(
-            session_update="agent_thought_chunk", content=TextContentBlock(type="text", text="Hmm, hello.py first.")))
-        await say(f"Looking at the code (gifts: {','.join(self.gifts) or 'none'}). ")
-        await self._conn.session_update(session_id=session_id, update=UsageUpdate(session_update="usage_update", used=250, size=1000))
         await self._conn.session_update(
-            session_id=session_id, update=ToolCallStart(session_update="tool_call", tool_call_id="tc1", title="Reading hello.py", kind="read")
+            session_id=session_id,
+            update=AgentThoughtChunk(
+                session_update="agent_thought_chunk", content=TextContentBlock(type="text", text="Hmm, hello.py first.")
+            ),
+        )
+        await say(f"Looking at the code (gifts: {','.join(self.gifts) or 'none'}). ")
+        await self._conn.session_update(
+            session_id=session_id, update=UsageUpdate(session_update="usage_update", used=250, size=1000)
+        )
+        await self._conn.session_update(
+            session_id=session_id,
+            update=ToolCallStart(session_update="tool_call", tool_call_id="tc1", title="Reading hello.py", kind="read"),
         )
         inside = await self._conn.read_text_file(session_id=session_id, path=f"{self.cwd}/hello.py")
         await say(f"hello.py has {len(inside.content)} chars. ")
@@ -81,8 +101,9 @@ class FakeAgent(Agent):
 
         answer = await self._conn.request_permission(
             session_id=session_id,
-            tool_call=ToolCallUpdate(tool_call_id="tc2", title="Run `npm test`", kind="execute",
-                                     raw_input={"command": "npm test"}),
+            tool_call=ToolCallUpdate(
+                tool_call_id="tc2", title="Run `npm test`", kind="execute", raw_input={"command": "npm test"}
+            ),
             options=[
                 PermissionOption(option_id="allow", name="Allow once", kind="allow_once"),
                 PermissionOption(option_id="reject", name="Reject", kind="reject_once"),
@@ -110,5 +131,12 @@ class FakeAgent(Agent):
 
 
 if __name__ == "__main__":
-    asyncio.run(run_agent(FakeAgent(needs_login="--needs-login" in sys.argv, hang="--hang" in sys.argv,
-                                    login_at_prompt="--login-at-prompt" in sys.argv)))
+    asyncio.run(
+        run_agent(
+            FakeAgent(
+                needs_login="--needs-login" in sys.argv,
+                hang="--hang" in sys.argv,
+                login_at_prompt="--login-at-prompt" in sys.argv,
+            )
+        )
+    )

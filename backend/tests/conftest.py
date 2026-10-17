@@ -14,8 +14,7 @@ import pytest
 from mii import events, seed
 from mii.agents import AgentJob, StepResult
 from mii.engine import WorkflowEngine
-from mii.models import Building, Resident, Task
-from mii.models import Island
+from mii.models import Building, Island, Resident, Task
 from mii.sandbox import Sandbox, Sandboxes
 
 db_test = pytest.mark.django_db(transaction=True)
@@ -61,7 +60,9 @@ class RecordingAsk:
         self.asked: list[tuple[str, str, list[str] | None]] = []
         self.details: list[str | None] = []
 
-    async def __call__(self, kind: str, text: str, options: list[str] | None = None, detail: str | None = None) -> str | None:
+    async def __call__(
+        self, kind: str, text: str, options: list[str] | None = None, detail: str | None = None
+    ) -> str | None:
         self.asked.append((kind, text, options))
         self.details.append(detail)
         if self.answer is not None:
@@ -77,16 +78,30 @@ class RecordingReport:
         self.lines.append(text)
 
 
-def make_job(brain: str = "mock", workdir: Path | None = None, building_type: str = "lab",
-             instructions: str = "", read_only: bool = False, model: str | None = None,
-             ask=None, report=None, sandbox: Sandbox | None = None) -> AgentJob:
+def make_job(
+    brain: str = "mock",
+    workdir: Path | None = None,
+    building_type: str = "lab",
+    instructions: str = "",
+    read_only: bool = False,
+    model: str | None = None,
+    ask=None,
+    report=None,
+    sandbox: Sandbox | None = None,
+) -> AgentJob:
     """An unsaved job for runner tests (no database needed)."""
     return AgentJob(
         resident=Resident(id="r", island_id="sunny", name="Rae", job="coder", brain=brain, model=model),
         task=Task(id="t_test", island_id="sunny", title="Test task", branch="mii/t_test"),
-        building=Building(id=building_type, island_id="sunny", type=building_type, name=building_type.title(), x=0, y=0),
-        instructions=instructions, ask=ask or RecordingAsk(), report=report or RecordingReport(),
-        workdir=workdir, sandbox=sandbox, read_only=read_only,
+        building=Building(
+            id=building_type, island_id="sunny", type=building_type, name=building_type.title(), x=0, y=0
+        ),
+        instructions=instructions,
+        ask=ask or RecordingAsk(),
+        report=report or RecordingReport(),
+        workdir=workdir,
+        sandbox=sandbox,
+        read_only=read_only,
     )
 
 
@@ -113,6 +128,31 @@ def make_git_repo(path: Path) -> Path:
     subprocess.run([*git, "add", "."], check=True)
     subprocess.run([*git, "commit", "-q", "-m", "init"], check=True)
     return path
+
+
+@pytest.fixture
+def fake_runtime(monkeypatch):
+    """A Runtime stand-in behind views.get_runtime(): a scripted engine, no server."""
+    from types import SimpleNamespace
+
+    from mii import views
+
+    workflow, client = make_workflow(ScriptedRunner())
+
+    async def reload():
+        return {"reloaded": True}
+
+    runtime = SimpleNamespace(
+        workflow=workflow,
+        bubbles=workflow.bubbles,
+        bus=workflow.bus,
+        judge=workflow.judge,
+        mock_agents=True,
+        reload=reload,
+        client=client,
+    )
+    monkeypatch.setattr(views, "get_runtime", lambda: runtime)
+    return runtime
 
 
 @pytest.fixture

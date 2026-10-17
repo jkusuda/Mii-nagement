@@ -13,11 +13,11 @@ from django.core.asgi import get_asgi_application
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "mii.settings")
 django_asgi_app = get_asgi_application()  # also calls django.setup(), so import the rest after this
 
-from channels.routing import ProtocolTypeRouter, URLRouter  # noqa: E402
-from django.urls import path  # noqa: E402
+from channels.routing import ProtocolTypeRouter, URLRouter
+from django.urls import path
 
-from mii.consumers import IslandConsumer  # noqa: E402
-from mii.runtime import get_runtime  # noqa: E402
+from mii.consumers import IslandConsumer
+from mii.runtime import get_runtime
 
 
 async def lifespan(scope, receive, send):

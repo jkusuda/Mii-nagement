@@ -15,19 +15,18 @@ extends SubViewportContainer
 
 signal island_clicked(island_id: String)
 
-const IslandScene := preload("res://scenes/island_3d.tscn")
-const SPACING := Vector2(50, 38)           # distance between island centers (x, z)
-const ISLAND_HALF := Vector2(18.6, 12.4)   # roughly how far an island reaches from its center
-const MAX_ISLANDS := 8                      # the water shader knows up to 8 shores
+const IslandScene := preload("res://scenes/island/island_3d.tscn")
+const SPACING := Vector2(50, 38)  # distance between island centers (x, z)
+const ISLAND_HALF := Vector2(18.6, 12.4)  # roughly how far an island reaches from its center
+const MAX_ISLANDS := 8  # the water shader knows up to 8 shores
 ## The nodes in island_3d.tscn that make up one island (everything else is
 ## the shared stage: sun, sky, water).
-const ISLAND_PARTS := ["Island"]
 
 var _viewport := SubViewport.new()
-var _stage: Node3D                # island_3d.tscn, minus its own island, residents and camera
+var _stage: Node3D  # island_3d.tscn, minus its own island, residents and camera
 var _camera := Camera3D.new()
-var _islands := {}                # id -> IslandBuilder
-var _centers := {}                # id or "slot:N" -> Vector3
+var _islands := {}  # id -> IslandBuilder
+var _centers := {}  # id or "slot:N" -> Vector3
 var _layout_key := ""
 
 
@@ -40,7 +39,7 @@ func _init() -> void:
 	add_child(_viewport)
 
 	_stage = IslandScene.instantiate()
-	for part in ["Residents", "CameraRig"] + ISLAND_PARTS:
+	for part in ["Residents", "CameraRig", "Island"]:
 		_stage.get_node(part).free()  # we add our own islands and camera
 	var sun: DirectionalLight3D = _stage.get_node("Sun")
 	sun.directional_shadow_max_distance = 300.0  # the sea view is further away than the island view
@@ -64,7 +63,9 @@ func _ready() -> void:
 ## Show these islands: each entry is {"id": String, "layout": IslandLayout}.
 ## With `new_slot`, one more empty grid cell is kept (for a "New island" sign).
 func show_islands(entries: Array, new_slot := false) -> void:
-	var key := JSON.stringify([entries.map(func(e): return [e["id"], e["layout"].to_request(), e["layout"].seed_text]), new_slot])
+	var key := JSON.stringify(
+		[entries.map(func(e): return [e["id"], e["layout"].to_request(), e["layout"].seed_text]), new_slot]
+	)
 	if key == _layout_key:
 		return
 	_layout_key = key
@@ -99,14 +100,10 @@ func screen_point(id: String, offset := Vector3.ZERO) -> Vector2:
 	return _camera.unproject_position(_centers[id] + offset) * _scale()
 
 
-func has_island(id: String) -> bool:
-	return _islands.has(id)
-
-
 ## One island, built from its layout.
 func _make_island(layout: IslandLayout, center: Vector3) -> IslandBuilder:
 	var island := IslandBuilder.new()
-	island.detail = "far"
+	island.detail = IslandBuilder.Detail.FAR
 	island.layout = layout  # so _ready() doesn't build the classic island first
 	island.position = center
 	_stage.add_child(island)
@@ -169,7 +166,9 @@ func _all_on_screen(view: Vector2, pad: Vector2) -> bool:
 	for c in _centers.values():
 		for corner in [Vector3(-1, 0, -1), Vector3(1, 0, -1), Vector3(-1, 0, 1), Vector3(1, 0, 1)]:
 			for height in [0.0, 5.0]:
-				var p := _camera.unproject_position(c + Vector3(corner.x * ISLAND_HALF.x, height, corner.z * ISLAND_HALF.y))
+				var p := _camera.unproject_position(
+					c + Vector3(corner.x * ISLAND_HALF.x, height, corner.z * ISLAND_HALF.y)
+				)
 				if p.x < pad.x or p.y < pad.y or p.x > view.x - pad.x or p.y > view.y - pad.y:
 					return false
 	return true

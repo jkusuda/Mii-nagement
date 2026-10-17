@@ -1,7 +1,7 @@
 [gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://scenes/home/island_creator.gd" id="1_creator"]
-[ext_resource type="Script" path="res://scenes/sea/sea_view.gd" id="2_sea"]
+[ext_resource type="Script" path="res://scenes/home/sea_view.gd" id="2_sea"]
 [ext_resource type="Texture2D" path="res://assets/icons/x.svg" id="3_x"]
 [ext_resource type="Texture2D" path="res://assets/icons/shuffle.svg" id="4_shuffle"]
 [ext_resource type="Texture2D" path="res://assets/icons/search.svg" id="5_search"]

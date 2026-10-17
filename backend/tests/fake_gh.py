@@ -1,6 +1,6 @@
 """A stand-in for the `gh` CLI, so island tests clone without the network.
 
-Tests point islands.GH at [python, this file]. It understands:
+Tests point github.GH at [python, this file]. It understands:
     gh auth status              exit 1 when FAKE_GH_LOGGED_OUT is set
     gh repo clone owner/name D  `git clone $FAKE_GH_ROOT/owner/name.git D` (a local bare repo
                                 stands in for GitHub; its path stays the origin, so pushes work)

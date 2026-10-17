@@ -12,15 +12,17 @@ extends RefCounted
 ##    "pr_url": "..." and "task": task id (only for shipped tasks), "key": "..." (to skip duplicates)}
 
 const SECTION_COLORS := {
-	"shipped": Color("2E8B57"), "packages": Color("3E7FCB"), "residents": Color("7553DF"),
+	"shipped": Color("2E8B57"),
+	"packages": Color("3E7FCB"),
+	"residents": Color("7553DF"),
 }
 
 var stories: Array[Dictionary] = []
 
-var _titles := {}         # task id -> title, learned from `task` events
-var _task_status := {}    # task id -> last status we saw (so each change is one story)
-var _residents_seen := {} # resident id -> true, for "moved in"
-var _keys := {}           # story key -> true
+var _titles := {}  # task id -> title, learned from `task` events
+var _task_status := {}  # task id -> last status we saw (so each change is one story)
+var _residents_seen := {}  # resident id -> true, for "moved in"
+var _keys := {}  # story key -> true
 
 
 ## Remember the residents already living here (from a snapshot), so editing
@@ -58,37 +60,85 @@ func _story_for(e: Dictionary) -> Dictionary:
 				"queued":
 					return _make("", "A new package arrived: “%s”." % title, "New", Color("E39537"), "packages")
 				"done":
-					var story := _make(str(e.get("agent", "")), "“%s” is done!" % title,
-						"PR" if e.get("pr_url") else "Done", SECTION_COLORS["shipped"], "shipped")
+					var story := _make(
+						str(e.get("agent", "")),
+						"“%s” is done!" % title,
+						"PR" if e.get("pr_url") else "Done",
+						SECTION_COLORS["shipped"],
+						"shipped"
+					)
 					story["title"] = title
 					story["task"] = id
 					if e.get("pr_url"):
 						story["pr_url"] = str(e["pr_url"])
 					return story
 				"failed":
-					return _make(str(e.get("agent", "")), "“%s” didn't make it this time." % title, "Failed", Color("C0392B"), "packages")
+					return _make(
+						str(e.get("agent", "")),
+						"“%s” didn't make it this time." % title,
+						"Failed",
+						Color("C0392B"),
+						"packages"
+					)
 		"handoff":
 			var title := str(_titles.get(str(e.get("task", "")), "the package"))
 			var giver := _name(str(e.get("from", "")))
 			var taker := _name(str(e.get("to", "")))
 			if e.get("outcome") == "fail":
-				return _make(str(e["to"]), "%s sent “%s” back to %s." % [giver, title, taker], "Bounced", Color("E36F1E"), "packages")
-			return _make(str(e["to"]), "%s carried “%s” to %s." % [giver, title, taker], "Handoff", SECTION_COLORS["packages"], "packages")
+				return _make(
+					str(e["to"]),
+					"%s sent “%s” back to %s." % [giver, title, taker],
+					"Bounced",
+					Color("E36F1E"),
+					"packages"
+				)
+			return _make(
+				str(e["to"]),
+				"%s carried “%s” to %s." % [giver, title, taker],
+				"Handoff",
+				SECTION_COLORS["packages"],
+				"packages"
+			)
 		"bubble":
 			var place := _place(who)
 			match e.get("kind", ""):
-				"confused": return _make(who, "%s got puzzled%s." % [_name(who), place], "Confused", Color("7553DF"), "residents")
-				"struggling": return _make(who, "%s is stuck%s." % [_name(who), place], "Stuck", Color("E36F1E"), "residents")
-				"permission": return _make(who, "%s needs a key: %s" % [_name(who), e.get("text", "")], "Permission", Color("D6457A"), "residents")
-				"ready": return _make(who, "%s finished something to look at%s." % [_name(who), place], "Ready", Color("009D85"), "residents")
-				"tired": return _make(who, "%s is worn out%s." % [_name(who), place], "Tired", Color("C57722"), "residents")
+				"confused":
+					return _make(
+						who, "%s got puzzled%s." % [_name(who), place], "Confused", Color("7553DF"), "residents"
+					)
+				"struggling":
+					return _make(who, "%s is stuck%s." % [_name(who), place], "Stuck", Color("E36F1E"), "residents")
+				"permission":
+					return _make(
+						who,
+						"%s needs a key: %s" % [_name(who), e.get("text", "")],
+						"Permission",
+						Color("D6457A"),
+						"residents"
+					)
+				"ready":
+					return _make(
+						who,
+						"%s finished something to look at%s." % [_name(who), place],
+						"Ready",
+						Color("009D85"),
+						"residents"
+					)
+				"tired":
+					return _make(who, "%s is worn out%s." % [_name(who), place], "Tired", Color("C57722"), "residents")
 		"chat":
 			var speaker := _name(str(e.get("from", "")))
 			var listener := _name(str(e.get("to", "")))
 			var line := str(e.get("text", ""))
 			if line.length() > 70:
 				line = line.substr(0, 67) + "…"
-			return _make(str(e.get("from", "")), "%s to %s: “%s”" % [speaker, listener, line], "Chat", Color("3E7FCB"), "residents")
+			return _make(
+				str(e.get("from", "")),
+				"%s to %s: “%s”" % [speaker, listener, line],
+				"Chat",
+				Color("3E7FCB"),
+				"residents"
+			)
 		"mood":
 			if e.get("mood") == "proud":
 				return _make(who, "%s is feeling proud." % _name(who), "Proud", Color("009D85"), "residents")
@@ -96,14 +146,22 @@ func _story_for(e: Dictionary) -> Dictionary:
 				return _make(who, "%s is a bit frustrated." % _name(who), "Grumpy", Color("E36F1E"), "residents")
 		"agent_state":
 			if e.get("state") == "sleeping":
-				return _make(who, "%s fell asleep%s." % [_name(who), _place(who, str(e.get("building", "")))], "Asleep", Color("8A8FA8"), "residents")
+				return _make(
+					who,
+					"%s fell asleep%s." % [_name(who), _place(who, str(e.get("building", "")))],
+					"Asleep",
+					Color("8A8FA8"),
+					"residents"
+				)
 		"resident":
 			var r: Dictionary = e.get("resident", {})
 			var id := str(r.get("id", ""))
 			if _residents_seen.has(id):
 				return {}
 			_residents_seen[id] = true
-			return _make(id, "%s moved to the island!" % r.get("name", "Someone"), "New friend", Color("2FA37A"), "residents")
+			return _make(
+				id, "%s moved to the island!" % r.get("name", "Someone"), "New friend", Color("2FA37A"), "residents"
+			)
 	return {}
 
 
