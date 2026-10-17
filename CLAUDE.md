@@ -79,5 +79,5 @@ binary exists: a missing Godot is skipped, and that looks like a pass.
 ## Scope
 
 On purpose out of scope: LangChain or more direct-API runners (OpenRouter is the one), an
-ML router, several packages at once on one island (islands run in parallel, one package
-each), multi-account islands. Island News is written by the game from stored events.
+ML router, multi-account islands. (An island works on up to `parallel_packages` packages
+at once; free residents stand in for busy ones, see `engine.py` `_claim`.) Island News is written by the game from stored events.

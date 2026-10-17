@@ -41,9 +41,12 @@ SETTINGS = {
     "judge": ("JUDGE", "auto", str),  # auto | off | jev | gemini (judge.py, runtime.reload)
     "judge_model": ("JUDGE_MODEL", "gemini-2.5-flash", str),  # the Gemini judge's model
     "spectator_url": ("SPECTATOR_URL", None, str),  # the spectator feed's ingest URL (hooks.py); None = off
+    "parallel_packages": ("PARALLEL_PACKAGES", 3, int),  # packages one island works on at once (engine.py)
+    "master_key": ("MASTER_KEY", False, bool),  # residents never ask: every bubble answers itself (engine.py)
 }
 # Settings with a fixed list of values.
 CHOICES = {"judge": ("auto", "off", "jev", "gemini")}
+MAX_PARALLEL = 8  # parallel_packages is kept between 1 and this (each real package runs its own agents)
 
 # secret -> environment variable (what the agent processes expect)
 SECRETS = {
@@ -79,6 +82,11 @@ def _parse(value, kind):
         return str(value).strip().lower() not in ("0", "", "false", "no", "off")
     if kind == "path":
         return str(Path(str(value)).expanduser())
+    if kind is int:
+        try:
+            return min(max(int(value), 1), MAX_PARALLEL)
+        except (TypeError, ValueError):
+            return 1
     return str(value)
 
 
@@ -113,6 +121,10 @@ def set_many(values: dict) -> None:
         elif kind is bool:
             if not isinstance(value, bool):
                 raise PrefsError(f"{key} must be true or false")
+            clean[key] = value
+        elif kind is int:
+            if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= MAX_PARALLEL:
+                raise PrefsError(f"{key} must be a whole number from 1 to {MAX_PARALLEL}")
             clean[key] = value
         else:
             if not isinstance(value, str):

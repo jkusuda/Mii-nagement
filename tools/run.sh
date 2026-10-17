@@ -63,9 +63,13 @@ if [ $SIM = 1 ]; then export MOCK_AGENTS=1; else export MOCK_AGENTS=0; fi
 
 RELOAD=""
 [ $SIM = 1 ] && RELOAD="--reload"
-# shellcheck disable=SC2086  # $RELOAD is empty or one flag
+# Windows: with --reload, uvicorn picks an event loop that can't start subprocesses, and
+# every agent (and git/test command) is one. The Proactor loop can, with or without reload.
+LOOP=""
+[ "${OS:-}" = "Windows_NT" ] && LOOP="--loop asyncio:ProactorEventLoop"
+# shellcheck disable=SC2086  # $RELOAD and $LOOP are empty or flags
 (cd backend && exec "$UV" run python -m uvicorn mii.asgi:application --port "$PORT" \
-  --timeout-graceful-shutdown 5 $RELOAD) &
+  --timeout-graceful-shutdown 5 $RELOAD $LOOP) &
 SERVER=$!
 PIDS+=("$SERVER")
 

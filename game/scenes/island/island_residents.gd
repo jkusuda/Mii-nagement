@@ -4,8 +4,9 @@ extends Node3D
 ## with its events. Lives in island_3d.tscn as `Residents`.
 ##
 ## - snapshot           -> everyone appears at their building, in their state
-## - move (from -> to)  -> walk there, along the island's roads
-## - agent_state        -> working (hop, facing the building), idle, sleeping (z Z)
+## - move (from -> to)  -> walk there, the shortest way along the sand paths
+## - agent_state        -> working (walk in through the door and vanish inside),
+##                         idle, sleeping (z Z); leaving work = out of the door again
 ## - bubble             -> an icon over their head until it's answered
 ##
 ## Where a resident stands: each building has a *stop* on the sand path, the
@@ -65,6 +66,11 @@ func plants() -> Node3D:
 ## Put everyone who isn't busy back at their slot (after an ambient action).
 func line_up() -> void:
 	_line_up(false)
+
+
+## Where a resident stands at their building (island_life: resting at home).
+func home_spot(resident: Dictionary) -> Vector3:
+	return _stop(str(resident.get("building", "")))
 
 
 ## A resident said something: a speech line over their head, and the listener turns.
@@ -129,9 +135,13 @@ func _line_up(snap: bool) -> void:
 		if walker.is_walking:
 			continue
 		var building := str(resident.get("building", ""))
+		if walker.inside and resident.get("state") != "working":
+			# Done working: out of the door and back along the path (arrived lines them up).
+			walker.walk(IslandPaths.route(island.layout, walker.global_position, _stop(building)))
+			continue
 		if resident.get("state") == "walking" and walker.global_position.distance_to(_stop(building)) > 1.5:
-			# Walking, but no `move` came (e.g. they had no building before): go straight there.
-			_walk(walker, [_stop(building)])
+			# Walking, but no `move` came (e.g. they had no building before): go there.
+			walker.walk(IslandPaths.route(island.layout, walker.global_position, _stop(building)))
 			continue
 		# (Arrived before the server's walk timer ran out: wait at the building.)
 		at_building.get_or_add(building, []).append(resident)
@@ -142,59 +152,27 @@ func _line_up(snap: bool) -> void:
 		for i in group.size():
 			var walker: IslandResident = _walkers[str(group[i]["id"])]
 			var spot := _slot(building, i)
+			var state := str(group[i].get("state", "idle"))
+			var door := _door(building)
+			if state == "working" and door != Vector3.INF:
+				if snap:
+					walker.place(door)  # already at work: straight inside
+				walker.enter(_into(building, walker.global_position, door))
+				continue
 			if snap:
 				walker.place(spot)
-			var state := str(group[i].get("state", "idle"))
-			walker.settle(spot, "idle" if state == "walking" else state, _building_position(building))
+			var route := IslandPaths.route(island.layout, walker.global_position, spot)
+			walker.settle(route, "idle" if state == "walking" else state, _building_position(building))
 
 
-func _on_moved(agent: String, from_building: String, to_building: String) -> void:
+## Walk to the new building the shortest way along the sand paths (they join
+## every door, so no need to pass the buildings in between).
+func _on_moved(agent: String, _from_building: String, to_building: String) -> void:
 	var walker: IslandResident = _walkers.get(agent)
 	if walker == null:
 		return
 	walker.stop_life()
-	var points: Array[Vector3] = []
-	var stops := [walker.global_position]
-	for building in _road_route(from_building, to_building):
-		stops.append(_stop(building))
-	for i in range(1, stops.size()):
-		points.append_array(IslandPaths.route(island.layout, stops[i - 1], stops[i]))
-	_walk(walker, points)
-
-
-func _walk(walker: IslandResident, points: Array) -> void:
-	var typed: Array[Vector3] = []
-	typed.assign(points)
-	walker.walk(typed)
-
-
-## The buildings to pass through to get from one building to another, following
-## the island's roads (in either direction), from `from` to `to` inclusive.
-## A breadth-first search: look at the neighbours, then their neighbours, and so
-## on, remembering where each building was reached from.
-func _road_route(from: String, to: String) -> Array:
-	var neighbours := {}
-	for road in Net.island.get("roads", []):
-		neighbours.get_or_add(road["from"], []).append(road["to"])
-		neighbours.get_or_add(road["to"], []).append(road["from"])
-
-	var came_from := {from: ""}
-	var queue := [from]
-	while not queue.is_empty():
-		var here: String = queue.pop_front()
-		if here == to:
-			break
-		for next in neighbours.get(here, []):
-			if not came_from.has(next):
-				came_from[next] = here
-				queue.append(next)
-
-	if not came_from.has(to):
-		return [to]  # no road connects them: walk straight there
-	var route := [to]
-	while route[0] != from:
-		route.push_front(came_from[route[0]])
-	return route
+	walker.walk(IslandPaths.route(island.layout, walker.global_position, _stop(to_building)))
 
 
 ## The point on the sand path where a building's residents stand.
@@ -245,6 +223,29 @@ func _slot(building_id: String, i: int) -> Vector3:
 		return _stop(building_id)
 	var line := _line(b)
 	return line[mini(i, line.size() - 1)]
+
+
+## The middle of a building's front door, on the ground (Vector3.INF for no building).
+## A lot is LOT tiles wide, so its door face is half that from the lot's centre; the
+## door looks +Z before the building is turned to its `facing`.
+func _door(building_id: String) -> Vector3:
+	var b := island.layout.building(str(Net.find_building(building_id).get("type", "")))
+	if b.is_empty():
+		return Vector3.INF
+	var out := Vector3(0, 0, IslandLayout.LOT * IslandLayout.TILE / 2.0 - 0.4)
+	var p := IslandLayout.lot_center(b) + out.rotated(Vector3.UP, IslandLayout.facing_angle(b))
+	return Vector3(p.x, IslandPaths.PATH_Y, p.z)
+
+
+## Points from `from` into a building: along the paths to the tile outside its door, then in.
+func _into(building_id: String, from: Vector3, door: Vector3) -> Array[Vector3]:
+	var b := island.layout.building(str(Net.find_building(building_id).get("type", "")))
+	var outside := IslandLayout.tile_center(IslandLayout.door_tile(b))
+	var points: Array[Vector3] = []
+	if from.distance_to(door) > 0.05:
+		points = IslandPaths.route(island.layout, from, outside)
+		points.append(door)
+	return points
 
 
 func _building_position(building_id: String) -> Vector3:

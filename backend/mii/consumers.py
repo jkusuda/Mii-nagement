@@ -6,34 +6,46 @@ the EventBus keeps the connected consumers in memory and calls send_json().
 """
 
 import asyncio
+import contextlib
 from urllib.parse import parse_qs
 
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 
-from mii import auth, events, islands, layout, residents, tasks
+from mii import auth, events, islands, layout, residents, talk, tasks
 from mii.models import Island, island_layout, island_snapshot
 from mii.runtime import Runtime, get_runtime
 
+_talks: set[asyncio.Task] = set()  # running `talk` answers (kept so they aren't garbage collected)
 
-async def handle_message(runtime: Runtime, island_id: str, message: object, sub: str | None = None) -> dict | None:
+
+async def handle_message(
+    runtime: Runtime, island_id: str, message: object, send=None, sub: str | None = None
+) -> dict | None:
     """Client -> server messages (docs/protocol.md). Unknown types are ignored.
 
     Returns an `error` event for the sender only, or None. Anything every client
     should see goes through runtime.bus. A message's optional `request_id` is
     echoed on the error, so the client can tell which command was refused.
+    `send(event)` reaches the sender alone (a `talk` answers that way, later).
     """
     if not isinstance(message, dict):
         return events.error("message must be a JSON object")
-    reply = await _handle(runtime, island_id, message, sub)
+    reply = await _handle(runtime, island_id, message, send, sub)
     if reply is not None and message.get("request_id") is not None:
         reply["request_id"] = str(message["request_id"])
     return reply
 
 
-async def _handle(runtime: Runtime, island_id: str, message: dict, sub: str | None) -> dict | None:
+async def _handle(runtime: Runtime, island_id: str, message: dict, send=None, sub: str | None = None) -> dict | None:
     kind = message.get("type")
-    if kind == "answer_bubble":
+    if kind == "talk":
+        if send is None:
+            return events.error("talk needs a WebSocket connection")
+        job = asyncio.create_task(talk.talk(runtime, island_id, message, send))  # a real brain takes a while
+        _talks.add(job)
+        job.add_done_callback(_talks.discard)
+    elif kind == "answer_bubble":
         bubble_id = str(message.get("id", ""))
         if not runtime.bubbles.answer(bubble_id, str(message.get("response", ""))):
             return events.error(f"unknown bubble id: {bubble_id}")
@@ -139,9 +151,14 @@ class IslandConsumer(AsyncJsonWebsocketConsumer):
         get_runtime().bus.remove_client(self)
 
     async def receive_json(self, message: object, **kwargs: object) -> None:
-        reply = await handle_message(get_runtime(), self.island_id, message, self.sub)
+        reply = await handle_message(get_runtime(), self.island_id, message, self._send_quietly, self.sub)
         if reply is not None:
             await self.send_json(reply)
+
+    async def _send_quietly(self, event: dict) -> None:
+        """Send to this client; it may have disconnected while a resident was thinking."""
+        with contextlib.suppress(Exception):
+            await self.send_json(event)
 
     async def decode_json(self, text_data: str) -> object:
         try:

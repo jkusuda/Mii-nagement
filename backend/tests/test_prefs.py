@@ -66,6 +66,7 @@ def no_env(monkeypatch):
 @db_test
 def test_settings_default_then_saved_then_env(no_env, monkeypatch):
     assert prefs.get("mock_agents") is True and prefs.get("test_command") is None
+    assert prefs.get("master_key") is False  # residents ask until you hand over the master key
     prefs.set_many({"mock_agents": False, "test_command": "  pytest -q  ", "islands_root": "~/isles"})
     assert prefs.get("mock_agents") is False
     assert prefs.get("test_command") == "pytest -q"
@@ -77,7 +78,19 @@ def test_settings_default_then_saved_then_env(no_env, monkeypatch):
 
 
 @db_test
-@pytest.mark.parametrize("bad", [{"nope": 1}, {"mock_agents": "yes"}, {"test_command": 3}])
+def test_parallel_packages_is_a_small_whole_number(no_env, monkeypatch):
+    assert prefs.get("parallel_packages") == 3
+    prefs.set_many({"parallel_packages": 1})
+    assert prefs.get("parallel_packages") == 1
+    monkeypatch.setenv("PARALLEL_PACKAGES", "99")  # the environment is clamped, not trusted
+    assert prefs.get("parallel_packages") == prefs.MAX_PARALLEL
+
+
+@db_test
+@pytest.mark.parametrize(
+    "bad",
+    [{"nope": 1}, {"mock_agents": "yes"}, {"test_command": 3}, {"parallel_packages": 0}, {"parallel_packages": "2"}],
+)
 def test_settings_refuse_bad_values_without_saving(no_env, bad):
     with pytest.raises(prefs.PrefsError):
         prefs.set_many(bad)

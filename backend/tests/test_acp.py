@@ -13,6 +13,7 @@ from mii.agents.acp import (
     BRAINS,
     GIFTS,
     AcpRunner,
+    MiiClient,
     available_brains,
     available_gifts,
     describe_command,
@@ -191,6 +192,14 @@ def test_house_rules_tighten_house_keys():
     assert permission_for(job, "edit", "x") == "yes" and permission_for(job, "fetch", "x") == "no"
     job.resident.keys = {"execute": "no"}
     assert permission_for(job, "execute", "ls") == "no"
+
+
+def test_the_master_key_turns_every_ask_into_yes_but_keeps_no():
+    job = make_job("codex")
+    job.resident.keys = {"read": "yes", "edit": "ask", "execute": "yes", "fetch": "no"}
+    job.rules, job.master_key = {"shell": True}, True
+    assert permission_for(job, "edit", "x") == "yes" and permission_for(job, "execute", "ls") == "yes"
+    assert permission_for(job, "fetch", "x") == "no"
 
 
 async def test_house_keys_answer_permissions_without_a_bubble(sandbox):
@@ -403,3 +412,36 @@ async def test_list_brain_models_reports_a_missing_login_or_cli():
         await list_brain_models("codex", command=[sys.executable, str(FAKE_AGENT), "--needs-login"])
     with pytest.raises(BrainError, match="couldn't start"):
         await list_brain_models("gemini", command=["/no/such/agent-cli"])
+
+
+async def test_parallel_subagents_can_each_wait_on_a_permission_bubble(tmp_path):
+    from acp.schema import PermissionOption, ToolCallUpdate
+
+    asked = asyncio.Event()
+    open_bubbles = []
+
+    async def ask(kind, text, options=None, detail=None):
+        open_bubbles.append(text)
+        if len(open_bubbles) == 2:
+            asked.set()
+        await asyncio.sleep(10)  # nobody answers
+
+    client = MiiClient(make_job("claude-code", workdir=tmp_path, ask=ask), tmp_path)
+    options = [PermissionOption(option_id="no", name="No", kind="reject_once")]
+    calls = [
+        asyncio.create_task(
+            client.request_permission("s", ToolCallUpdate(tool_call_id=f"t{n}", title="ls", kind="execute"), options)
+        )
+        for n in range(2)
+    ]
+    await asyncio.wait_for(asked.wait(), 2)
+    assert len(client.pending) == 2  # both subagents' bubbles are open, neither replaced the other
+    for waiting in list(client.pending):
+        waiting.cancel()  # what the runner does when the step ends
+    await asyncio.gather(*calls, return_exceptions=True)
+    assert not client.pending
+
+
+def test_claude_code_is_told_it_may_use_parallel_subagents():
+    assert "subagents" in BRAINS["claude-code"]["tip"]
+    assert BRAINS["codex"]["tip"] is None

@@ -12,11 +12,18 @@ const IDLE_SPIN_SPEED := 0.25  # radians per second while nobody is dragging
 ## Camera spots: the whole Mii, or close on the face (while picking face parts).
 const BODY_SHOT := [Vector3(0, 1.1, 3.8), -0.07]
 const FACE_SHOT := [Vector3(0, 1.3, 3.0), -0.02]
+## Further back, with room above the hair and floor below the feet (the talk popup's room;
+## the feet land at TalkRoom.FEET_AT).
+const ROOM_SHOT := [Vector3(0, 1.15, 5.4), -0.05]
+
+## False = no drag-to-spin (the talk popup: the Mii just stands and sways).
+var spin_enabled := true
 
 var _dragging := false
 var _anim_index := 0
 
 var _camera_tween: Tween
+var _hop_tween: Tween
 
 @onready var turntable: Node3D = %Turntable
 @onready var mii: Mii = %Mii
@@ -43,11 +50,29 @@ func focus_face(on: bool) -> void:
 	_camera_tween.tween_property(camera, "rotation:x", shot[1], 0.35)
 
 
+## Jump the camera to one of the shots above (no glide).
+func use_shot(shot: Array) -> void:
+	if _camera_tween:
+		_camera_tween.kill()
+	camera.position = shot[0]
+	camera.rotation.x = shot[1]
+
+
 ## Show the next animation (idle -> walk -> run -> idle ...).
 func next_animation() -> void:
 	var names := Mii.ANIMATIONS.keys()
 	_anim_index = (_anim_index + 1) % names.size()
 	mii.play(names[_anim_index])
+
+
+## A little hop (`times` in a row), like the residents' emotes on the island.
+func hop(times := 1) -> void:
+	if _hop_tween:
+		_hop_tween.kill()
+	_hop_tween = create_tween()
+	for i in times:
+		_hop_tween.tween_property(mii, "position:y", 0.22, 0.14).set_ease(Tween.EASE_OUT)
+		_hop_tween.tween_property(mii, "position:y", 0.0, 0.14).set_ease(Tween.EASE_IN)
 
 
 func _process(delta: float) -> void:
@@ -59,6 +84,8 @@ func _process(delta: float) -> void:
 
 ## Godot concept: _gui_input gets mouse events that land on this Control.
 func _gui_input(event: InputEvent) -> void:
+	if not spin_enabled:
+		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		_dragging = event.pressed
 	elif event is InputEventMouseMotion and _dragging:

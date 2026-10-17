@@ -9,7 +9,7 @@ from mii import events, vocab
 from mii.agents import StepResult, build_prompt
 from mii.agents.mock import MockRunner
 from mii.engine import IslandGraph, split_pr_text
-from mii.models import Event, Island, Resident, Step, Task
+from mii.models import Event, Island, Resident, Step, Task, utcnow
 from mii.sandbox import SandboxError, is_inside
 
 pytestmark = db_test
@@ -136,7 +136,7 @@ async def test_the_runner_closes_its_agents_when_a_task_ends_or_is_cancelled(isl
     assert (await Task.objects.aget(pk=task.id)).status == "cancelled" and runner.ended == [task.id]
 
 
-async def test_recover_requeues_waiting_tasks_and_fails_half_done_ones(island):
+async def test_recover_requeues_every_unfinished_task_half_done_ones_first(island):
     workflow, _ = make_workflow(ScriptedRunner())
     waiting = await workflow.submit("sunny", "Waiting")
     half_done = await workflow.submit("sunny", "Half done")
@@ -145,8 +145,78 @@ async def test_recover_requeues_waiting_tasks_and_fails_half_done_ones(island):
 
     await workflow.recover()
 
-    assert (await Task.objects.aget(pk=half_done.id)).status == "failed"
-    assert workflow.queue.get_nowait() == waiting.id
+    assert (await Task.objects.aget(pk=half_done.id)).status == "queued"
+    assert [workflow.queue.get_nowait(), workflow.queue.get_nowait()] == [half_done.id, waiting.id]
+
+
+async def test_a_resumed_task_redoes_the_cut_short_visit_with_its_history(island):
+    runner = ScriptedRunner()
+    workflow, _ = make_workflow(runner)
+    task = await workflow.submit("sunny", "Interrupted")
+    done = dict(island_id="sunny", task_id=task.id, brain="mock", finished_at=utcnow())
+    await Step.objects.acreate(
+        building_id="mailbox", building_type="mailbox", resident_id="jun", outcome="pass", summary="The plan", **done
+    )
+    await Step.objects.acreate(
+        building_id="workshop",
+        building_type="workshop",
+        resident_id="carlos",
+        outcome="pass",
+        summary="Coded it",
+        **done,
+    )
+    await Step.objects.acreate(
+        island_id="sunny", task_id=task.id, building_id="lab", building_type="lab", resident_id="sydney", brain="mock"
+    )  # killed mid-visit
+
+    task = await workflow.run_task(task.id)
+
+    assert task.status == "done"
+    assert runner.visited == ["lab", "courthouse", "post_office"]
+    assert "The plan" in "\n".join(runner.jobs[0].history)
+    assert await Step.objects.filter(task_id=task.id, finished_at__isnull=True).acount() == 0
+
+
+async def test_a_resumed_task_keeps_its_branch_when_the_worktree_is_gone(island, sandbox, sandboxes):
+    workflow, _ = make_workflow(ScriptedRunner(), sandboxes=sandboxes)
+    task = await workflow.submit("sunny", "Interrupted")
+    workdir = sandbox.create_worktree(task.id)
+    (workdir / "half.py").write_text("x = 1\n")
+    sandbox.commit_all(task.id, "Half the work")
+    sandbox.remove_worktree(task.id)
+
+    workdir = await asyncio.to_thread(sandbox.create_worktree, task.id)
+    assert (workdir / "half.py").exists()
+    assert "Half the work" in sandbox.diff_stat(task.id)
+
+
+class AskingRunner:
+    """Asks one bubble of every kind at the Workshop and remembers the answers."""
+
+    def __init__(self):
+        self.answers: list[str | None] = []
+
+    async def run(self, job) -> StepResult:
+        if job.building.type == "workshop":
+            self.answers.append(await job.ask("permission", "May I?", ["Not now", "Just this once", "Always"]))
+            self.answers.append(await job.ask("ready", "Merge?", ["Approve & merge", vocab.SEND_BACK]))
+            self.answers.append(await job.ask("confused", "Which file?"))
+        return StepResult("pass", "ok")
+
+
+async def test_the_master_key_answers_every_bubble_by_itself(island):
+    runner = AskingRunner()
+    workflow, client = make_workflow(runner, master_key=True, bubble_timeout=30)
+    task = await asyncio.wait_for(workflow.run_task((await workflow.submit("sunny", "No questions")).id), 5)
+
+    assert task.status == "done"
+    assert runner.answers == [
+        "Just this once",
+        "Approve & merge",
+        "No need to ask: use your best judgement and carry on.",
+    ]
+    assert len(client.of_type("bubble")) == 3 and all(e["answered"] for e in client.of_type("bubble_resolved"))
+    assert workflow.bubbles.open == {}
 
 
 # --- Real-mode handlers (a throwaway git repo stands in for the island's repository) ----

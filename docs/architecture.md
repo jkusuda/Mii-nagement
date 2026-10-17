@@ -94,6 +94,7 @@ Grouped by layer; a module only imports from its own layer or the ones below it.
 | domain | `residents.py` | create / edit / delete residents (the resident creator) | `test_residents.py` |
 | domain | `layout.py` | the workflow graph by hand (`set_layout`), `assign_buildings` | `test_layout.py` |
 | domain | `tasks.py` | a request (`title` or GitHub `issue`) → a queued task | `test_tasks.py` |
+| domain | `talk.py` | a `talk` message: one read-only chat turn with a resident in a building's role (throwaway worktree in real mode), answered to the sender only | `test_talk.py` |
 | domain | `insights.py`, `weather.py`, `replay.py`, `personality.py` | stats, island weather, replaying a recorded task, the system prompt | `test_insights.py`, `test_weather.py`, `test_replay.py`, `test_personality.py` |
 | infra | `sandbox.py` | worktrees per task, path checks, `run_shell` (**the safety boundary**) | `test_engine.py` |
 | infra | `repos.py`, `github.py` | git repos on disk; the `gh` CLI (issues, PRs, clone) | `test_islands.py`, `test_github.py` |
@@ -130,7 +131,7 @@ Bubbles sidebar, and every screen (`show_screen()` shows one).
 | `scenes/residents/` | Residents tab, resident cards, the resident creator, `resident_data.gd` (jobs, brains, gifts, vibes) |
 | `scenes/mii/` | the 3D Mii (`mii.gd`), its parts (`mii_parts.gd`), the creator's preview stage |
 | `scenes/news/`, `scenes/insights/` | the News tab (`news_stories.gd` writes the stories) and the Insights tab |
-| `scenes/ui/` | sidebar, bubble cards, the answer popup, building panel, settings, toasts, `ui.gd` (`UI.label`) |
+| `scenes/ui/` | sidebar, bubble cards, the answer popup, building panel, the talk popup (`talk_popup.gd` + `talk_room.gd`), settings, toasts, `ui.gd` (`UI.label`) |
 | `ui/theme.tres`, `shaders/`, `assets/` | every colour and style, the GPU shaders, models / icons / fonts / Mii parts |
 
 **`Net` signals and who listens** (every screen also redraws on `island_changed`):
@@ -145,6 +146,7 @@ Bubbles sidebar, and every screen (`show_screen()` shows one).
 | `bubble_resolved` | `answer_popup.gd` |
 | `resident_updated`, `resident_removed`, `server_error` | `game.gd` |
 | `thinking_received` | `building_panel.gd` |
+| `talk_thinking`, `talk_replied`, `talk_failed` | `talk_popup.gd` |
 | `event_received` | `news_screen.gd` |
 | `island_changed` | `game.gd`, `islands.gd`, `bubbles_sidebar.gd`, `building_panel.gd`, `insights_screen.gd`, `island_residents.gd` |
 
@@ -170,6 +172,14 @@ Bubbles sidebar, and every screen (`show_screen()` shows one).
    and emits `task: queued`.
 2. **Queue.** `run_forever` hands it to the island's `Lane`; `run_task` cuts a worktree
    (`sandbox.Sandbox.create_worktree`, real mode only) and walks the `IslandGraph` from the mailbox.
+   Tasks live in SQLite, so a restart loses nothing: `recover` re-queues them, and a
+   half-done one resumes at the building it was in, its history rebuilt from its `Step` rows.
+   A Lane runs up to `parallel_packages` (setting, default 3) packages at once, each in its
+   own worktree. Every step books its resident (`_claim`): when the building's owner is busy
+   with another package, a free neighbour stands in (the same job first, and residents
+   without a building of their own before owners; anyone at a work building, only the same
+   job at the Lab and the Courthouse), with a "busy with another package" `chat` and
+   `Step.helped` set; with nobody free the package waits its turn.
 3. **Each building** (`_run_task` → `_run_step`): handoff, walk, work. The building's
    `BuildingHandler` builds the instructions and hands an `AgentJob` to the runner for the
    resident's brain (`agents/`). Bubbles go through `events.Bubbles.ask` and wait for
@@ -205,6 +215,10 @@ Bubbles sidebar, and every screen (`show_screen()` shows one).
      `activity` events; permission requests are decided by the resident's house
      keys (`yes` = allow, `no` = reject, `ask` = a ✋ bubble whose buttons are
      the agent's own options; no answer = reject); file reads/writes are served only inside the worktree.
+     Claude Code's subagents (its Agent tool, ACP kind `think`) count as `read`; the
+     fresh-session prompt carries the brain's `tip` (`BRAINS`), which asks Claude Code to
+     run independent parts as parallel subagents. Their tool calls ask like any other, so
+     several ✋ bubbles from one resident can be open at once (`MiiClient.pending`).
      ACP has no "ask the user" request, so the prompt tells the agent it may
      end a turn with `QUESTION: ...`: the runner shows a ❓ bubble and prompts
      the same session again with your answer (up to 3 per step). The final
@@ -400,8 +414,8 @@ Agents still run as the host: per-user brains and house keys stay out of scope.
 
 ## Not in scope (on purpose)
 
-LangChain or other direct-API runners beyond OpenRouter, the ML team router, several
-tasks at once on one island, multi-account islands (see above). (Islands run in parallel:
-`run_forever` hands each task to its island's `Lane`, which runs that island's
-packages one at a time. Island News is written by the game from stored events;
-the backend only serves them, see "Events history".)
+LangChain or other direct-API runners beyond OpenRouter, the ML team router,
+multi-account islands (see above). (Islands run in parallel, and each island's `Lane`
+runs up to `parallel_packages` packages at once, see "One task, end to end". Island
+News is written by the game from stored events; the backend only serves them, see
+"Events history".)

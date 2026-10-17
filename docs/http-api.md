@@ -28,12 +28,12 @@ The WebSocket messages are in [protocol.md](protocol.md); how the pieces fit is 
 | `DELETE /islands/{id}/residents/{resident_id}` | the resident moves away (409 if a building still counts on them) |
 | `GET /islands/{id}/tasks` | the island's tasks, newest first, each with its `steps` (`?status=done,failed&limit=50`) |
 | `POST /islands/{id}/tasks` | `{"title": ..., "description": ...}` or `{"issue": 42}`, optionally with `"attachments": [{"name": "spec.md", "content": "<base64>"}]` → the queued task. The engine runs it through the island's residents' brains. See "Attachments" below |
-| `GET /islands/{id}/tasks/{task_id}` | one task: `steps` (building, resident, brain, outcome, `summary` = what the resident reported) + `events` (the stored events while it ran) |
+| `GET /islands/{id}/tasks/{task_id}` | one task: `description`, `attachments` (file names), `steps` (building, resident, brain, outcome, `summary` = what the resident reported) + `events` (the stored events while it ran) |
 | `POST /islands/{id}/tasks/{task_id}/cancel` | cancel a queued task or stop the running one (409 if it already finished) |
 | `GET /islands/{id}/insights?range=week` | stats for the Insights screen and News' "This week" (`today` / `week` / `month`) |
 | `GET /islands/{id}/events?limit=200` | stored events, oldest first, for the News tab (see "Events history") |
 | `PUT /islands/{id}/layout` | build mode over HTTP: `{"buildings", "roads"}` → the saved layout (same rules as `set_layout` in protocol.md); or the game's form `{"map", "buildings": [{type, x, y, facing}]}` → the new snapshot (also sent to every client as a stored `snapshot` event), 400 / 409 (steps changing during a task), see protocol.md "Island map" |
-| `GET /settings` | effective settings (incl. `judge` = `auto` / `off` / `jev` / `gemini`, `judge_model`, `spectator_url`, `godot_path`), what `.env` locks, which API keys are set (incl. `typesafe_api_key`, `spectator_secret`) |
+| `GET /settings` | effective settings (incl. `judge` = `auto` / `off` / `jev` / `gemini`, `judge_model`, `spectator_url`, `godot_path`, `parallel_packages` 1-8, `master_key`: residents never ask, every bubble answers itself), what `.env` locks, which API keys are set (incl. `typesafe_api_key`, `spectator_secret`) |
 | `PUT /settings` | `{"settings": {...}, "secrets": {"openrouter_api_key": "sk-..." \| null}}`; keys go to the keychain and are never echoed. 403 on the public demo; 401 without a token when login is on |
 | `POST /replay/{task_id}?speed=4` | replay a recorded task (demo safety net); private islands as below |
 | `GET /auth/config` | `{"enabled": bool}`: whether the game shows "Log in" (on when `AUTH0_DOMAIN`, `AUTH0_AUDIENCE` and `AUTH0_CLIENT_ID` are all set) |

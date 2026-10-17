@@ -73,6 +73,7 @@ async def test_list_and_get_tasks_with_steps_and_events(island, fake_runtime):
     assert [t["id"] for t in listed] == [task.id] and listed[0]["description"] == "do it" and listed[0]["steps"] == []
     detail = (await client.get(f"/islands/sunny/tasks/{task.id}")).json()
     assert detail["status"] == "queued" and detail["events"] == []  # nothing happened yet
+    assert detail["description"] == "do it" and detail["attachments"] == []
 
     await fake_runtime.workflow.run_task(task.id)
     detail = (await client.get(f"/islands/sunny/tasks/{task.id}")).json()
