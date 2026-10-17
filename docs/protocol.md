@@ -332,6 +332,18 @@ sleep/wake changes it, never more often than it changes.
 {"type": "weather", "weather": "rainy"}
 ```
 
+### `talk_thinking` / `talk_reply` / `talk_error`
+Answers to a `talk` message (see Client → server). Sent **only to the client that
+sent `talk`** and never stored (they don't show up in News or replays). `id` is the
+talk id the client chose.
+```json
+{"type": "talk_thinking", "id": "k_7c1e", "agent": "carlos", "text": "Reading src/auth.py"}
+{"type": "talk_reply", "id": "k_7c1e", "agent": "carlos", "text": "The rate limiter lives in middleware.py. Want me to explain it?"}
+{"type": "talk_error", "id": "k_7c1e", "agent": "carlos", "message": "carlos is asleep (no claude-code login)."}
+```
+`talk_thinking` is optional, zero or more times (one line: a tool the agent is using).
+Exactly one `talk_reply` or `talk_error` ends the turn.
+
 ### `error`
 The server couldn't handle something the client sent. If the message carried a
 `request_id`, the error carries it back, so the client knows which command failed.
@@ -348,7 +360,7 @@ server never uses it except to echo it on an `error` reply. Success shows up as
 the broadcast event the command produces.
 
 The game sends `answer_bubble`, `create_resident`, `update_resident`,
-`delete_resident` and `cancel_task` today; `create_task`, `set_layout` and
+`delete_resident`, `cancel_task` and `talk` today; `create_task`, `set_layout` and
 `update_island` work too but the game uses their HTTP twins (POST tasks, PUT
 layout with a map) or has no UI for them yet. It doesn't send `request_id`.
 
@@ -469,6 +481,22 @@ the island repository's `origin` at it, so the post office can push.
 ```
 The server replies with `error` (bad name or repo, nothing to change), or an
 `island` event to every client. Same thing over HTTP: `PATCH /islands/{id}`.
+
+### `talk`
+Chat with a resident at a building (the building panel → a resident → Talk). The
+resident's brain answers in character, in that building's role, **read-only**: it
+may read the island's repository but never changes files, raises no bubbles, and
+the conversation never touches a package. In real mode it runs in a throwaway
+worktree; in mock mode the reply is canned.
+```json
+{"type": "talk", "id": "k_7c1e", "resident": "carlos", "building": "workshop",
+ "message": "Where does the rate limiter live?",
+ "history": [{"from": "you", "text": "Hi!"}, {"from": "resident", "text": "Hey! Busy day at the Workshop."}]}
+```
+`id` is the client's (short, letters/digits/`_`/`-`), echoed on every answer.
+`history` is the conversation so far (the server keeps none; it uses the last 10
+turns). `building` is optional (default: the resident's home building). Answers:
+`talk_thinking` (optional), then `talk_reply` or `talk_error`, to the sender only.
 
 ---
 

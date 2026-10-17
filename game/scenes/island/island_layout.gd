@@ -186,6 +186,7 @@ const COST_LAND := 1.0
 const COST_COAST := 3.0  # extra, next to the sea
 const COST_PATH := 0.6  # a tile that's already path
 const COST_TURN := 0.6
+const WALK_TURN := 0.01  # walking: a turn only breaks ties, a shorter way always wins
 
 # Auto plants.
 const MAX_TREES := 13
@@ -688,26 +689,45 @@ func nearest_path_tile(p: Vector3) -> Vector2i:
 	return best
 
 
-## Path tiles from a to b, walking only on path (a breadth-first search).
+## Path tiles from a to b, walking only on path: the shortest way, and of the
+## equally short ones the one with the fewest turns (no zig-zags where paths
+## merge). A Dijkstra search like _route, but only over path tiles.
 func walk_tiles(a: Vector2i, b: Vector2i) -> Array[Vector2i]:
-	var came_from := {a: a}
-	var queue: Array[Vector2i] = [a]
-	while not queue.is_empty():
-		var t: Vector2i = queue.pop_front()
-		if t == b:
+	var dirs := [Vector2i.RIGHT, Vector2i.DOWN, Vector2i.LEFT, Vector2i.UP]
+	var best := {[a, -1]: 0.0}  # [tile, dir] -> cost
+	var came_from := {}  # [tile, dir] -> [tile, dir]
+	var open := [[0.0, a, -1]]
+	var end_state = null
+	while not open.is_empty():
+		var pick := 0
+		for i in open.size():
+			if open[i][0] < open[pick][0]:
+				pick = i
+		var here: Array = open.pop_at(pick)
+		var cost: float = here[0]
+		var tile: Vector2i = here[1]
+		var dir: int = here[2]
+		if cost > best.get([tile, dir], INF):
+			continue
+		if tile == b:
+			end_state = [tile, dir]
 			break
-		for n in [t + Vector2i.RIGHT, t + Vector2i.LEFT, t + Vector2i.DOWN, t + Vector2i.UP]:
-			if path_tiles.has(n) and not came_from.has(n):
-				came_from[n] = t
-				queue.append(n)
+		for d in 4:
+			var next: Vector2i = tile + dirs[d]
+			if not path_tiles.has(next):
+				continue
+			var total := cost + 1.0 + (WALK_TURN if dir != -1 and d != dir else 0.0)
+			if total < best.get([next, d], INF):
+				best[[next, d]] = total
+				came_from[[next, d]] = [tile, dir]
+				open.append([total, next, d])
+	if end_state == null:
+		return [a, b]  # the paths don't join (shouldn't happen): go straight
 	var out: Array[Vector2i] = []
-	if not came_from.has(b):
-		return [a, b]
-	var t := b
-	while t != a:
-		out.push_front(t)
-		t = came_from[t]
-	out.push_front(a)
+	var state = end_state
+	while state != null:
+		out.push_front(state[0])
+		state = came_from.get(state)
 	return out
 
 

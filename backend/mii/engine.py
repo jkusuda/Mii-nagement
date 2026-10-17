@@ -96,6 +96,7 @@ class IslandGraph:
 
 class BuildingHandler:
     read_only = False  # True = the resident must not change files here
+    role = "You work here."  # what this building is for, in a line (talk.py's chat prompt)
 
     def instructions(self, task: Task) -> str:
         raise NotImplementedError
@@ -108,6 +109,7 @@ class Mailbox(BuildingHandler):
     """The planner reads the request (a GitHub issue or a typed task) and writes a plan."""
 
     read_only = True
+    role = "This is where requests arrive. You read them and turn them into short, numbered plans."
 
     def instructions(self, task: Task) -> str:
         return (
@@ -124,6 +126,8 @@ class Workshop(BuildingHandler):
     most), so a red test doesn't cost a whole Workshop -> Lab -> Workshop trip. The last
     attempt is left for the Lab to test.
     """
+
+    role = "This is where the code gets written. You implement plans and fix what was sent back."
 
     def instructions(self, task: Task) -> str:
         return (
@@ -174,6 +178,8 @@ class Lab(BuildingHandler):
     exit code decides. Otherwise the resident is asked to run the tests.
     """
 
+    role = "This is where the tests run. You check that changes work and say what broke."
+
     def instructions(self, task: Task) -> str:
         return f"Run the project's tests for: {task.title}"
 
@@ -214,6 +220,7 @@ class Courthouse(BuildingHandler):
     """
 
     read_only = True
+    role = "This is where changes are reviewed. You judge diffs honestly and say exactly what to fix."
     APPROVE = "Approve & merge"
 
     def instructions(self, task: Task) -> str:
@@ -248,6 +255,7 @@ class PostOffice(BuildingHandler):
     """Finished work leaves the island as a pull request."""
 
     read_only = True
+    role = "This is where finished work leaves the island as a pull request. You write PR titles and descriptions."
 
     def instructions(self, task: Task) -> str:
         return (

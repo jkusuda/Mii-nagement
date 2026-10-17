@@ -61,17 +61,17 @@ const GIFTS := [
 ## How a resident feels, as the island shows it: the backend's six moods (docs/protocol.md)
 ## plus a few "vibes" the game reads off the snapshot itself (see vibe()). word, colour, symbol.
 const VIBES := {
-	"happy": ["happy", Color("2FA37A"), ":)"],
-	"focused": ["focused", Color("3E7FCB"), "@"],
-	"confused": ["puzzled", Color("7553DF"), "?"],
-	"frustrated": ["grumpy", Color("E36F1E"), "!"],
-	"tired": ["tired", Color("C57722"), "~"],
-	"proud": ["proud", Color("009D85"), "^"],
-	"sleepy": ["sleepy", Color("8A8FA8"), "z"],
-	"bored": ["bored", Color("8A8FA8"), "-"],
-	"lonely": ["lonely", Color("7553DF"), "."],
-	"excited": ["excited", Color("E39537"), "!!"],
-	"relaxed": ["relaxed", Color("2FA37A"), "u"],
+	"happy": ["happy", Color("2FA37A"), "😊"],
+	"focused": ["focused", Color("3E7FCB"), "🎯"],
+	"confused": ["puzzled", Color("7553DF"), "😵‍💫"],
+	"frustrated": ["grumpy", Color("E36F1E"), "😤"],
+	"tired": ["tired", Color("C57722"), "😩"],
+	"proud": ["proud", Color("009D85"), "😎"],
+	"sleepy": ["sleepy", Color("8A8FA8"), "😴"],
+	"bored": ["bored", Color("8A8FA8"), "😑"],
+	"lonely": ["lonely", Color("7553DF"), "🥺"],
+	"excited": ["excited", Color("E39537"), "🤩"],
+	"relaxed": ["relaxed", Color("2FA37A"), "😌"],
 }
 const BORED_AFTER := 180.0  # seconds idle before a resident looks bored
 
@@ -218,10 +218,10 @@ static func vibe_color(resident: Dictionary, island: Dictionary = {}) -> Color:
 	return VIBES[v][1] if VIBES.has(v) else Color("8A8FA8")
 
 
-## The short symbol shown beside the name on the island.
+## The emoji shown beside the name on the island.
 static func vibe_symbol(resident: Dictionary, island: Dictionary = {}) -> String:
 	var v := vibe(resident, island)
-	return VIBES[v][2] if VIBES.has(v) else "?"
+	return VIBES[v][2] if VIBES.has(v) else "🙂"
 
 
 ## Does this resident run a building of this type on the island?

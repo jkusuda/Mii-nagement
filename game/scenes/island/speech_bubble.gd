@@ -11,9 +11,8 @@ extends Node3D
 const FONT := preload("res://assets/font/DreamLife-V1.0.0_by_MaxiGamer.ttf")
 const INK := Color("292E50")  # the theme's dark text colour
 const NAME_COLOR := Color("E07B39")
-const FONT_SIZE := 40
-const WRAP := 460  # px: text wraps at this width
-const PAD := Vector2(46, 26)  # between the text and the edge of the pill
+const WRAP := 460  # px: the widest the text gets before it wraps
+const PAD := Vector2(36, 20)  # between the text and the edge of the pill
 const MARGIN := 18  # room around the pill for the shadow
 const TAIL := Vector2(28, 22)  # width and height of the tail
 const MAX_RADIUS := 60  # corner radius cap, so tall bubbles stay rounded rectangles
@@ -40,11 +39,9 @@ func _ready() -> void:
 	_text = RichTextLabel.new()
 	_text.bbcode_enabled = true
 	_text.scroll_active = false
-	_text.autowrap_mode = TextServer.AUTOWRAP_OFF  # we size it to fit ourselves
+	_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART  # wraps at the width _layout gives it
 	_text.add_theme_font_override("normal_font", FONT)
 	_text.add_theme_font_override("bold_font", FONT)
-	_text.add_theme_font_size_override("normal_font_size", FONT_SIZE)
-	_text.add_theme_font_size_override("bold_font_size", FONT_SIZE)
 	_text.add_theme_color_override("default_color", INK)
 	_body.add_child(_text)
 
@@ -74,10 +71,25 @@ func say(line: String, seconds := 4.0) -> void:
 	_tween.tween_callback(func(): visible = false)
 
 
-## Size the viewport to the wrapped text, then draw it once.
+## Short lines get big text, long lines smaller text.
+static func font_size_for(line: String) -> int:
+	if line.length() <= 18:
+		return 48
+	if line.length() <= 40:
+		return 40
+	return 32
+
+
+## Size the text and the pill to fit the line, then draw it once. The text is as wide as
+## it needs (up to WRAP), so a short line gets a small bubble and a long one a bigger one.
 func _layout(line: String) -> void:
-	var size := FONT.get_multiline_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, WRAP, FONT_SIZE)
-	size = Vector2(ceil(size.x) + 6.0, ceil(size.y))
+	var font_size := font_size_for(line)
+	_text.add_theme_font_size_override("normal_font_size", font_size)
+	_text.add_theme_font_size_override("bold_font_size", font_size)
+	var one_line := FONT.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
+	var width := minf(ceil(one_line.x) + 8.0, WRAP)
+	var wrapped := FONT.get_multiline_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, width, font_size)
+	var size := Vector2(width, ceil(wrapped.y))
 	_pill = Rect2(Vector2(MARGIN, MARGIN), size + PAD * 2.0)
 	var view := Vector2i(_pill.size + Vector2(MARGIN * 2, MARGIN * 2 + TAIL.y))
 	_viewport.size = view

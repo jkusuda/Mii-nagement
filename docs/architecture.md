@@ -91,6 +91,7 @@ Grouped by layer; a module only imports from its own layer or the ones below it.
 | domain | `residents.py` | create / edit / delete residents (the resident creator) | `test_residents.py` |
 | domain | `layout.py` | the workflow graph by hand (`set_layout`), `assign_buildings` | `test_layout.py` |
 | domain | `tasks.py` | a request (`title` or GitHub `issue`) → a queued task | `test_tasks.py` |
+| domain | `talk.py` | a `talk` message: one read-only chat turn with a resident in a building's role (throwaway worktree in real mode), answered to the sender only | `test_talk.py` |
 | domain | `insights.py`, `weather.py`, `replay.py`, `personality.py` | stats, island weather, replaying a recorded task, the system prompt | `test_insights.py`, `test_weather.py`, `test_replay.py`, `test_personality.py` |
 | infra | `sandbox.py` | worktrees per task, path checks, `run_shell` (**the safety boundary**) | `test_engine.py` |
 | infra | `repos.py`, `github.py` | git repos on disk; the `gh` CLI (issues, PRs, clone) | `test_islands.py`, `test_github.py` |
@@ -127,7 +128,7 @@ Bubbles sidebar, and every screen (`show_screen()` shows one).
 | `scenes/residents/` | Residents tab, resident cards, the resident creator, `resident_data.gd` (jobs, brains, gifts, vibes) |
 | `scenes/mii/` | the 3D Mii (`mii.gd`), its parts (`mii_parts.gd`), the creator's preview stage |
 | `scenes/news/`, `scenes/insights/` | the News tab (`news_stories.gd` writes the stories) and the Insights tab |
-| `scenes/ui/` | sidebar, bubble cards, the answer popup, building panel, settings, toasts, `ui.gd` (`UI.label`) |
+| `scenes/ui/` | sidebar, bubble cards, the answer popup, building panel, the talk popup (`talk_popup.gd` + `talk_room.gd`), settings, toasts, `ui.gd` (`UI.label`) |
 | `ui/theme.tres`, `shaders/`, `assets/` | every colour and style, the GPU shaders, models / icons / fonts / Mii parts |
 
 **`Net` signals and who listens** (every screen also redraws on `island_changed`):
@@ -142,6 +143,7 @@ Bubbles sidebar, and every screen (`show_screen()` shows one).
 | `bubble_resolved` | `answer_popup.gd` |
 | `resident_updated`, `resident_removed`, `server_error` | `game.gd` |
 | `thinking_received` | `building_panel.gd` |
+| `talk_thinking`, `talk_replied`, `talk_failed` | `talk_popup.gd` |
 | `event_received` | `news_screen.gd` |
 | `island_changed` | `game.gd`, `islands.gd`, `bubbles_sidebar.gd`, `building_panel.gd`, `insights_screen.gd`, `island_residents.gd` |
 

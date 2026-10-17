@@ -17,6 +17,8 @@ extends Control
 signal closed
 ## A resident's "Answer" button: open that bubble's reply in the sidebar.
 signal answer_requested(bubble_id: String)
+## A resident's card or "Talk" button: chat with them at this building (TalkPopup).
+signal talk_requested(resident_id: String, building_id: String)
 
 const CLOSE_ICON := preload("res://assets/icons/x.svg")
 const SEND_ICON := preload("res://assets/icons/plus.svg")
@@ -594,7 +596,8 @@ static func _escape(text: String) -> String:
 	return text.replace("[", "[lb]")
 
 
-## One resident: Mii headshot, name, job · mood, what they're doing, and Answer if they need you.
+## One resident: Mii headshot, name, job · mood, what they're doing, Answer if they need
+## you, and Talk. Clicking the card (or Talk) opens a chat with them here.
 func _resident_card(r: Dictionary, here_id: String) -> Control:
 	var color := Color(str(r.get("color", "#8A8FA8")))
 	var avatar := UI.avatar(r, 44)
@@ -627,7 +630,32 @@ func _resident_card(r: Dictionary, here_id: String) -> Control:
 	else:
 		var state := str(r.get("state", "idle"))
 		side = _pill(STATES.get(state, state.capitalize()), color if state == "working" else Color("8A8FA8"))
-	return _card_row(avatar, texts, side)
+
+	var resident_id := str(r.get("id", ""))
+	var talk := Button.new()
+	talk.text = "Talk"
+	talk.theme_type_variation = &"OutlineButton"
+	talk.add_theme_font_size_override("font_size", 13)
+	talk.custom_minimum_size = Vector2(96, 30)
+	talk.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	talk.focus_mode = Control.FOCUS_NONE
+	talk.tooltip_text = "Chat with %s at the %s" % [str(r.get("name", "them")), _title.text]
+	talk.pressed.connect(func(): talk_requested.emit(resident_id, here_id))
+	var right := VBoxContainer.new()
+	right.add_theme_constant_override("separation", 6)
+	right.add_child(side)
+	right.add_child(talk)
+
+	var card := _card_row(avatar, texts, right)
+	# Godot concept: gui_input gets clicks on the card itself; buttons on it take
+	# their own clicks first, so only clicks on the empty parts land here.
+	card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	card.gui_input.connect(
+		func(event: InputEvent):
+			if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+				talk_requested.emit(resident_id, here_id)
+	)
+	return card
 
 
 func _card_row(left: Control, middle: Control, right: Control) -> Control:
