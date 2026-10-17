@@ -12,8 +12,10 @@ import binascii
 import re
 from typing import TYPE_CHECKING
 
+from django.db.models import QuerySet
+
 from mii import github
-from mii.models import Island, Task
+from mii.models import Event, Island, Task
 
 if TYPE_CHECKING:
     from mii.engine import WorkflowEngine
@@ -98,3 +100,20 @@ def parse_attachments(raw: object) -> list[tuple[str, bytes]]:
             n += 1
         files.append((name, data))
     return files
+
+
+async def task_window(task_id: str, running_too: bool = False) -> QuerySet | None:
+    """The island's stored events from the task's `in_progress` event to its last `task` event.
+
+    Events aren't tagged with a task, so this is everything the island sent in that window.
+    `running_too` leaves the end open for a task that hasn't finished. None while it is queued.
+    """
+    marks = Event.objects.filter(type="task", payload__id=task_id).order_by("id")
+    first = await marks.filter(payload__status="in_progress").afirst()
+    if first is None:
+        return None
+    rows = Event.objects.filter(island_id=first.island_id, id__gte=first.id)
+    last = await marks.alast()
+    if last.payload.get("status") in ("done", "failed", "cancelled") or not running_too:
+        rows = rows.filter(id__lte=last.id)
+    return rows

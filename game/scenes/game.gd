@@ -118,7 +118,7 @@ func _ready() -> void:
 	insights.see_residents.connect(show_screen.bind("residents"))
 	%News.pressed.connect(func(): show_screen("island" if screen == "news" else "news"))
 	news.unread_changed.connect(_show_unread)
-	news.replay_started.connect(show_screen.bind("island"))
+	news.notice.connect(toast.show_message)
 	_show_unread(news.unread())
 	%BackButton.pressed.connect(_go_back)
 
@@ -167,7 +167,7 @@ func _ready() -> void:
 	dropdown.failed.connect(toast.show_message)
 
 	# Island data from the backend. Net keeps Net.island current and announces
-	# every change; until the first snapshot the Residents screen shows mock data.
+	# every change; until the first snapshot the screens stay empty.
 	Net.island_changed.connect(_show_island)
 	Net.resident_updated.connect(_on_resident_updated)
 	Net.server_error.connect(_on_server_error)
@@ -268,7 +268,7 @@ func _on_server_error(message: String) -> void:
 
 
 ## An island was abandoned from the switcher. If we were on it, go to another
-## island (Net needs one to watch) and show the Archipelago.
+## island (or to none, when it was the last) and show the Archipelago.
 func _on_island_abandoned(id: String, repo_path: String) -> void:
 	var island_name := str(Islands.find(id).get("name", id))
 	toast.show_message(
@@ -280,10 +280,12 @@ func _on_island_abandoned(id: String, repo_path: String) -> void:
 	)
 	if id != str(Net.island.get("id", "")):
 		return
+	var next := ""
 	for island in Islands.islands:
 		if str(island["id"]) != id:
-			Net.visit_island(str(island["id"]))
+			next = str(island["id"])
 			break
+	Net.visit_island(next)  # "" = no island: the backend keeps the connection open without one
 	show_screen("home")
 
 

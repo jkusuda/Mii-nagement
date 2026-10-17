@@ -11,16 +11,16 @@ extends PanelContainer
 ##   count on the nav button (`unread_changed`). Remembered in user://news.cfg.
 ## - Daily digest: when on, the game opens on News the first time you start it
 ##   each day.
-## - Replay: a shipped story's ↻ button plays that package's recorded run
-##   again on the island (POST /replay/{task_id}), the demo safety net. Nothing
-##   is redone or saved; game.gd switches to the island view to watch it.
+## - Merge: a shipped story's merge button merges the package's branch into your
+##   local checkout (POST /islands/{id}/tasks/{task_id}/merge). A conflict queues
+##   a package for the residents to fix; the result shows in game.gd's toast.
 ##
 ## This node lives in game.tscn all the time (hidden when another tab is open),
 ## so it keeps reading the news and counting unread stories in the background.
 
 signal unread_changed(count: int)
-## A recorded run started playing (game.gd shows the island).
-signal replay_started
+## A one-line result to show the player (game.gd puts it in the toast).
+signal notice(message: String)
 
 const SETTINGS := "user://news.cfg"
 const MAX_FEED := 40
@@ -33,11 +33,10 @@ const WEEK := [
 	["keys_lent", "Keys lent", "FFF0DD"],
 ]
 const WEEKDAYS := ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
-const REPLAY_SPEED := 4  # recorded runs play back this many times faster
-const REPLAY_ICON := preload("res://assets/icons/rotate-ccw.svg")
+const MERGE_ICON := preload("res://assets/icons/git-pull-request.svg")
 
 var _desk := NewsStories.new()
-var _live_events: Array[Dictionary] = []  # this session's events, to replay over the history
+var _live_events: Array[Dictionary] = []  # this session's events, added on top of the history
 var _filter := "all"
 var _island_id := ""
 var _last_seen := 0.0
@@ -229,8 +228,8 @@ func _story_row(story: Dictionary) -> Control:
 	tag.add_theme_color_override("font_color", story["color"])
 
 	var parts: Array[Control] = [time, avatar, text, tag]
-	if story.has("task"):
-		parts.append(_replay_button(str(story["task"])))
+	if story.has("task") and not Net.island.get("mock_agents", true):  # mock packages have no git branch
+		parts.append(_merge_button(story))
 	for part in parts:
 		part.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		row.add_child(part)
@@ -243,28 +242,40 @@ func _story_row(story: Dictionary) -> Control:
 	return rows
 
 
-func _replay_button(task_id: String) -> Button:
+## Merge the package's branch into the branch checked out in the island's folder.
+## On a conflict the backend sends a "Fix merge conflicts" package to the mailbox.
+func _merge_button(story: Dictionary) -> Button:
 	var button := Button.new()
-	button.icon = REPLAY_ICON
+	button.icon = MERGE_ICON
 	button.theme_type_variation = &"FlatIconButton"
 	button.focus_mode = Control.FOCUS_NONE
-	button.tooltip_text = "Replay this package's run on the island (%dx speed, nothing is redone)" % REPLAY_SPEED
+	button.tooltip_text = "Merge this package into your local branch"
 	button.pressed.connect(
 		func():
 			button.disabled = true
-			# The backend answers when the replay is over; the events stream in meanwhile.
 			Net.request_json(
-				"/replay/%s?speed=%d" % [task_id.uri_encode(), REPLAY_SPEED],
+				"/islands/%s/tasks/%s/merge" % [_island_id.uri_encode(), str(story["task"]).uri_encode()],
 				func(ok: bool, data: Dictionary):
 					if is_instance_valid(button):
 						button.disabled = false
-					if not ok:
-						push_warning("Replay failed: %s" % data["error"]),
-				HTTPClient.METHOD_POST
+					notice.emit(_merge_message(ok, data, str(story.get("title", "the package")))),
+				HTTPClient.METHOD_POST,
+				{}
 			)
-			replay_started.emit()
 	)
 	return button
+
+
+func _merge_message(ok: bool, data: Dictionary, title: String) -> String:
+	if not ok:
+		return "Couldn't merge “%s”: %s" % [title, data["error"]]
+	if data.get("merged"):
+		return "Merged “%s” into %s." % [title, data.get("branch", "your branch")]
+	var files: Array = data.get("conflicts", [])
+	return (
+		"“%s” conflicts with %s (%s). Your folder is unchanged; a package to fix it is on its way to the mailbox."
+		% [title, data.get("branch", "your branch"), ", ".join(files)]
+	)
 
 
 func _show_week() -> void:

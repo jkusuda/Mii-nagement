@@ -14,7 +14,7 @@ signal go_home
 signal new_island
 ## An island was abandoned; `repo_path` is where its git repository stays.
 signal abandoned(island_id: String, repo_path: String)
-## Abandoning didn't work (a task is running there, or it's the last island).
+## Abandoning didn't work (a task is running there).
 signal failed(message: String)
 
 const CHECK := preload("res://assets/icons/check.svg")
@@ -172,8 +172,7 @@ func _row(island: Dictionary) -> Control:
 	return row
 
 
-## Ask first, then DELETE /islands/{id}. The backend refuses while a task runs
-## there, or if it's the last island.
+## Ask first, then DELETE /islands/{id}. The backend refuses while a task runs there.
 func _abandon(island: Dictionary) -> void:
 	var id := str(island["id"])
 	var island_name := str(island.get("name", id))

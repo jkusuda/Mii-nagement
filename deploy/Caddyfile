@@ -3,7 +3,7 @@
 {$MII_DOMAIN} {
 	encode zstd gzip
 
-	@backend path /ws /health /meta /settings /brains /brains/* /gifts /models /islands /islands/* /github/* /replay/* /auth/*
+	@backend path /ws /health /meta /settings /brains /brains/* /gifts /models /islands /islands/* /github/* /auth/*
 	handle @backend {
 		reverse_proxy backend:8000
 	}

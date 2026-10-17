@@ -109,7 +109,7 @@ class OverlapRunner(ScriptedRunner):
 
 
 async def test_islands_work_in_parallel_but_one_package_at_a_time_each(island):
-    # A second, one-building island next to the seed island.
+    # A second, one-building island next to the test island.
     await Island.objects.acreate(id="breezy", name="Breezy")
     await Resident.objects.acreate(id="bo", island_id="breezy", name="Bo", job="planner")
     await Building.objects.acreate(

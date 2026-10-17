@@ -38,7 +38,7 @@ async def test_create_task_validates_and_queues(island, fake_runtime):
     bad = await client.post("/islands/sunny/tasks", data=json.dumps({}), content_type="application/json")
     assert bad.status_code == 400
     issue = await client.post("/islands/sunny/tasks", data=json.dumps({"issue": 3}), content_type="application/json")
-    assert issue.status_code == 400  # the seed island has no repo
+    assert issue.status_code == 400  # the test island has no repo
     ok = await client.post("/islands/sunny/tasks", data=json.dumps({"title": "Hi"}), content_type="application/json")
     assert ok.status_code == 200 and ok.json()["status"] == "queued"
     assert fake_runtime.workflow.queue.qsize() == 1
@@ -95,26 +95,27 @@ async def test_cancel_and_delete_endpoints(island, fake_runtime):
     assert (await client.post(f"/islands/sunny/tasks/{task.id}/cancel")).json()["status"] == "cancelled"
     assert (await client.post(f"/islands/sunny/tasks/{task.id}/cancel")).status_code == 409
     assert (await client.post("/islands/sunny/tasks/t_nope/cancel")).status_code == 404
+    assert (await client.post(f"/islands/sunny/tasks/{task.id}/merge")).status_code == 409  # cancelled, no branch
+    assert (await client.post("/islands/sunny/tasks/t_nope/merge")).status_code == 404
 
     assert (await client.delete("/islands/sunny/residents/carlos")).status_code == 409  # works at the workshop
     mo = await residents.create_resident("sunny", {"name": "Mo", "job": "coder"})
     assert (await client.delete(f"/islands/sunny/residents/{mo.id}")).json() == {"deleted": mo.id}
     assert (await client.delete(f"/islands/sunny/residents/{mo.id}")).status_code == 404
 
-    assert (await client.delete("/islands/sunny")).status_code == 409  # the last island stays
     await Island.objects.acreate(id="rock", name="Rocky Cove")
     assert (await client.delete("/islands/rock")).json() == {"deleted": "rock", "repo_kept": None}
     assert (await client.get("/islands/rock")).status_code == 404
     assert (await client.delete("/islands/rock")).status_code == 404
+    assert (await client.delete("/islands/sunny")).json()["deleted"] == "sunny"  # the last one may go too
 
 
-async def test_insights_and_replay_endpoints(island, fake_runtime):
+async def test_insights_endpoint(island, fake_runtime):
     client = AsyncClient()
     data = (await client.get("/islands/sunny/insights")).json()
     assert {"island", "per_day", "tip", "residents", "brains", "buildings"} <= set(data) and data["range"] == "week"
     assert (await client.get("/islands/sunny/insights?range=today")).json()["range"] == "today"
     assert (await client.get("/islands/sunny/insights?range=year")).status_code == 400
-    assert (await client.post("/replay/t_nope")).status_code == 404
 
 
 async def test_events_history_endpoint(island, fake_runtime):

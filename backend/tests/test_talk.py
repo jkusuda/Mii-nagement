@@ -18,7 +18,7 @@ pytestmark = db_test
 
 @pytest.fixture
 def at_work(island):
-    """Everyone working inside their building (the seed puts each one at theirs): talkable."""
+    """Everyone working inside their building (the test island puts each one at theirs): talkable."""
     Resident.objects.filter(island_id="sunny").update(state="working")
     return island
 

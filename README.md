@@ -21,7 +21,7 @@ first: how the two halves fit, a map of every file, and a "where to look" table 
 common changes. Then [CLAUDE.md](CLAUDE.md) for the working rules.
 
 > **Status:** the backend MVP is done (Django + Channels, ACP brains, OpenRouter
-> brain, GitHub in/out, insights, replay) and runs end to end in **mock mode**
+> brain, GitHub in/out, insights) and runs end to end in **mock mode**
 > (fake agents, no API cost). The game is wired to every backend endpoint. Open work is
 > marked `TODO(mvp)` / `TODO(stretch)` in the code; the roadmap is in [TODO.md](TODO.md).
 
@@ -51,15 +51,13 @@ make
 
 That installs everything, starts the backend, and opens the game. No
 configuration file is needed. Ctrl+C stops both. This is the real-agents setup:
-no simulator (its fake tasks would become real agent work) and no `--reload`
-(editing the code would restart the server mid-task). It forces mock mode off
+no `--reload` (editing the code would restart the server mid-task). It forces mock mode off
 (`MOCK_AGENTS=0`), whatever a `.env` or the saved settings say, so residents use
 their real brains.
 
-For development, `make dev` runs the backend with `--reload` plus the simulator,
-which keeps posting fake tasks so the island is always busy in mock mode.
-Other targets: `make server`, `make sim`, `make watch`, `make game`, `make test`,
-`make reset`. If Godot isn't found, pass it: `make GODOT=/path/to/godot`.
+For development, `make dev` runs the backend with `--reload` and every resident
+on the free mock brain. Other targets: `make server`, `make watch`, `make game`,
+`make test`. If Godot isn't found, pass it: `make GODOT=/path/to/godot`.
 
 ## Setup (once, by hand)
 
@@ -78,7 +76,8 @@ cd backend && uv sync
 
 - `uv sync` downloads Python 3.12 for this project only, creates `backend/.venv`,
   and installs the dependencies.
-- No `.env` is needed. The backend starts in mock mode; settings and API keys are
+- No `.env` is needed. The backend starts with real agents (`make dev` switches to
+  the free mock brain); settings and API keys are
   saved at runtime (see "Settings" below). Developers can still copy
   `.env.example` to `.env` to force values.
 
@@ -92,17 +91,12 @@ echo 'alias godot="/Applications/Godot.app/Contents/MacOS/Godot"' >> ~/.zshrc &&
 
 Open a separate terminal for each step, starting in the repo root.
 
-**1. Backend server.** Creates the tables and seeds `backend/mii.db` on first run. Check it at http://localhost:8000/health.
+**1. Backend server.** Creates the tables in `backend/mii.db` on first run (no islands yet: the game founds the first one). Check it at http://localhost:8000/health.
 ```bash
 cd backend && uv run python -m uvicorn mii.asgi:application --reload --port 8000
 ```
 
-**2. Simulator.** Sends fake tasks through the island, one after another.
-```bash
-cd backend && uv run python manage.py seed --loop
-```
-
-**3. The game.** Starts it directly, without the editor:
+**2. The game.** Starts it directly, without the editor:
 ```bash
 godot --path game
 ```
@@ -126,9 +120,10 @@ make fmt       # format both halves (ruff format, gdformat)
 The Godot check loads every script without a window and fails on any script error.
 Optional: `uvx pre-commit install` runs the formatters on every commit.
 
-**Start over with a fresh database.** Stop the server first.
+**Start over with a fresh database.** Stop the server first, then delete the file
+(islands' git repositories stay on disk):
 ```bash
-cd backend && uv run python manage.py seed --reset
+rm backend/mii.db
 ```
 After changing a table in `models.py`: `uv run python manage.py makemigrations mii`
 (the server applies migrations when it starts).
@@ -144,18 +139,17 @@ The game opens on the **Archipelago** (every island in one sea, plus everything
 - Click an island to visit it. **Send a package** (top right) drops a task in the
   Mailbox; residents walk it along the roads. Answer their bubbles in the sidebar.
 - **Residents** (create / edit, including OpenRouter models), **News** (stories
-  from stored events; ↻ replays a shipped package), **Insights** (stats).
+  from stored events; merge a shipped package into your checkout), **Insights** (stats).
 - **Scroll / pinch / − + buttons** zoom the island. **Click and drag** pans it.
 
 New to Godot? Read [docs/godot-tour.md](docs/godot-tour.md).
 
 ## Real agents
 
-Switch mock mode off (`PUT /settings {"settings": {"mock_agents": false}}`, or
-`MOCK_AGENTS=0` in `.env`). Every island already has its own git repository
-(the seed island's is created on first start under `~/Documents/Mii-nagement`,
-or `~/Mii-nagement` without a Documents folder; change the root with
-`ISLANDS_ROOT`). Each task gets its own git worktree of that repo and a
+Mock mode is off by default (`make dev`, `PUT /settings {"settings": {"mock_agents": true}}`
+or `MOCK_AGENTS=1` in `.env` turn it on). Every island has its own git repository
+(created when you found it, under `~/Documents/Mii-nagement`, or `~/Mii-nagement`
+without a Documents folder; change the root with `ISLANDS_ROOT`). Each task gets its own git worktree of that repo and a
 `mii/<task_id>` branch. Optional: `TEST_COMMAND` (what the Lab runs) and the
 island's `repo` (`owner/name`, for issues in and PRs out via the logged-in `gh` CLI).
 
@@ -168,10 +162,10 @@ already have, see [Using your own repo](#using-your-own-repo).
 Then send a task and watch it go round the island:
 
 ```bash
-curl -X POST localhost:8000/islands/sunny/tasks -H 'content-type: application/json' \
+curl -X POST localhost:8000/islands/rocky_cove/tasks -H 'content-type: application/json' \
   -d '{"title": "Add hello.txt", "description": "Create hello.txt with one line: hello"}'
-curl localhost:8000/islands/sunny/tasks/t_d5d447      # steps (what each resident said) + events
-curl 'localhost:8000/islands/sunny/tasks?status=done'   # finished tasks, newest first
+curl localhost:8000/islands/rocky_cove/tasks/t_d5d447      # steps (what each resident said) + events
+curl 'localhost:8000/islands/rocky_cove/tasks?status=done'   # finished tasks, newest first
 ```
 
 **ACP brains (your subscriptions, no API key needed):**
@@ -242,7 +236,7 @@ game/      Godot 4 client: 3D island, UI, residents, bubbles
 docs/      architecture.md (start here: the map), protocol.md (WebSocket), http-api.md (HTTP),
            godot-tour.md (Godot for beginners), mii-customization.md (faces and hair)
 tools/     build_mii_parts.py (rebuilds the Mii parts from the Mii Maker rips)
-.claude/   Claude Code skills (godot-animation, demo-video) and shared permissions
+.claude/   Claude Code skill (godot-animation) and shared permissions
 .github/   CI: the same checks as `make check`
 TODO.md    roadmap (MVP vs stretch)
 CLAUDE.md  working rules for Claude Code sessions (and a short read for humans too)

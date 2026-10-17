@@ -206,7 +206,7 @@ class BrainUsage(models.Model):
 
 
 class Event(models.Model):
-    """Every event sent to clients, kept for history and replay.py."""
+    """Every event sent to clients, kept for history (News, a task's events)."""
 
     island_id = models.CharField(max_length=64, null=True, blank=True, db_index=True)
     type = models.CharField(max_length=50, db_index=True)

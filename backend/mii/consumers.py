@@ -140,6 +140,8 @@ class IslandConsumer(AsyncJsonWebsocketConsumer):
             await self.send_json(events.error("this island is not yours"))
             await self.close(code=CLOSE_FORBIDDEN)
             return
+        if island is None and not await Island.objects.aexists():
+            return  # a fresh install: stay connected with no island until the game founds one
         try:
             snapshot = await island_snapshot(island_id, runtime.bubbles.for_island(island_id))
         except Island.DoesNotExist:

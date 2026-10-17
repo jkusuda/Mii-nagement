@@ -121,6 +121,53 @@ class Sandbox:
         self._git(path, "-c", f"user.name={name}", "-c", f"user.email={email}", "commit", "-q", "-m", message)
         return True
 
+    def merge_into_checkout(self, task_id: str, author: str = DEFAULT_GIT_AUTHOR) -> tuple[str, list[str]]:
+        """Merge the task branch into whatever branch the island's own folder has checked out.
+
+        Returns (that branch, the files that conflict). On a conflict the merge is aborted,
+        so the folder is as it was. Raises SandboxError when the merge can't start (no branch
+        checked out, uncommitted changes, a file in the way)."""
+        branch = self._git(self.repo_path, "symbolic-ref", "--quiet", "--short", "HEAD", check=False).strip()
+        if not branch:
+            raise SandboxError(f"{self.repo_path} has no branch checked out")
+        if self._git(self.repo_path, "status", "--porcelain", "--untracked-files=no").strip():
+            raise SandboxError(f"{self.repo_path} has uncommitted changes: commit or stash them first")
+        return branch, self._merge(self.repo_path, f"mii/{task_id}", author)
+
+    def prepare_conflict_branch(self, task_id: str, other_id: str, base: str, author: str = DEFAULT_GIT_AUTHOR) -> None:
+        """Start `task_id`'s branch from `base` with `other_id`'s branch merged in, conflict markers
+        and all, so the residents who pick it up only have to fix the marked files. (The engine
+        later reuses the branch, see create_worktree.)"""
+        path = self.create_worktree(task_id, base)
+        try:
+            if self._merge(path, f"mii/{other_id}", author, abort=False):
+                self.commit_all(task_id, f"Merge mii/{other_id} (conflicts to fix)", author)
+        finally:
+            self.remove_worktree(task_id)
+
+    def _merge(self, cwd: Path, branch: str, author: str, abort: bool = True) -> list[str]:
+        """`git merge` `branch` in `cwd`: [] when it merged, else the conflicting files (the
+        merge is aborted unless not `abort`)."""
+        name, email = split_author(author)
+        # Your own git name signs the merge commit; Mii-nagement's only if git has none.
+        who = (
+            []
+            if self._git(cwd, "config", "user.email", check=False).strip()
+            else ["-c", f"user.name={name}", "-c", f"user.email={email}"]
+        )
+        result = subprocess.run(
+            ["git", "-C", str(cwd), *who, "merge", "--no-ff", "--no-edit", branch], capture_output=True, text=True
+        )
+        if result.returncode == 0:
+            return []
+        conflicts = self._git(cwd, "diff", "--name-only", "--diff-filter=U", check=False).split()
+        if not conflicts:
+            self._git(cwd, "merge", "--abort", check=False)
+            raise SandboxError(f"git merge {branch} failed: {(result.stderr or result.stdout).strip()}")
+        if abort:
+            self._git(cwd, "merge", "--abort")
+        return conflicts
+
     def diff_stat(self, task_id: str) -> str:
         """What the task branch changed compared to where it started (for the reviewer)."""
         path = self.worktree_path(task_id)

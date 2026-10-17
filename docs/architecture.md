@@ -56,7 +56,6 @@ Start from the change you want, open the files in the order given, then run the 
 | founding an island, repos | `islands.py` (`create_island`) → `repos.py` (git) → `github.py` (`gh`) | `uv run pytest tests/test_islands.py` |
 | a screen or popup | `game/scenes/game.gd` (`show_screen`, the nav) → the screen's folder below; build UI in code with `UI.label` and the theme in `ui/theme.tres` | `make godot-check`, then play it |
 | how residents move, emote, talk | the `godot-animation` skill (`.claude/skills/godot-animation/SKILL.md`) | play it |
-| a recording of the game | the `demo-video` skill | |
 
 Rules that save time:
 
@@ -65,8 +64,8 @@ Rules that save time:
 - Never put workflow or agent logic in the game, and never loosen `sandbox.py`'s checks.
 - The engine runs on the event loop: use the async ORM (`aget`, `asave`, `async for`) and
   `asyncio.to_thread` for git, `gh` and keychain calls.
-- Mock mode (`MOCK_AGENTS=1`, the default) must keep working: it is how the game and the
-  tests run without agents.
+- Mock mode (`MOCK_AGENTS=1`; the default is 0, real agents) must keep working: it is how
+  `make dev` and the tests run without agents.
 
 ## Backend map (`backend/mii/`)
 
@@ -76,9 +75,9 @@ Grouped by layer; a module only imports from its own layer or the ones below it.
 |---|---|---|---|
 | entry | `asgi.py` | ASGI app: HTTP (`urls.py`), `/ws` (`consumers.py`), lifespan (starts the engine via `runtime.py`) | |
 | entry | `urls.py`, `views.py` | HTTP routes; views parse the request and pick the status code | `test_views.py` |
-| entry | `consumers.py` | the `/ws` consumer: checks `?token=` (close 4401 / 4403), sends the snapshot, dispatches commands in `_handle` | `test_residents.py`, `test_tasks.py`, `test_auth.py` |
+| entry | `consumers.py` | the `/ws` consumer: checks `?token=` (close 4401 / 4403), sends the snapshot (none while there is no island yet), dispatches commands in `_handle` | `test_residents.py`, `test_tasks.py`, `test_auth.py` |
 | entry | `auth.py` | optional Auth0 login: `verify` (JWKS, RS256), `can_see`, `island_guard`, the device-flow proxies behind `/auth/*` | `test_auth.py` |
-| entry | `management/commands/` | `manage.py seed [--reset\|--loop]` and `manage.py watch` | |
+| entry | `management/commands/` | `manage.py watch` (prints the event stream) | |
 | runtime | `runtime.py` | the one bus, bubbles, judge, spectator hook and engine per process; `reload()` applies saved settings | `test_judge.py` |
 | engine | `engine.py` | `IslandGraph`, the five `BuildingHandler`s, `WorkflowEngine` (one `Lane` per island) | `test_engine.py` |
 | engine | `judge.py` | small typed decisions: `RuleJudge` (offline), or an `AskingJudge`: `JevJudge` (TypeSafe Jev) or `GeminiJudge` (Gemini structured output) | `test_judge.py` |
@@ -93,17 +92,17 @@ Grouped by layer; a module only imports from its own layer or the ones below it.
 | domain | `island_map.py` | map shapes, `validate_map`, `build_roads` (pure functions) | `test_island_map.py` |
 | domain | `residents.py` | create / edit / delete residents (the resident creator) | `test_residents.py` |
 | domain | `layout.py` | the workflow graph by hand (`set_layout`), `assign_buildings` | `test_layout.py` |
-| domain | `tasks.py` | a request (`title` or GitHub `issue`) → a queued task | `test_tasks.py` |
+| domain | `tasks.py` | a request (`title` or GitHub `issue`) → a queued task; `task_window` (a task's stored events) | `test_tasks.py`, `test_vocab.py` |
 | domain | `talk.py` | a `talk` message: one read-only chat turn with a resident in a building's role (throwaway worktree in real mode), answered to the sender only | `test_talk.py` |
-| domain | `insights.py`, `weather.py`, `replay.py`, `personality.py` | stats, island weather, replaying a recorded task, the system prompt | `test_insights.py`, `test_weather.py`, `test_replay.py`, `test_personality.py` |
+| domain | `insights.py`, `weather.py`, `personality.py` | stats, island weather, the system prompt | `test_insights.py`, `test_weather.py`, `test_personality.py` |
 | infra | `sandbox.py` | worktrees per task, path checks, `run_shell` (**the safety boundary**) | `test_engine.py` |
 | infra | `repos.py`, `github.py` | git repos on disk; the `gh` CLI (issues, PRs, clone) | `test_islands.py`, `test_github.py` |
 | infra | `models.py` | the tables and `*_to_dict` (rows → protocol shapes) | |
 | infra | `prefs.py`, `config.py`, `settings.py` | user settings + keychain secrets; `.env` overrides; Django settings | `test_prefs.py` |
 | base | `vocab.py` | every shared name (steps, states, moods, brains...), data only | `test_vocab.py` |
 
-`seed.py` (the seed island + simulator) and `watch.py` (prints the event stream) back the
-two management commands.
+The app ships no islands: the first start is open sea, and the game founds the first
+island. The tests bring their own island (`island` fixture in `tests/conftest.py`).
 
 ## Game map (`game/`)
 
@@ -160,7 +159,7 @@ Bubbles sidebar, and every screen (`show_screen()` shows one).
 | `DELETE /islands/{id}` | `home/island_dropdown.gd` |
 | `POST /islands/{id}/tasks` | `ui/package_form.gd` |
 | `GET /islands/{id}/tasks/{task}` | `ui/building_panel.gd` (a package's thinking history) |
-| `GET /islands/{id}/events`, `GET .../insights?range=week`, `POST /replay/{task}` | `news/news_screen.gd` |
+| `GET /islands/{id}/events`, `GET .../insights?range=week`, `POST .../tasks/{task}/merge` | `news/news_screen.gd` |
 | `GET /islands/{id}/insights` | `insights/insights_screen.gd` |
 | `PUT /islands/{id}/layout` | `build/build_mode.gd` |
 | `GET/PUT /settings`, `GET /health`, `GET /brains/detail`, `GET /models` | `ui/settings_popup.gd` |
@@ -378,7 +377,7 @@ lives in `spectator/`; this is not a game message, so protocol.md doesn't list i
 | `Task` | title, status, where the package is, who carries it, `issue_number`, `branch`, `pr_url`, `merged_at`, `created_at` / `finished_at` |
 | `Attachment` | a file sent with a task: name (made safe) and bytes; written to `.mii-attachments/` in the task's worktree when it starts |
 | `Step` | one building visit: task, building, resident, brain, outcome, timed out?, bubbles raised, `flaky` (tests passed on the re-run), `helped` (a help visit: who asked), start/finish time |
-| `Event` | every event sent to the game (history + replay) |
+| `Event` | every event sent to the game (history: News, a task's events) |
 | `Friendship` | the friendship meter: one row per pair of residents (`a` < `b`), `handoffs`, `score` |
 | `Setting` | user settings saved from the game (never secrets: those live in the OS keychain) |
 | `metrics` | TimescaleDB only, no Django model (a hypertable has no primary key): one row per finished step (`kind=step`) and task (`kind=task`); the continuous aggregate `metrics_daily` buckets it by UTC day and feeds Insights' "packages per day". Made by migration `0015_metrics`, which does nothing on SQLite or plain Postgres |
@@ -415,7 +414,7 @@ With login on (`AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, `AUTH0_CLIENT_ID`), islands get
 **owner**: whoever founded it while logged in (the game's device login, proxied through
 `/auth/*`). The owner adds **members** by user id (`update_island` with `members`); owner
 and members see the island and play it as co-pilots, everyone else gets 403 (HTTP) or
-close code 4403 (socket). Islands without an owner, like the seed island, stay public.
+close code 4403 (socket). Islands without an owner (founded without logging in) stay public.
 Agents still run as the host: per-user brains and house keys stay out of scope.
 
 ## Not in scope (on purpose)

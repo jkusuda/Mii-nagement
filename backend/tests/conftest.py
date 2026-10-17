@@ -10,12 +10,15 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from django.db import transaction
 
-from mii import events, seed
+from mii import events
 from mii.agents import AgentJob, StepResult
 from mii.engine import WorkflowEngine
-from mii.models import Building, Island, Resident, Task
+from mii.island_map import SHAPES, build_roads, default_map
+from mii.models import Building, Island, Resident, Road, Task
 from mii.sandbox import Sandbox, Sandboxes
+from mii.vocab import STEP_NAMES, STEP_ORDER
 
 db_test = pytest.mark.django_db(transaction=True)
 
@@ -105,10 +108,102 @@ def make_job(
     )
 
 
+# --- The test island ("sunny"): the app ships no islands, the tests bring their own. ---
+
+ISLAND_ID = "sunny"
+
+
+def residents() -> list[Resident]:
+    # One brain per vendor: a Gemini planner, a Claude Code coder and a Codex reviewer.
+    return [
+        Resident(
+            id="jun",
+            island_id=ISLAND_ID,
+            name="Jun",
+            job="planner",
+            brain="gemini",
+            bluntness=0.3,
+            caution=0.7,
+            chattiness=0.6,
+            creativity=0.5,
+            catchphrase="Let's map it out!",
+            color="#F4A261",
+            building_id="mailbox",
+        ),
+        Resident(
+            id="carlos",
+            island_id=ISLAND_ID,
+            name="Carlos",
+            job="coder",
+            brain="claude-code",
+            bluntness=0.5,
+            caution=0.4,
+            chattiness=0.3,
+            creativity=0.8,
+            catchphrase="Ship it... carefully!",
+            color="#2A9D8F",
+            building_id="workshop",
+        ),
+        Resident(
+            id="sydney",
+            island_id=ISLAND_ID,
+            name="Sydney",
+            job="reviewer",
+            brain="codex",
+            bluntness=0.8,
+            caution=0.8,
+            chattiness=0.4,
+            creativity=0.3,
+            catchphrase="Show me the tests.",
+            color="#9B5DE5",
+            building_id="courthouse",
+        ),
+    ]
+
+
+def buildings() -> list[Building]:
+    """The classic island's lots (islands.SHAPES), one resident each."""
+    lots = SHAPES["classic"]["lots"]
+    who = {"mailbox": "jun", "workshop": "carlos", "lab": "carlos", "courthouse": "sydney", "post_office": "jun"}
+    return [
+        Building(
+            id=t,
+            island_id=ISLAND_ID,
+            type=t,
+            name=STEP_NAMES[t],
+            x=lots[t][0],
+            y=lots[t][1],
+            facing=lots[t][2],
+            resident_id=who[t],
+        )
+        for t in STEP_ORDER
+    ]
+
+
+def roads() -> list[Road]:
+    """The classic workflow; building ids equal their types on the test island."""
+    return [
+        Road(island_id=ISLAND_ID, from_building_id=a, to_building_id=b, condition=c)
+        for a, b, c in build_roads(STEP_ORDER)
+    ]
+
+
+def make_island() -> str:
+    """Create the test island with its residents, buildings and roads. Returns its id."""
+    with transaction.atomic():
+        Island.objects.create(id=ISLAND_ID, name="Sunny Isle", repo=None, map=default_map("classic"))
+        # Residents point at buildings and buildings at residents: SQLite checks
+        # foreign keys when the transaction commits, so the order doesn't matter.
+        Resident.objects.bulk_create(residents())
+        Building.objects.bulk_create(buildings())
+        Road.objects.bulk_create(roads())
+    return ISLAND_ID
+
+
 @pytest.fixture
 def island():
-    """The seed island, in the test database."""
-    return seed.seed()
+    """The test island, in the test database."""
+    return make_island()
 
 
 def make_workflow(runner, **kwargs) -> tuple[WorkflowEngine, FakeClient]:
@@ -162,7 +257,7 @@ def sandbox(tmp_path) -> Sandbox:
 
 @pytest.fixture
 def sandboxes(island, sandbox) -> Sandboxes:
-    """Real-mode engine fixture: the seed island owns the throwaway repo."""
+    """Real-mode engine fixture: the test island owns the throwaway repo."""
     Island.objects.filter(pk=island).update(repo_path=str(sandbox.repo_path))
     boxes = Sandboxes(sandbox.worktree_root)
     return boxes

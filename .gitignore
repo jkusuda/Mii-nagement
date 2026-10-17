@@ -16,7 +16,7 @@ backend/.worktrees/
 # --- Godot ---
 .godot/
 game/builds/
-# demo-video recordings (MovieWriter / ffmpeg output)
+# recordings (MovieWriter / ffmpeg output)
 /*.avi
 /*.mp4
 /*.gif
