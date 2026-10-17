@@ -31,7 +31,8 @@ Run from the repo root (`make help` lists them all):
 ```bash
 make check        # after every change: ruff + backend tests + gdlint/gdformat + Godot script check
 make fmt          # format both halves
-make              # backend + simulator + game (mock mode)
+make              # backend + game, for real agents (tools/run.sh; Ctrl+C or closing the game stops both)
+make dev          # backend (--reload) + simulator (fake tasks) + game: mock-mode development
 make server       # just the backend, http://localhost:8000
 cd backend && uv run pytest tests/test_engine.py -q        # one test file
 cd backend && uv run python manage.py makemigrations mii   # after changing models.py
