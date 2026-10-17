@@ -188,6 +188,14 @@ const COST_PATH := 0.6  # a tile that's already path
 const COST_TURN := 0.6
 const WALK_TURN := 0.01  # walking: a turn only breaks ties, a shorter way always wins
 
+# Idle residents roam off the paths, keeping this far (in tiles) from things.
+const OPEN_CELL := 0.5  # tiles: the grid free walking is searched on
+const SEA_MARGIN := 0.7  # tiles kept clear of the water
+const LOT_MARGIN := 0.4
+const POND_MARGIN := 0.5
+const TREE_MARGIN := 0.6
+const BUSH_MARGIN := 0.45
+
 # Auto plants.
 const MAX_TREES := 13
 const MAX_BUSHES := 11
@@ -203,6 +211,7 @@ var seed_text := ""  # the island id: the same island always grows the same plan
 # Worked out by refresh():
 var path_tiles := {}  # Vector2i -> true
 var shown_plants: Array = []  # the plants to draw (auto, or the hand-placed ones that fit)
+var _open_cache := {}  # Vector2i cell -> bool, see can_roam (cleared by refresh)
 
 # --- Making layouts ---------------------------------------------------------------
 
@@ -499,6 +508,7 @@ static func _reachable(start: Vector2i, tiles: Dictionary) -> Dictionary:
 func refresh() -> void:
 	_lay_paths()
 	shown_plants = _auto_plants() if plants == null else _fitting(plants)
+	_open_cache.clear()
 
 
 ## The paths join the doors in workflow order and close the loop back to the
@@ -728,6 +738,133 @@ func walk_tiles(a: Vector2i, b: Vector2i) -> Array[Vector2i]:
 	while state != null:
 		out.push_front(state[0])
 		state = came_from.get(state)
+	return out
+
+
+# --- Walking off the paths (idle residents) ---------------------------------------
+
+
+## Can someone stand at `p` (tile units)? Any path tile, or land that keeps clear of
+## the sea, the buildings, the pond, the trees and the bushes.
+func can_roam(p: Vector2) -> bool:
+	var t := Vector2i(floori(p.x), floori(p.y))
+	if path_tiles.has(t):
+		return true
+	if not is_land(t) or _distance_to_sea(p) < SEA_MARGIN:
+		return false
+	for b in buildings:
+		if _distance_to_rect(p, Rect2(b["x"], b["y"], LOT, LOT)) < LOT_MARGIN:
+			return false
+	if not pond.is_empty() and _distance_to_rect(p, Rect2(pond["x"], pond["y"], pond["w"], pond["h"])) < POND_MARGIN:
+		return false
+	for plant in shown_plants:
+		var margin := TREE_MARGIN if plant["kind"] == "tree" else BUSH_MARGIN
+		if p.distance_to(Vector2(plant["x"], plant["y"])) < margin:
+			return false
+	return true
+
+
+## The same, for a world position, remembered per grid cell.
+func _cell_open(c: Vector2i) -> bool:
+	if not _open_cache.has(c):
+		_open_cache[c] = can_roam((Vector2(c) + Vector2(0.5, 0.5)) * OPEN_CELL)
+	return _open_cache[c]
+
+
+func _cell_of(p: Vector3) -> Vector2i:
+	var t := world_to_tile_units(p) / OPEN_CELL
+	return Vector2i(floori(t.x), floori(t.y))
+
+
+func _cell_point(c: Vector2i) -> Vector3:
+	return tile_to_world((Vector2(c) + Vector2(0.5, 0.5)) * OPEN_CELL)
+
+
+## Is the straight line between two world points clear all the way?
+func _clear_line(a: Vector3, b: Vector3) -> bool:
+	var steps := ceili(a.distance_to(b) / (TILE * OPEN_CELL / 2.0))
+	for i in range(1, steps + 1):
+		var p := world_to_tile_units(a.lerp(b, float(i) / steps))
+		if not can_roam(p):
+			return false
+	return true
+
+
+## The standing spot closest to `p` (for example, beside the pond).
+func nearest_open_point(p: Vector3) -> Vector3:
+	var best := Vector3.INF
+	var best_d := INF
+	for cx in GRID_W / OPEN_CELL:
+		for cy in GRID_H / OPEN_CELL:
+			var c := Vector2i(int(cx), int(cy))
+			var q := _cell_point(c)
+			var d := q.distance_squared_to(p)
+			if d < best_d and _cell_open(c):
+				best_d = d
+				best = q
+	return best
+
+
+## Points to walk from `from` to `to` over open ground (anywhere `can_roam` allows),
+## going round the water, buildings and plants. Empty if there is no way. A search
+## on a grid of OPEN_CELL tiles, then the detours that aren't needed are cut out.
+func roam_route(from: Vector3, to: Vector3) -> Array[Vector3]:
+	var out: Array[Vector3] = []
+	if _clear_line(from, to):
+		out.append(to)
+		return out
+	var start := _cell_of(from)
+	var goal := _cell_of(to)
+	var dirs := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+	dirs.append_array([Vector2i(1, 1), Vector2i(1, -1), Vector2i(-1, 1), Vector2i(-1, -1)])
+	var best := {start: 0.0}
+	var came_from := {}
+	var open := [[0.0, start]]
+	var found := false
+	while not open.is_empty():
+		var pick := 0
+		for i in open.size():
+			if open[i][0] < open[pick][0]:
+				pick = i
+		var here: Array = open.pop_at(pick)
+		var cell: Vector2i = here[1]
+		if here[0] > best.get(cell, INF):
+			continue
+		if cell == goal:
+			found = true
+			break
+		for d: Vector2i in dirs:
+			var next := cell + d
+			var diagonal := d.x != 0 and d.y != 0
+			# Standing cells only (the goal may be a hair inside a margin), and no
+			# cutting a corner past a blocked cell.
+			if next != goal and not _cell_open(next):
+				continue
+			if diagonal and not (_cell_open(cell + Vector2i(d.x, 0)) and _cell_open(cell + Vector2i(0, d.y))):
+				continue
+			var total: float = here[0] + (1.414 if diagonal else 1.0)
+			if total < best.get(next, INF):
+				best[next] = total
+				came_from[next] = cell
+				open.append([total, next])
+	if not found:
+		return out
+	var cells: Array[Vector2i] = []
+	var c := goal
+	while c != start:
+		cells.push_front(c)
+		c = came_from[c]
+	# String pulling: from each point, jump to the furthest cell still in plain sight.
+	var here_p := from
+	var i := 0
+	while i < cells.size():
+		var j := cells.size() - 1
+		while j > i and not _clear_line(here_p, _cell_point(cells[j])):
+			j -= 1
+		here_p = _cell_point(cells[j])
+		out.append(here_p)
+		i = j + 1
+	out[-1] = to
 	return out
 
 

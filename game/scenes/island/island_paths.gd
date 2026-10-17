@@ -18,6 +18,12 @@ static func nearest(layout: IslandLayout, p: Vector3) -> Vector3:
 ## shortest way. The list starts near `from` and ends at `to` (when `to` is on a
 ## path), with the corners in between.
 static func route(layout: IslandLayout, from: Vector3, to: Vector3) -> Array[Vector3]:
+	# Someone strolling on the grass first gets back onto the path, round the obstacles.
+	if not layout.path_tiles.has(IslandLayout.world_to_tile(from)):
+		var back := nearest(layout, from)
+		var on_grass := layout.roam_route(from, back)
+		on_grass.append_array(route(layout, back, to))
+		return on_grass
 	var tiles := layout.walk_tiles(layout.nearest_path_tile(from), layout.nearest_path_tile(to))
 	var points: Array[Vector3] = []
 	for i in tiles.size():
@@ -34,14 +40,6 @@ static func route(layout: IslandLayout, from: Vector3, to: Vector3) -> Array[Vec
 	elif IslandLayout.world_to_tile(to) == tiles[-1]:
 		points[-1] = Vector3(to.x, PATH_Y, to.z)  # a stop slightly off the tile's middle
 	return points
-
-
-## A random point on the paths (the middle of a random path tile), for wandering.
-static func random_point(layout: IslandLayout, rng: RandomNumberGenerator) -> Vector3:
-	var tiles: Array = layout.path_tiles.keys()
-	if tiles.is_empty():
-		return Vector3(0, PATH_Y, 0)
-	return _center(tiles[rng.randi() % tiles.size()])
 
 
 ## Is `p` on the straight bit of path from `a` to `b` (give or take a little)?
