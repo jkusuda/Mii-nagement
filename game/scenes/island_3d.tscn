@@ -1,19 +1,19 @@
-[gd_scene load_steps=20 format=3]
+[gd_scene format=3 uid="uid://5k3pwhvx3cow"]
 
-[ext_resource type="PackedScene" path="res://assets/models/base_island.glb" id="1_island"]
-[ext_resource type="PackedScene" path="res://assets/models/mailbox.glb" id="2_mailbox"]
-[ext_resource type="PackedScene" path="res://assets/models/workshop.glb" id="3_workshop"]
-[ext_resource type="PackedScene" path="res://assets/models/lab.glb" id="4_lab"]
-[ext_resource type="PackedScene" path="res://assets/models/courthouse.glb" id="5_courthouse"]
-[ext_resource type="PackedScene" path="res://assets/models/post_office.glb" id="6_post_office"]
-[ext_resource type="Shader" path="res://shaders/water.gdshader" id="7_water"]
-[ext_resource type="Script" path="res://scenes/camera_rig.gd" id="8_rig"]
+[ext_resource type="PackedScene" uid="uid://x6opc8vovg3p" path="res://assets/models/base_island.glb" id="1_island"]
+[ext_resource type="PackedScene" uid="uid://owh7w723y657" path="res://assets/models/mailbox.glb" id="2_mailbox"]
+[ext_resource type="PackedScene" uid="uid://bb6546jhdudc8" path="res://assets/models/workshop.glb" id="3_workshop"]
+[ext_resource type="PackedScene" uid="uid://2jb886eqcyje" path="res://assets/models/lab.glb" id="4_lab"]
+[ext_resource type="PackedScene" uid="uid://ew302p1buiua" path="res://assets/models/courthouse.glb" id="5_courthouse"]
+[ext_resource type="PackedScene" uid="uid://cxqcu12r74bf5" path="res://assets/models/post_office.glb" id="6_post_office"]
+[ext_resource type="Shader" uid="uid://xqv25s7dloit" path="res://shaders/water.gdshader" id="7_water"]
+[ext_resource type="Script" uid="uid://bm0u4itifj4k6" path="res://scenes/camera_rig.gd" id="8_rig"]
 
 [sub_resource type="ProceduralSkyMaterial" id="sky_material"]
 sky_top_color = Color(0.45, 0.72, 0.95, 1)
 sky_horizon_color = Color(0.82, 0.92, 0.98, 1)
-ground_horizon_color = Color(0.82, 0.92, 0.98, 1)
 ground_bottom_color = Color(0.55, 0.75, 0.8, 1)
+ground_horizon_color = Color(0.82, 0.92, 0.98, 1)
 
 [sub_resource type="Sky" id="sky"]
 sky_material = SubResource("sky_material")
@@ -41,34 +41,47 @@ adjustment_saturation = 1.1
 [sub_resource type="PlaneMesh" id="water_mesh"]
 size = Vector2(200, 200)
 
-[sub_resource type="FastNoiseLite" id="ripple_noise"]
-frequency = 0.03
-
-[sub_resource type="NoiseTexture2D" id="ripple_normal"]
-seamless = true
-as_normal_map = true
-bump_strength = 4.0
-noise = SubResource("ripple_noise")
-
 [sub_resource type="FastNoiseLite" id="foam_noise_source"]
 frequency = 0.02
 
 [sub_resource type="NoiseTexture2D" id="foam_noise"]
-seamless = true
 noise = SubResource("foam_noise_source")
+seamless = true
+
+[sub_resource type="FastNoiseLite" id="ripple_noise"]
+frequency = 0.03
+
+[sub_resource type="NoiseTexture2D" id="ripple_normal"]
+noise = SubResource("ripple_noise")
+seamless = true
+as_normal_map = true
+bump_strength = 4.0
 
 [sub_resource type="ShaderMaterial" id="water_material"]
+render_priority = 0
 shader = ExtResource("7_water")
+shader_parameter/deep_color = Color(0.12, 0.55, 0.68, 1)
+shader_parameter/shallow_color = Color(0.42, 0.82, 0.8, 1)
+shader_parameter/foam_color = Color(1, 1, 1, 1)
+shader_parameter/island_half_size = Vector2(18.6, 12.4)
+shader_parameter/island_corner_radius = 5.0
+shader_parameter/shallow_width = 7.0
+shader_parameter/shore_foam_width = 0.45
+shader_parameter/ring_count = 2.0
+shader_parameter/ring_reach = 5.0
+shader_parameter/ring_speed = 0.12
+shader_parameter/streak_amount = 0.35
+shader_parameter/wave_speed = 0.02
 shader_parameter/ripple_normal = SubResource("ripple_normal")
 shader_parameter/foam_noise = SubResource("foam_noise")
 
-[node name="Island3D" type="Node3D"]
+[node name="Island3D" type="Node3D" unique_id=1848201849]
 
-[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=419507186]
 environment = SubResource("environment")
 
-[node name="Sun" type="DirectionalLight3D" parent="."]
-rotation_degrees = Vector3(-55, -35, 0)
+[node name="Sun" type="DirectionalLight3D" parent="." unique_id=1600806737]
+transform = Transform3D(0.81915206, 0.46984634, -0.32898995, 0, 0.57357645, 0.81915206, 0.57357645, -0.6710101, 0.46984634, 0, 0, 0)
 light_color = Color(1, 0.97, 0.9, 1)
 light_energy = 1.9
 light_angular_distance = 3.0
@@ -76,43 +89,36 @@ shadow_enabled = true
 shadow_opacity = 0.9
 shadow_blur = 1.5
 
-[node name="CameraRig" type="Node3D" parent="."]
-position = Vector3(0, 0, 1.5)
+[node name="CameraRig" type="Node3D" parent="." unique_id=1041847225]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1.5)
 script = ExtResource("8_rig")
 
-[node name="Camera3D" type="Camera3D" parent="CameraRig"]
-position = Vector3(0, 34.6, 34.6)
-rotation_degrees = Vector3(-45, 0, 0)
+[node name="Camera3D" type="Camera3D" parent="CameraRig" unique_id=714346814]
+transform = Transform3D(1, 0, 0, 0, 0.70710677, 0.70710677, 0, -0.70710677, 0.70710677, 0, 34.6, 34.6)
 fov = 30.0
 far = 500.0
 
-[node name="Water" type="MeshInstance3D" parent="."]
-position = Vector3(0, -1.4, 0)
+[node name="Water" type="MeshInstance3D" parent="." unique_id=1124027443]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1.4, 0)
 mesh = SubResource("water_mesh")
 surface_material_override/0 = SubResource("water_material")
 
-[node name="BaseIsland" parent="." instance=ExtResource("1_island")]
-position = Vector3(0, 0.8, 0)
-scale = Vector3(20, 20, 20)
+[node name="BaseIsland" parent="." unique_id=1798371886 instance=ExtResource("1_island")]
+transform = Transform3D(20, 0, 0, 0, 20, 0, 0, 0, 20, 0, 0.8, 0)
 
-[node name="Buildings" type="Node3D" parent="."]
+[node name="Buildings" type="Node3D" parent="." unique_id=899933915]
 
-[node name="Mailbox" parent="Buildings" instance=ExtResource("2_mailbox")]
-position = Vector3(-11.4, 2.3, -7)
-scale = Vector3(2.7, 2.7, 2.7)
+[node name="Mailbox" parent="Buildings" unique_id=1290156148 instance=ExtResource("2_mailbox")]
+transform = Transform3D(2.1919818, 0, 1.2021714, 0, 2.047, 0, -1.2021714, 0, 2.1919818, -10.806426, 1.7499242, -6.626725)
 
-[node name="Workshop" parent="Buildings" instance=ExtResource("3_workshop")]
-position = Vector3(-0.8, 1.74, -7)
-scale = Vector3(2.7, 2.7, 2.7)
+[node name="Workshop" parent="Buildings" unique_id=667665751 instance=ExtResource("3_workshop")]
+transform = Transform3D(3, 0, 0, 0, 3, 0, 0, 0, 3, -0.072600186, 1.8311284, -7.763442)
 
-[node name="Lab" parent="Buildings" instance=ExtResource("4_lab")]
-position = Vector3(10.2, 1.82, -6.6)
-scale = Vector3(2.7, 2.7, 2.7)
+[node name="Lab" parent="Buildings" unique_id=544728595 instance=ExtResource("4_lab")]
+transform = Transform3D(2.725988, 0, -1.2525935, 0, 3.0000005, 0, 1.2525935, 0, 2.725988, 10.203981, 1.82, -7.021774)
 
-[node name="PostOffice" parent="Buildings" instance=ExtResource("6_post_office")]
-position = Vector3(-11, 1.81, 9.2)
-scale = Vector3(2.7, 2.7, 2.7)
+[node name="PostOffice" parent="Buildings" unique_id=1491361483 instance=ExtResource("6_post_office")]
+transform = Transform3D(1.2300351, 0, 2.4035416, 0, 2.6999998, 0, -2.4035416, 0, 1.2300351, -11.843731, 1.6913393, 4.368924)
 
-[node name="Courthouse" parent="Buildings" instance=ExtResource("5_courthouse")]
-position = Vector3(9.8, 1.51, 8.8)
-scale = Vector3(2.7, 2.7, 2.7)
+[node name="Courthouse" parent="Buildings" unique_id=1722189321 instance=ExtResource("5_courthouse")]
+transform = Transform3D(2.098051, 0, -1.699465, 0, 2.6999998, 0, 1.699465, 0, 2.098051, 11.8609085, 1.3052795, 4.962001)

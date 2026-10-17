@@ -79,6 +79,13 @@ Godot is **not on PATH** on this machine. Use the full path:
 /Applications/Godot.app/Contents/MacOS/Godot --path game                      # play
 ```
 
+On the Windows machine, Godot 4.7.2 lives in Downloads (use the `_console.exe` for headless runs):
+
+```bash
+"C:\Users\lucas\Downloads\Godot_v4.7.2-stable_win64.exe\Godot_v4.7.2-stable_win64_console.exe" --headless --path game --quit
+"C:\Users\lucas\Downloads\Godot_v4.7.2-stable_win64.exe\Godot_v4.7.2-stable_win64.exe" --editor --path game res://scenes/island_3d.tscn  # edit island layout
+```
+
 ## Conventions
 
 - **TODO markers:** `# TODO(mvp): ...` or `# TODO(stretch): ...` (same format in
