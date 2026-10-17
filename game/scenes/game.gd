@@ -13,7 +13,7 @@ extends Control
 ## the screen". That's what lets the 3D world sit in a rounded frame next to
 ## normal 2D UI instead of filling the whole window.
 ##
-## TODO(mvp): Build mode, News / Insights screens, and the island picker.
+## TODO(mvp): Build mode and the island picker.
 ## TODO(mvp): real day/time and weather from the backend.
 
 const BuildingLabelScene := preload("res://scenes/ui/building_label.tscn")
@@ -33,8 +33,10 @@ const BUILDINGS := [
 @onready var labels_root: Control = %Labels
 @onready var residents_screen: ResidentsScreen = %ResidentsScreen
 @onready var creator: ResidentCreator = %ResidentCreator
+@onready var insights: InsightsScreen = %InsightsScreen
+@onready var news: NewsScreen = %NewsScreen
 
-## Which screen is showing: "island", "residents", or "creator".
+## Which screen is showing: "island", "residents", "creator", "insights", or "news".
 var screen := "island"
 ## True while the creator waits for the server to accept a resident.
 var _saving_resident := false
@@ -60,6 +62,11 @@ func _ready() -> void:
 	# Screens. They all live in game.tscn; show_screen() hides all but one.
 	%IslandNav.pressed.connect(show_screen.bind("island"))
 	%Residents.pressed.connect(func(): show_screen("island" if screen == "residents" else "residents"))
+	%Insights.pressed.connect(func(): show_screen("island" if screen == "insights" else "insights"))
+	insights.see_residents.connect(show_screen.bind("residents"))
+	%News.pressed.connect(func(): show_screen("island" if screen == "news" else "news"))
+	news.unread_changed.connect(_show_unread)
+	_show_unread(news.unread())
 	%BackButton.pressed.connect(func(): show_screen("residents" if screen == "creator" else "island"))
 	residents_screen.new_resident_requested.connect(_open_creator)
 	residents_screen.edit_requested.connect(_open_creator)
@@ -73,7 +80,8 @@ func _ready() -> void:
 	Net.resident_updated.connect(_on_resident_updated)
 	Net.server_error.connect(_on_server_error)
 	_show_island()
-	show_screen("island")
+	# Daily digest: the first start of the day opens on the newspaper.
+	show_screen("news" if news.wants_morning_paper() else "island")
 
 
 ## Show one screen and hide the others. The top bar and nav always stay; the
@@ -83,10 +91,14 @@ func show_screen(which: String) -> void:
 	%IslandFrame.visible = which == "island"
 	residents_screen.visible = which == "residents"
 	creator.visible = which == "creator"
+	insights.visible = which == "insights"
+	news.visible = which == "news"
 	%Sidebar.visible = which != "creator"
 	# Highlight the nav button of the open screen (the creator belongs to Residents).
 	%IslandNav.theme_type_variation = &"NavButtonActive" if which == "island" else &"NavButton"
 	%Residents.theme_type_variation = &"NavButtonActive" if which in ["residents", "creator"] else &"NavButton"
+	%Insights.theme_type_variation = &"NavButtonActive" if which == "insights" else &"NavButton"
+	%News.theme_type_variation = &"NavButtonActive" if which == "news" else &"NavButton"
 
 
 ## The creator's "Move in" / "Save". Online, the backend creates the resident and
@@ -151,16 +163,13 @@ func _show_island() -> void:
 ## "5 residents" on the island view, and "4 happy · 1 tired" in the sidebar.
 func _show_resident_summary(residents: Array) -> void:
 	%ResidentCount.text = "%d resident%s" % [residents.size(), "" if residents.size() == 1 else "s"]
-	var moods := {}
-	for r in residents:
-		var mood := "sleepy" if r.get("state") == "sleeping" else str(r.get("mood", "happy"))
-		moods[mood] = moods.get(mood, 0) + 1
-	var common: Array = moods.keys()
-	common.sort_custom(func(a, b): return moods[a] > moods[b])
-	var parts := []
-	for mood in common.slice(0, 2):
-		parts.append("%d %s" % [moods[mood], mood])
-	%MoodSummary.text = " · ".join(parts) if parts else "nobody home"
+	%MoodSummary.text = ResidentData.mood_summary(residents)
+
+
+## The News button's badge: stories you haven't seen yet.
+func _show_unread(count: int) -> void:
+	%NewsBadge.visible = count > 0
+	%NewsCount.text = str(count) if count < 10 else "9+"
 
 
 func _open_creator(resident: Dictionary = {}) -> void:

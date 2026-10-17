@@ -1,0 +1,200 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scenes/news/news_screen.gd" id="1_screen"]
+[ext_resource type="Texture2D" path="res://assets/ui/news.png" id="2_news"]
+[ext_resource type="Texture2D" path="res://assets/ui/toggle_on.svg" id="3_on"]
+[ext_resource type="Texture2D" path="res://assets/ui/toggle_off.svg" id="4_off"]
+
+[node name="NewsScreen" type="PanelContainer"]
+size_flags_vertical = 3
+theme_type_variation = &"ScreenPanel"
+script = ExtResource("1_screen")
+
+[node name="Rows" type="VBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="Header" type="HBoxContainer" parent="Rows"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="Rows/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"ScreenTitle"
+text = "The Pebble Cove Gazette"
+
+[node name="Edition" type="Label" parent="Rows/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"LabelMuted"
+text = "Friday edition · 6 stories today"
+
+[node name="Columns" type="HBoxContainer" parent="Rows"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 20
+
+[node name="Main" type="VBoxContainer" parent="Rows/Columns"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+
+[node name="Headline" type="PanelContainer" parent="Rows/Columns/Main"]
+layout_mode = 2
+theme_type_variation = &"HeadlineCard"
+
+[node name="Row" type="HBoxContainer" parent="Rows/Columns/Main/Headline"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="IconBox" type="PanelContainer" parent="Rows/Columns/Main/Headline/Row"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"StatCard"
+
+[node name="Icon" type="TextureRect" parent="Rows/Columns/Main/Headline/Row/IconBox"]
+layout_mode = 2
+texture = ExtResource("2_news")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Texts" type="VBoxContainer" parent="Rows/Columns/Main/Headline/Row"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 2
+
+[node name="Kicker" type="Label" parent="Rows/Columns/Main/Headline/Row/Texts"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"FieldLabel"
+theme_override_colors/font_color = Color(0.18, 0.545, 0.341, 1)
+theme_override_font_sizes/font_size = 11
+text = "HEADLINE · JUST SHIPPED"
+
+[node name="HeadlineTitle" type="Label" parent="Rows/Columns/Main/Headline/Row/Texts"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(1, 0)
+layout_mode = 2
+theme_type_variation = &"SectionTitle"
+theme_override_font_sizes/font_size = 22
+text = "Search is twice as fast after PR #139"
+autowrap_mode = 3
+
+[node name="HeadlineBody" type="Label" parent="Rows/Columns/Main/Headline/Row/Texts"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(1, 0)
+layout_mode = 2
+theme_type_variation = &"BodyText"
+theme_override_font_sizes/font_size = 13
+text = "Delivered by Juniper."
+autowrap_mode = 3
+
+[node name="GitHubLink" type="LinkButton" parent="Rows/Columns/Main/Headline/Row/Texts"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 0
+theme_override_colors/font_color = Color(0.459, 0.325, 0.875, 1)
+theme_override_colors/font_hover_color = Color(0.36, 0.24, 0.75, 1)
+theme_override_font_sizes/font_size = 13
+text = "Read on GitHub ›"
+underline = 1
+
+[node name="FeedTitle" type="Label" parent="Rows/Columns/Main"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"SectionTitle"
+text = "Today on the island"
+
+[node name="Scroll" type="ScrollContainer" parent="Rows/Columns/Main"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="Feed" type="VBoxContainer" parent="Rows/Columns/Main/Scroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 0
+
+[node name="FeedEmpty" type="Label" parent="Rows/Columns/Main/Scroll/Feed"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(1, 60)
+layout_mode = 2
+theme_type_variation = &"LabelMuted"
+text = "Nothing yet today. Stories show up here as residents work."
+vertical_alignment = 1
+autowrap_mode = 3
+
+[node name="Side" type="VBoxContainer" parent="Rows/Columns"]
+custom_minimum_size = Vector2(250, 0)
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="ShowMe" type="Label" parent="Rows/Columns/Side"]
+layout_mode = 2
+theme_type_variation = &"SectionTitle"
+text = "Show me"
+
+[node name="Filters" type="HFlowContainer" parent="Rows/Columns/Side"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/h_separation = 4
+theme_override_constants/v_separation = 4
+
+[node name="ThisWeek" type="Label" parent="Rows/Columns/Side"]
+layout_mode = 2
+theme_type_variation = &"SectionTitle"
+text = "This week"
+
+[node name="Week" type="GridContainer" parent="Rows/Columns/Side"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/h_separation = 10
+theme_override_constants/v_separation = 10
+columns = 2
+
+[node name="Spacer" type="Control" parent="Rows/Columns/Side"]
+layout_mode = 2
+size_flags_vertical = 3
+mouse_filter = 2
+
+[node name="Morning" type="PanelContainer" parent="Rows/Columns/Side"]
+layout_mode = 2
+theme_type_variation = &"ChartPanel"
+
+[node name="Rows" type="VBoxContainer" parent="Rows/Columns/Side/Morning"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Title" type="Label" parent="Rows/Columns/Side/Morning/Rows"]
+layout_mode = 2
+theme_type_variation = &"SectionTitle"
+text = "Morning paper"
+
+[node name="Hint" type="Label" parent="Rows/Columns/Side/Morning/Rows"]
+custom_minimum_size = Vector2(1, 0)
+layout_mode = 2
+theme_type_variation = &"LabelMuted"
+theme_override_font_sizes/font_size = 12
+text = "Start each day's first game on the News tab, to catch up on the island."
+autowrap_mode = 3
+
+[node name="ToggleRow" type="PanelContainer" parent="Rows/Columns/Side/Morning/Rows"]
+layout_mode = 2
+theme_type_variation = &"StatCard"
+
+[node name="Digest" type="CheckButton" parent="Rows/Columns/Side/Morning/Rows/ToggleRow"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+theme_type_variation = &"FlatIconButton"
+theme_override_colors/font_color = Color(0.161, 0.18, 0.314, 1)
+theme_override_colors/font_hover_color = Color(0.161, 0.18, 0.314, 1)
+theme_override_colors/font_pressed_color = Color(0.161, 0.18, 0.314, 1)
+theme_override_colors/font_hover_pressed_color = Color(0.161, 0.18, 0.314, 1)
+theme_override_constants/icon_max_width = 44
+theme_override_icons/checked = ExtResource("3_on")
+theme_override_icons/unchecked = ExtResource("4_off")
+text = "Daily digest"

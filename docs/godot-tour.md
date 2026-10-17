@@ -126,7 +126,22 @@ tilt the camera. Click **Preview** at the top of the 3D view to look through the
   asleep, an icon in a bubble = needs you.
 - `island_paths.gd` is the sand path as a rectangle, measured from the model.
 
-### 9. `ui/theme.tres` and `shaders/water.gdshader`
+### 9. `scenes/insights/`: the Insights tab
+- `insights_screen.gd` asks the backend for `/islands/{id}/insights` with an
+  **HTTPRequest** node each time the tab opens (and when a task changes). The
+  stat cards, bars, and rows are built in code from the response.
+- "Where packages are waiting" and the comfort report's moods come from
+  `Net.island`, so they're live without asking the backend.
+
+### 10. `scenes/news/`: the News tab
+- `news_stories.gd` turns backend events into stories ("Carlos got puzzled at
+  the Lab."). Edit the wording there.
+- `news_screen.gd` listens to every event (`Net.event_received`) even while
+  hidden, so the News button's badge can count stories you haven't seen. It
+  saves when you last looked in `user://news.cfg` (a per-user folder Godot
+  gives every game), along with the Daily digest setting.
+
+### 11. `ui/theme.tres` and `shaders/water.gdshader`
 - **Theme:** every color, font, and pill/button style. Each look is a named
   *type variation* (`PillWhite`, `NavButton`, …) that nodes pick with
   `theme_type_variation`. Double-click the file to open the theme editor.

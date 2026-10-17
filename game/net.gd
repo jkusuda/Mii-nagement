@@ -29,6 +29,8 @@ signal server_error(message: String)
 ## A resident was created or edited (by this client or another one).
 signal resident_updated(resident: Dictionary)
 signal activity_reported(agent: String, text: String)
+## Every event from the server, as it arrived (the News tab turns them into stories).
+signal event_received(event: Dictionary)
 ## Something in `island` changed (after any of the signals above).
 signal island_changed
 
@@ -94,6 +96,11 @@ func send_resident(resident: Dictionary) -> bool:
 	return true
 
 
+## The backend's HTTP address for `path`, e.g. http_url("/brains").
+func http_url(path: String) -> String:
+	return url.replace("ws://", "http://").trim_suffix("/ws") + path
+
+
 ## Answer a resident's bubble. The server replies with `bubble_resolved`.
 func send_answer(bubble_id: String, text: String) -> void:
 	if not is_online:
@@ -115,6 +122,10 @@ func _handle_message(text: String) -> void:
 	if typeof(event) != TYPE_DICTIONARY:
 		push_warning("Ignoring a message that isn't a JSON object: %s" % text)
 		return
+
+	if not event.has("ts"):
+		event["ts"] = Time.get_datetime_string_from_system(true) + "+00:00"
+	event_received.emit(event)
 
 	# Unknown event types are ignored on purpose (see the rules in docs/protocol.md).
 	# Each branch updates `island` first, then tells listeners.

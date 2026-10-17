@@ -49,6 +49,10 @@ game/
   scenes/camera_rig.gd   zoom (wheel/trackpad/buttons) + drag-to-pan
   scenes/residents/    Residents tab (residents_screen, resident_card), resident_creator,
                        resident_data (jobs/brains/keys/gifts lists + mock residents)
+  scenes/news/         News tab: news_stories turns Net events (+ GET /islands/{id}/events, planned)
+                       into stories; unread count drives the nav badge; daily digest setting
+  scenes/insights/     Insights tab: GET /islands/{id}/insights (shape in architecture.md) + live
+                       waiting packages and moods from Net.island
   scenes/mii/          mii (the 3D Mii: tint + idle/walk/run), mii_preview (creator's 3D stage)
   scenes/island/       residents on the 3D island: island_residents (follows Net events, routes
                        along roads), island_resident (one walker + tags), island_paths (sand path)
@@ -108,7 +112,8 @@ On the Windows machine, Godot 4.7.2 lives in Downloads (use the `_console.exe` f
   (subscription login or API key env var). Keep brain-specific details inside
   that table/runner, never in the engine, protocol, or game.
 - **Keep the backend small.** Out of scope on purpose: LangChain/direct API
-  runners, friendship, ML router, Island News, multiple islands, parallel tasks.
+  runners, friendship, ML router, multiple islands, parallel tasks. Island News
+  is written in the game from stored events; the backend only serves them.
 - **No migrations yet.** After changing a table in `models.py`, reset the dev
   database: `uv run python -m mii.seed --reset` (stop the server first).
 - **Mock mode is the default** (`MOCK_AGENTS=1`): fake work, no API cost. Every

@@ -94,7 +94,60 @@ backend/mii/
 | `GET /islands/{id}` | the island snapshot |
 | `POST /islands/{id}/tasks` | `{"title": ...}` or `{"issue": 42}` |
 | `GET /islands/{id}/insights` | stats for the Insights screen |
+| `GET /islands/{id}/events` | stored events for the News tab (planned, see below) |
 | `POST /replay/{task_id}` | replay a recorded task (demo safety net) |
+
+## Insights payload
+
+`GET /islands/{id}/insights?range=today|week|month` feeds the game's Insights
+screen (`game/scenes/insights/`). The game shows whatever is there and puts a
+dash on anything missing, so fields can be added one at a time. **Today only
+the first three `island` fields exist**; the rest is the shape the screen
+expects.
+
+```json
+{
+  "range": "week",
+  "island": {
+    "tasks_done": 12, "tasks_failed": 1, "prs_opened": 9,
+    "tasks_done_before": 8, "prs_opened_before": 6,
+    "answer_seconds": 360, "answer_seconds_before": 420,
+    "tests_pass_rate": 0.96, "flaky_tests": 2,
+    "bubbles_answered": 11
+  },
+  "per_day": [{"day": "2026-10-12", "done": 3}, {"day": "2026-10-13", "done": 5}],
+  "tip": "The Mailbox is looking busy. Another Planner could sort some letters.",
+  "residents": [], "brains": [], "buildings": []
+}
+```
+
+- `*_before`: the same number for the previous range ("↑ 4 on last week").
+- `answer_seconds`: average time from a bubble appearing to your answer.
+- `tests_pass_rate` (0-1) and `flaky_tests`: from the lab's test runs.
+- `per_day`: tasks finished per day in the range, oldest first, today last.
+- `tip`: one friendly suggestion. Without it, the game words a simple one itself.
+- "Where packages are waiting" doesn't need anything here: the game counts the
+  open tasks in the live snapshot by `building`.
+
+## Events history (for Island News)
+
+`GET /islands/{id}/events?limit=200` lets the game's News tab
+(`game/scenes/news/`) show what happened before it connected. **Not built
+yet**: until it exists, the News tab only shows events from the current game
+session. It's one query on the `Event` table:
+
+```json
+{"events": [
+  {"event_id": 41, "type": "task", "id": "t_12", "title": "Fix login typo", "status": "done", "agent": "jun", "pr_url": "https://github.com/...", "ts": "2026-10-16T09:40:12+00:00"},
+  {"event_id": 42, "type": "bubble", "agent": "carlos", "kind": "confused", "id": "b_3f2a", "text": "Which test file?", "ts": "2026-10-16T09:41:03+00:00"}
+]}
+```
+
+- Each entry is the stored event payload exactly as it was broadcast (protocol
+  shapes, with `ts`), plus the row's `id` as `event_id`. Oldest first, the
+  newest `limit` events.
+- The game decides what's a story and how to word it; the backend doesn't
+  need to know about News.
 
 ## Status
 
@@ -110,5 +163,6 @@ grep -rn "TODO(mvp)" backend/mii
 
 ## Not in scope (on purpose)
 
-LangChain / direct API runners, friendship scores, the ML team router, Island
-News, multiple islands, running several tasks at once.
+LangChain / direct API runners, friendship scores, the ML team router, multiple
+islands, running several tasks at once. (Island News is written by the game from
+stored events; the backend only serves them, see "Events history".)

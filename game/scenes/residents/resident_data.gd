@@ -129,6 +129,20 @@ static func role_line(resident: Dictionary) -> String:
 	return "%s · %s" % [str(resident.get("job", "")).capitalize(), mood.capitalize()]
 
 
+## "2 happy · 1 tired": the two most common moods (sleeping counts as sleepy).
+static func mood_summary(residents: Array) -> String:
+	var moods := {}
+	for r in residents:
+		var mood := "sleepy" if r.get("state") == "sleeping" else str(r.get("mood", "happy"))
+		moods[mood] = moods.get(mood, 0) + 1
+	var common: Array = moods.keys()
+	common.sort_custom(func(a, b): return moods[a] > moods[b])
+	var parts := []
+	for mood in common.slice(0, 2):
+		parts.append("%d %s" % [moods[mood], mood])
+	return " · ".join(parts) if parts else "nobody home"
+
+
 ## Which filter chip a resident belongs to: "needs", "working", or "resting".
 static func filter_group(resident: Dictionary) -> String:
 	if resident.get("bubble"):

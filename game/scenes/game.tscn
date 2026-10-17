@@ -1,26 +1,29 @@
-[gd_scene load_steps=23 format=3]
+[gd_scene format=3 uid="uid://bqw2vklskonmq"]
 
 [ext_resource type="Theme" path="res://ui/theme.tres" id="1_theme"]
-[ext_resource type="Script" path="res://scenes/game.gd" id="2_game"]
+[ext_resource type="Script" uid="uid://c6ktv16khi0rb" path="res://scenes/game.gd" id="2_game"]
 [ext_resource type="PackedScene" path="res://scenes/island_3d.tscn" id="3_island_3d"]
-[ext_resource type="Texture2D" path="res://assets/icons/chevron-left.svg" id="5_chevron_left"]
-[ext_resource type="Texture2D" path="res://assets/icons/sprout.svg" id="6_sprout"]
-[ext_resource type="Texture2D" path="res://assets/icons/chevron-down.svg" id="7_chevron_down"]
-[ext_resource type="Texture2D" path="res://assets/icons/sun.svg" id="8_sun"]
-[ext_resource type="Texture2D" path="res://assets/icons/map-pin.svg" id="9_map_pin"]
-[ext_resource type="Texture2D" path="res://assets/icons/mouse-pointer-2.svg" id="10_mouse_pointer_2"]
-[ext_resource type="Texture2D" path="res://assets/icons/minus.svg" id="11_minus"]
-[ext_resource type="Texture2D" path="res://assets/icons/plus.svg" id="12_plus"]
-[ext_resource type="Texture2D" path="res://assets/ui/build.png" id="13_build"]
-[ext_resource type="Texture2D" path="res://assets/ui/friends.png" id="14_friends"]
-[ext_resource type="Texture2D" path="res://assets/ui/news.png" id="15_news"]
-[ext_resource type="Texture2D" path="res://assets/ui/insights.png" id="16_insights"]
-[ext_resource type="Texture2D" path="res://assets/icons/smile.svg" id="20_smile"]
+[ext_resource type="Texture2D" uid="uid://dnqxung6wr1fd" path="res://assets/icons/chevron-left.svg" id="5_chevron_left"]
+[ext_resource type="Texture2D" uid="uid://bori8153c8i6o" path="res://assets/icons/sprout.svg" id="6_sprout"]
+[ext_resource type="Texture2D" uid="uid://dh2msv6gtqfyn" path="res://assets/icons/chevron-down.svg" id="7_chevron_down"]
+[ext_resource type="Texture2D" uid="uid://drcx4gsxmhixw" path="res://assets/icons/sun.svg" id="8_sun"]
+[ext_resource type="Texture2D" uid="uid://dln87rkn741qb" path="res://assets/icons/map-pin.svg" id="9_map_pin"]
+[ext_resource type="Texture2D" uid="uid://dpv66qf3j25uv" path="res://assets/icons/mouse-pointer-2.svg" id="10_mouse_pointer_2"]
+[ext_resource type="Texture2D" uid="uid://p3jnhguossq0" path="res://assets/icons/minus.svg" id="11_minus"]
+[ext_resource type="Texture2D" uid="uid://dgb0c6e86m3c2" path="res://assets/icons/plus.svg" id="12_plus"]
+[ext_resource type="Texture2D" uid="uid://c7udmisivtks1" path="res://assets/ui/build.png" id="13_build"]
+[ext_resource type="Texture2D" uid="uid://cpusvj80ra0li" path="res://assets/ui/friends.png" id="14_friends"]
+[ext_resource type="Texture2D" uid="uid://bdujjdiikl7u0" path="res://assets/ui/news.png" id="15_news"]
+[ext_resource type="Texture2D" uid="uid://bkd2wq6dn0fkd" path="res://assets/ui/insights.png" id="16_insights"]
+[ext_resource type="Texture2D" uid="uid://ca1hu8h2ouggd" path="res://assets/icons/smile.svg" id="20_smile"]
 [ext_resource type="PackedScene" path="res://scenes/residents/residents_screen.tscn" id="21_residents"]
 [ext_resource type="PackedScene" path="res://scenes/residents/resident_creator.tscn" id="22_creator"]
-[ext_resource type="Script" path="res://scenes/ui/bubbles_sidebar.gd" id="23_sidebar"]
+[ext_resource type="Script" uid="uid://bw8qqfpb1kegp" path="res://scenes/ui/bubbles_sidebar.gd" id="23_sidebar"]
+[ext_resource type="PackedScene" path="res://scenes/insights/insights_screen.tscn" id="24_insights"]
+[ext_resource type="PackedScene" path="res://scenes/news/news_screen.tscn" id="25_news"]
 
-[node name="Game" type="Control"]
+[node name="Game" type="Control" unique_id=146576168]
+layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -29,7 +32,7 @@ grow_vertical = 2
 theme = ExtResource("1_theme")
 script = ExtResource("2_game")
 
-[node name="Background" type="ColorRect" parent="."]
+[node name="Background" type="ColorRect" parent="." unique_id=1492357499]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -37,9 +40,9 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
-color = Color(0.412, 0.831, 0.922, 1.0)
+color = Color(0.412, 0.831, 0.922, 1)
 
-[node name="Margin" type="MarginContainer" parent="."]
+[node name="Margin" type="MarginContainer" parent="." unique_id=1687314651]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -51,21 +54,21 @@ theme_override_constants/margin_top = 16
 theme_override_constants/margin_right = 18
 theme_override_constants/margin_bottom = 16
 
-[node name="Columns" type="HBoxContainer" parent="Margin"]
+[node name="Columns" type="HBoxContainer" parent="Margin" unique_id=2020053846]
 layout_mode = 2
 theme_override_constants/separation = 18
 
-[node name="Left" type="VBoxContainer" parent="Margin/Columns"]
+[node name="Left" type="VBoxContainer" parent="Margin/Columns" unique_id=1362303947]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 12
 
-[node name="TopBar" type="HBoxContainer" parent="Margin/Columns/Left"]
+[node name="TopBar" type="HBoxContainer" parent="Margin/Columns/Left" unique_id=1776107704]
+custom_minimum_size = Vector2(0, 48)
 layout_mode = 2
 theme_override_constants/separation = 10
-custom_minimum_size = Vector2(0, 48)
 
-[node name="BackButton" type="Button" parent="Margin/Columns/Left/TopBar"]
+[node name="BackButton" type="Button" parent="Margin/Columns/Left/TopBar" unique_id=1080400251]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(48, 48)
 layout_mode = 2
@@ -74,142 +77,143 @@ icon = ExtResource("5_chevron_left")
 icon_alignment = 1
 expand_icon = true
 
-[node name="IslandSelector" type="PanelContainer" parent="Margin/Columns/Left/TopBar"]
+[node name="IslandSelector" type="PanelContainer" parent="Margin/Columns/Left/TopBar" unique_id=1790632703]
 layout_mode = 2
 theme_type_variation = &"PillYellowOutline"
 
-[node name="Row" type="HBoxContainer" parent="Margin/Columns/Left/TopBar/IslandSelector"]
+[node name="Row" type="HBoxContainer" parent="Margin/Columns/Left/TopBar/IslandSelector" unique_id=1876659198]
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="Sprout" type="PanelContainer" parent="Margin/Columns/Left/TopBar/IslandSelector/Row"]
+[node name="Sprout" type="PanelContainer" parent="Margin/Columns/Left/TopBar/IslandSelector/Row" unique_id=141873460]
 layout_mode = 2
 size_flags_vertical = 4
 mouse_filter = 2
 theme_type_variation = &"SproutCircle"
 
-[node name="Icon" type="TextureRect" parent="Margin/Columns/Left/TopBar/IslandSelector/Row/Sprout"]
+[node name="Icon" type="TextureRect" parent="Margin/Columns/Left/TopBar/IslandSelector/Row/Sprout" unique_id=377819810]
+modulate = Color(0.298, 0.576, 0.384, 1)
 custom_minimum_size = Vector2(20, 20)
 layout_mode = 2
 size_flags_vertical = 4
 mouse_filter = 2
-modulate = Color(0.298, 0.576, 0.384, 1.0)
 texture = ExtResource("6_sprout")
 expand_mode = 1
 stretch_mode = 5
 
-[node name="Names" type="VBoxContainer" parent="Margin/Columns/Left/TopBar/IslandSelector/Row"]
+[node name="Names" type="VBoxContainer" parent="Margin/Columns/Left/TopBar/IslandSelector/Row" unique_id=659621804]
 layout_mode = 2
 size_flags_vertical = 4
 theme_override_constants/separation = 0
 
-[node name="IslandName" type="Label" parent="Margin/Columns/Left/TopBar/IslandSelector/Row/Names"]
+[node name="IslandName" type="Label" parent="Margin/Columns/Left/TopBar/IslandSelector/Row/Names" unique_id=30999368]
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"IslandName"
 text = "Pebble Cove"
 
-[node name="Repo" type="Label" parent="Margin/Columns/Left/TopBar/IslandSelector/Row/Names"]
+[node name="Repo" type="Label" parent="Margin/Columns/Left/TopBar/IslandSelector/Row/Names" unique_id=1732636222]
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"LabelMuted"
 text = "your-org/pebble-api"
 
-[node name="Chevron" type="TextureRect" parent="Margin/Columns/Left/TopBar/IslandSelector/Row"]
+[node name="Chevron" type="TextureRect" parent="Margin/Columns/Left/TopBar/IslandSelector/Row" unique_id=470373572]
+modulate = Color(0.161, 0.18, 0.314, 1)
 custom_minimum_size = Vector2(16, 16)
 layout_mode = 2
 size_flags_vertical = 4
 mouse_filter = 2
-modulate = Color(0.161, 0.180, 0.314, 1.0)
 texture = ExtResource("7_chevron_down")
 expand_mode = 1
 stretch_mode = 5
 
-[node name="Gap" type="Control" parent="Margin/Columns/Left/TopBar/IslandSelector/Row"]
+[node name="Gap" type="Control" parent="Margin/Columns/Left/TopBar/IslandSelector/Row" unique_id=805772351]
 custom_minimum_size = Vector2(4, 0)
 layout_mode = 2
 mouse_filter = 2
 
-[node name="ConnectedPill" type="PanelContainer" parent="Margin/Columns/Left/TopBar"]
+[node name="ConnectedPill" type="PanelContainer" parent="Margin/Columns/Left/TopBar" unique_id=945894345]
 layout_mode = 2
 size_flags_vertical = 4
 theme_type_variation = &"PillYellow"
 
-[node name="Row" type="HBoxContainer" parent="Margin/Columns/Left/TopBar/ConnectedPill"]
+[node name="Row" type="HBoxContainer" parent="Margin/Columns/Left/TopBar/ConnectedPill" unique_id=1176638429]
 layout_mode = 2
 theme_override_constants/separation = 7
 
-[node name="StatusDot" type="Panel" parent="Margin/Columns/Left/TopBar/ConnectedPill/Row"]
+[node name="StatusDot" type="Panel" parent="Margin/Columns/Left/TopBar/ConnectedPill/Row" unique_id=1229306039]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(10, 10)
 layout_mode = 2
 size_flags_vertical = 4
 theme_type_variation = &"StatusDot"
 
-[node name="StatusLabel" type="Label" parent="Margin/Columns/Left/TopBar/ConnectedPill/Row"]
+[node name="StatusLabel" type="Label" parent="Margin/Columns/Left/TopBar/ConnectedPill/Row" unique_id=1967665419]
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"LabelStrong"
 text = "Connected"
 
-[node name="SyncedLabel" type="Label" parent="Margin/Columns/Left/TopBar/ConnectedPill/Row"]
+[node name="SyncedLabel" type="Label" parent="Margin/Columns/Left/TopBar/ConnectedPill/Row" unique_id=1574872865]
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"LabelMuted"
 text = "synced 1m ago"
 
-[node name="DayPill" type="PanelContainer" parent="Margin/Columns/Left/TopBar"]
+[node name="DayPill" type="PanelContainer" parent="Margin/Columns/Left/TopBar" unique_id=209165503]
 layout_mode = 2
 size_flags_vertical = 4
 theme_type_variation = &"PillNavy"
 
-[node name="Row" type="HBoxContainer" parent="Margin/Columns/Left/TopBar/DayPill"]
+[node name="Row" type="HBoxContainer" parent="Margin/Columns/Left/TopBar/DayPill" unique_id=1686122024]
 layout_mode = 2
 theme_override_constants/separation = 7
 
-[node name="Sun" type="TextureRect" parent="Margin/Columns/Left/TopBar/DayPill/Row"]
+[node name="Sun" type="TextureRect" parent="Margin/Columns/Left/TopBar/DayPill/Row" unique_id=158964117]
+modulate = Color(0.992, 0.788, 0.008, 1)
 custom_minimum_size = Vector2(18, 18)
 layout_mode = 2
 size_flags_vertical = 4
 mouse_filter = 2
-modulate = Color(0.992, 0.788, 0.008, 1.0)
 texture = ExtResource("8_sun")
 expand_mode = 1
 stretch_mode = 5
 
-[node name="Day" type="Label" parent="Margin/Columns/Left/TopBar/DayPill/Row"]
+[node name="Day" type="Label" parent="Margin/Columns/Left/TopBar/DayPill/Row" unique_id=2131234852]
 layout_mode = 2
 theme_type_variation = &"WhiteStrong"
 text = "Day 12 · 10:42"
 
-[node name="Spacer" type="Control" parent="Margin/Columns/Left/TopBar"]
+[node name="Spacer" type="Control" parent="Margin/Columns/Left/TopBar" unique_id=1482485748]
 layout_mode = 2
 size_flags_horizontal = 3
 mouse_filter = 2
 
-[node name="Logo" type="VBoxContainer" parent="Margin/Columns/Left/TopBar"]
+[node name="Logo" type="VBoxContainer" parent="Margin/Columns/Left/TopBar" unique_id=261435801]
 layout_mode = 2
 size_flags_vertical = 4
 theme_override_constants/separation = -2
 
-[node name="Title" type="Label" parent="Margin/Columns/Left/TopBar/Logo"]
+[node name="Title" type="Label" parent="Margin/Columns/Left/TopBar/Logo" unique_id=314927931]
 layout_mode = 2
 theme_type_variation = &"LogoTitle"
 text = "Mii-nagement"
 horizontal_alignment = 2
 
-[node name="Tagline" type="Label" parent="Margin/Columns/Left/TopBar/Logo"]
+[node name="Tagline" type="Label" parent="Margin/Columns/Left/TopBar/Logo" unique_id=79865314]
 layout_mode = 2
 theme_type_variation = &"LogoTagline"
 text = "Little lives. Real work."
 horizontal_alignment = 2
 
-[node name="IslandFrame" type="Control" parent="Margin/Columns/Left"]
+[node name="IslandFrame" type="Control" parent="Margin/Columns/Left" unique_id=402004166]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="Mask" type="Panel" parent="Margin/Columns/Left/IslandFrame"]
+[node name="Mask" type="Panel" parent="Margin/Columns/Left/IslandFrame" unique_id=1662040976]
+clip_children = 1
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -218,9 +222,8 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 theme_type_variation = &"FrameMask"
-clip_children = 1
 
-[node name="ViewportContainer" type="SubViewportContainer" parent="Margin/Columns/Left/IslandFrame/Mask"]
+[node name="ViewportContainer" type="SubViewportContainer" parent="Margin/Columns/Left/IslandFrame/Mask" unique_id=59677519]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -229,27 +232,27 @@ grow_horizontal = 2
 grow_vertical = 2
 stretch = true
 
-[node name="SubViewport" type="SubViewport" parent="Margin/Columns/Left/IslandFrame/Mask/ViewportContainer"]
+[node name="SubViewport" type="SubViewport" parent="Margin/Columns/Left/IslandFrame/Mask/ViewportContainer" unique_id=630148604]
 handle_input_locally = false
 msaa_3d = 2
-size = Vector2i(930, 530)
+size = Vector2i(908, 550)
 render_target_update_mode = 4
 
-[node name="Island3D" parent="Margin/Columns/Left/IslandFrame/Mask/ViewportContainer/SubViewport" instance=ExtResource("3_island_3d")]
+[node name="Island3D" parent="Margin/Columns/Left/IslandFrame/Mask/ViewportContainer/SubViewport" unique_id=1237179246 instance=ExtResource("3_island_3d")]
 unique_name_in_owner = true
 
-[node name="Labels" type="Control" parent="Margin/Columns/Left/IslandFrame"]
+[node name="Labels" type="Control" parent="Margin/Columns/Left/IslandFrame" unique_id=979152144]
 unique_name_in_owner = true
+clip_contents = true
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-clip_contents = true
 mouse_filter = 2
 
-[node name="Border" type="Panel" parent="Margin/Columns/Left/IslandFrame"]
+[node name="Border" type="Panel" parent="Margin/Columns/Left/IslandFrame" unique_id=331806291]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -259,115 +262,105 @@ grow_vertical = 2
 mouse_filter = 2
 theme_type_variation = &"FrameBorder"
 
-[node name="ViewPill" type="PanelContainer" parent="Margin/Columns/Left/IslandFrame"]
-mouse_filter = 2
+[node name="ViewPill" type="PanelContainer" parent="Margin/Columns/Left/IslandFrame" unique_id=1350128490]
 layout_mode = 1
-theme_type_variation = &"PillWhite"
-anchor_left = 0.0
-anchor_top = 0.0
-anchor_right = 0.0
-anchor_bottom = 0.0
 offset_left = 14.0
 offset_top = 14.0
-grow_horizontal = 1
-grow_vertical = 1
-
-[node name="Row" type="HBoxContainer" parent="Margin/Columns/Left/IslandFrame/ViewPill"]
-layout_mode = 2
-theme_override_constants/separation = 7
 mouse_filter = 2
+theme_type_variation = &"PillWhite"
 
-[node name="Pin" type="TextureRect" parent="Margin/Columns/Left/IslandFrame/ViewPill/Row"]
+[node name="Row" type="HBoxContainer" parent="Margin/Columns/Left/IslandFrame/ViewPill" unique_id=1836413640]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 7
+
+[node name="Pin" type="TextureRect" parent="Margin/Columns/Left/IslandFrame/ViewPill/Row" unique_id=1615772532]
+modulate = Color(0.122, 0.71, 0.651, 1)
 custom_minimum_size = Vector2(17, 17)
 layout_mode = 2
 size_flags_vertical = 4
 mouse_filter = 2
-modulate = Color(0.122, 0.710, 0.651, 1.0)
 texture = ExtResource("9_map_pin")
 expand_mode = 1
 stretch_mode = 5
 
-[node name="Title" type="Label" parent="Margin/Columns/Left/IslandFrame/ViewPill/Row"]
+[node name="Title" type="Label" parent="Margin/Columns/Left/IslandFrame/ViewPill/Row" unique_id=1243241897]
 layout_mode = 2
 theme_type_variation = &"LabelStrong"
 text = "Island view"
 
-[node name="ResidentCount" type="Label" parent="Margin/Columns/Left/IslandFrame/ViewPill/Row"]
+[node name="ResidentCount" type="Label" parent="Margin/Columns/Left/IslandFrame/ViewPill/Row" unique_id=868504044]
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"LabelMuted"
 text = "5 residents"
 
-[node name="WeatherPill" type="PanelContainer" parent="Margin/Columns/Left/IslandFrame"]
-mouse_filter = 2
+[node name="WeatherPill" type="PanelContainer" parent="Margin/Columns/Left/IslandFrame" unique_id=568145019]
 layout_mode = 1
-theme_type_variation = &"PillWhite"
+anchors_preset = 1
 anchor_left = 1.0
-anchor_top = 0.0
 anchor_right = 1.0
-anchor_bottom = 0.0
-offset_right = -14.0
 offset_top = 14.0
+offset_right = -14.0
 grow_horizontal = 0
-grow_vertical = 1
-
-[node name="Row" type="HBoxContainer" parent="Margin/Columns/Left/IslandFrame/WeatherPill"]
-layout_mode = 2
-theme_override_constants/separation = 7
 mouse_filter = 2
+theme_type_variation = &"PillWhite"
 
-[node name="Sun" type="TextureRect" parent="Margin/Columns/Left/IslandFrame/WeatherPill/Row"]
+[node name="Row" type="HBoxContainer" parent="Margin/Columns/Left/IslandFrame/WeatherPill" unique_id=651940323]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 7
+
+[node name="Sun" type="TextureRect" parent="Margin/Columns/Left/IslandFrame/WeatherPill/Row" unique_id=120342872]
+modulate = Color(0.949, 0.702, 0.239, 1)
 custom_minimum_size = Vector2(17, 17)
 layout_mode = 2
 size_flags_vertical = 4
 mouse_filter = 2
-modulate = Color(0.949, 0.702, 0.239, 1.0)
 texture = ExtResource("8_sun")
 expand_mode = 1
 stretch_mode = 5
 
-[node name="Weather" type="Label" parent="Margin/Columns/Left/IslandFrame/WeatherPill/Row"]
+[node name="Weather" type="Label" parent="Margin/Columns/Left/IslandFrame/WeatherPill/Row" unique_id=629339716]
 layout_mode = 2
 theme_type_variation = &"LabelStrong"
 text = "24° · Sunny"
 
-[node name="HintPill" type="PanelContainer" parent="Margin/Columns/Left/IslandFrame"]
-mouse_filter = 2
+[node name="HintPill" type="PanelContainer" parent="Margin/Columns/Left/IslandFrame" unique_id=1784169824]
 layout_mode = 1
-theme_type_variation = &"PillWhite"
-anchor_left = 0.0
+anchors_preset = 2
 anchor_top = 1.0
-anchor_right = 0.0
 anchor_bottom = 1.0
 offset_left = 14.0
 offset_bottom = -14.0
-grow_horizontal = 1
 grow_vertical = 0
-
-[node name="Row" type="HBoxContainer" parent="Margin/Columns/Left/IslandFrame/HintPill"]
-layout_mode = 2
-theme_override_constants/separation = 8
 mouse_filter = 2
+theme_type_variation = &"PillWhite"
 
-[node name="Pointer" type="TextureRect" parent="Margin/Columns/Left/IslandFrame/HintPill/Row"]
+[node name="Row" type="HBoxContainer" parent="Margin/Columns/Left/IslandFrame/HintPill" unique_id=1172884523]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 8
+
+[node name="Pointer" type="TextureRect" parent="Margin/Columns/Left/IslandFrame/HintPill/Row" unique_id=470566466]
+modulate = Color(0.29, 0.329, 0.447, 1)
 custom_minimum_size = Vector2(16, 16)
 layout_mode = 2
 size_flags_vertical = 4
 mouse_filter = 2
-modulate = Color(0.290, 0.329, 0.447, 1.0)
 texture = ExtResource("10_mouse_pointer_2")
 expand_mode = 1
 stretch_mode = 5
 
-[node name="Hint" type="Label" parent="Margin/Columns/Left/IslandFrame/HintPill/Row"]
+[node name="Hint" type="Label" parent="Margin/Columns/Left/IslandFrame/HintPill/Row" unique_id=777697498]
 layout_mode = 2
 theme_type_variation = &"LabelMuted"
+theme_override_colors/font_color = Color(0.29, 0.329, 0.447, 1)
 text = "A little check-in goes a long way. Tap a bubble!"
-theme_override_colors/font_color = Color(0.290, 0.329, 0.447, 1.0)
 
-[node name="ZoomPill" type="PanelContainer" parent="Margin/Columns/Left/IslandFrame"]
+[node name="ZoomPill" type="PanelContainer" parent="Margin/Columns/Left/IslandFrame" unique_id=891613315]
 layout_mode = 1
-theme_type_variation = &"PillWhite"
+anchors_preset = 3
 anchor_left = 1.0
 anchor_top = 1.0
 anchor_right = 1.0
@@ -376,12 +369,13 @@ offset_right = -14.0
 offset_bottom = -14.0
 grow_horizontal = 0
 grow_vertical = 0
+theme_type_variation = &"PillWhite"
 
-[node name="Row" type="HBoxContainer" parent="Margin/Columns/Left/IslandFrame/ZoomPill"]
+[node name="Row" type="HBoxContainer" parent="Margin/Columns/Left/IslandFrame/ZoomPill" unique_id=1269827491]
 layout_mode = 2
 theme_override_constants/separation = 4
 
-[node name="ZoomOut" type="Button" parent="Margin/Columns/Left/IslandFrame/ZoomPill/Row"]
+[node name="ZoomOut" type="Button" parent="Margin/Columns/Left/IslandFrame/ZoomPill/Row" unique_id=1811316048]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(26, 24)
 layout_mode = 2
@@ -389,15 +383,15 @@ theme_type_variation = &"FlatIconButton"
 icon = ExtResource("11_minus")
 icon_alignment = 1
 
-[node name="ZoomLabel" type="Label" parent="Margin/Columns/Left/IslandFrame/ZoomPill/Row"]
+[node name="ZoomLabel" type="Label" parent="Margin/Columns/Left/IslandFrame/ZoomPill/Row" unique_id=2007227584]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(46, 0)
 layout_mode = 2
 theme_type_variation = &"LabelStrong"
 text = "100%"
-custom_minimum_size = Vector2(46, 0)
 horizontal_alignment = 1
 
-[node name="ZoomIn" type="Button" parent="Margin/Columns/Left/IslandFrame/ZoomPill/Row"]
+[node name="ZoomIn" type="Button" parent="Margin/Columns/Left/IslandFrame/ZoomPill/Row" unique_id=935519472]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(26, 24)
 layout_mode = 2
@@ -405,34 +399,44 @@ theme_type_variation = &"FlatIconButton"
 icon = ExtResource("12_plus")
 icon_alignment = 1
 
-[node name="ResidentsScreen" parent="Margin/Columns/Left" instance=ExtResource("21_residents")]
+[node name="ResidentsScreen" parent="Margin/Columns/Left" unique_id=1810968005 instance=ExtResource("21_residents")]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 
-[node name="ResidentCreator" parent="Margin/Columns/Left" instance=ExtResource("22_creator")]
+[node name="ResidentCreator" parent="Margin/Columns/Left" unique_id=220567668 instance=ExtResource("22_creator")]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 
-[node name="NavRow" type="CenterContainer" parent="Margin/Columns/Left"]
+[node name="InsightsScreen" parent="Margin/Columns/Left" unique_id=1757573931 instance=ExtResource("24_insights")]
+unique_name_in_owner = true
+visible = false
 layout_mode = 2
 
-[node name="NavTray" type="PanelContainer" parent="Margin/Columns/Left/NavRow"]
+[node name="NewsScreen" parent="Margin/Columns/Left" instance=ExtResource("25_news")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="NavRow" type="CenterContainer" parent="Margin/Columns/Left" unique_id=761006659]
+layout_mode = 2
+
+[node name="NavTray" type="PanelContainer" parent="Margin/Columns/Left/NavRow" unique_id=593188287]
 layout_mode = 2
 theme_type_variation = &"NavTray"
 
-[node name="Buttons" type="HBoxContainer" parent="Margin/Columns/Left/NavRow/NavTray"]
+[node name="Buttons" type="HBoxContainer" parent="Margin/Columns/Left/NavRow/NavTray" unique_id=240016588]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="IslandNav" type="Button" parent="Margin/Columns/Left/NavRow/NavTray/Buttons"]
+[node name="IslandNav" type="Button" parent="Margin/Columns/Left/NavRow/NavTray/Buttons" unique_id=520429259]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(160, 50)
 layout_mode = 2
 theme_type_variation = &"NavButton"
 
-[node name="Content" type="HBoxContainer" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/IslandNav"]
+[node name="Content" type="HBoxContainer" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/IslandNav" unique_id=83623895]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -443,7 +447,7 @@ mouse_filter = 2
 theme_override_constants/separation = 8
 alignment = 1
 
-[node name="Icon" type="TextureRect" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/IslandNav/Content"]
+[node name="Icon" type="TextureRect" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/IslandNav/Content" unique_id=1319328234]
 custom_minimum_size = Vector2(32, 30)
 layout_mode = 2
 size_flags_vertical = 4
@@ -452,18 +456,18 @@ texture = ExtResource("13_build")
 expand_mode = 1
 stretch_mode = 5
 
-[node name="Text" type="Label" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/IslandNav/Content"]
+[node name="Text" type="Label" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/IslandNav/Content" unique_id=371957032]
 layout_mode = 2
 theme_type_variation = &"NavText"
 text = "Island"
 
-[node name="Residents" type="Button" parent="Margin/Columns/Left/NavRow/NavTray/Buttons"]
+[node name="Residents" type="Button" parent="Margin/Columns/Left/NavRow/NavTray/Buttons" unique_id=852800135]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(160, 50)
 layout_mode = 2
 theme_type_variation = &"NavButton"
 
-[node name="Content" type="HBoxContainer" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/Residents"]
+[node name="Content" type="HBoxContainer" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/Residents" unique_id=84249960]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -474,7 +478,7 @@ mouse_filter = 2
 theme_override_constants/separation = 8
 alignment = 1
 
-[node name="Icon" type="TextureRect" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/Residents/Content"]
+[node name="Icon" type="TextureRect" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/Residents/Content" unique_id=1165555676]
 custom_minimum_size = Vector2(32, 30)
 layout_mode = 2
 size_flags_vertical = 4
@@ -483,18 +487,18 @@ texture = ExtResource("14_friends")
 expand_mode = 1
 stretch_mode = 5
 
-[node name="Text" type="Label" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/Residents/Content"]
+[node name="Text" type="Label" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/Residents/Content" unique_id=192238177]
 layout_mode = 2
 theme_type_variation = &"NavText"
 text = "Residents"
 
-[node name="News" type="Button" parent="Margin/Columns/Left/NavRow/NavTray/Buttons"]
+[node name="News" type="Button" parent="Margin/Columns/Left/NavRow/NavTray/Buttons" unique_id=1823001747]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(160, 50)
 layout_mode = 2
 theme_type_variation = &"NavButton"
 
-[node name="Content" type="HBoxContainer" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/News"]
+[node name="Content" type="HBoxContainer" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/News" unique_id=47136185]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -505,7 +509,7 @@ mouse_filter = 2
 theme_override_constants/separation = 8
 alignment = 1
 
-[node name="Icon" type="TextureRect" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/News/Content"]
+[node name="Icon" type="TextureRect" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/News/Content" unique_id=535929528]
 custom_minimum_size = Vector2(32, 30)
 layout_mode = 2
 size_flags_vertical = 4
@@ -514,18 +518,41 @@ texture = ExtResource("15_news")
 expand_mode = 1
 stretch_mode = 5
 
-[node name="Text" type="Label" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/News/Content"]
+[node name="Text" type="Label" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/News/Content" unique_id=1520774617]
 layout_mode = 2
 theme_type_variation = &"NavText"
 text = "News"
 
-[node name="Insights" type="Button" parent="Margin/Columns/Left/NavRow/NavTray/Buttons"]
+[node name="NewsBadge" type="PanelContainer" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/News" unique_id=1080366864]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -22.0
+offset_top = -12.0
+offset_right = 2.0
+offset_bottom = 12.0
+grow_horizontal = 0
+mouse_filter = 2
+theme_type_variation = &"NewsBadge"
+
+[node name="NewsCount" type="Label" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/News/NewsBadge" unique_id=1584753277]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"BadgeNumber"
+theme_override_colors/font_color = Color(0.161, 0.18, 0.314, 1)
+text = "2"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Insights" type="Button" parent="Margin/Columns/Left/NavRow/NavTray/Buttons" unique_id=2144599527]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(160, 50)
 layout_mode = 2
 theme_type_variation = &"NavButton"
 
-[node name="Content" type="HBoxContainer" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/Insights"]
+[node name="Content" type="HBoxContainer" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/Insights" unique_id=533977595]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -536,7 +563,7 @@ mouse_filter = 2
 theme_override_constants/separation = 8
 alignment = 1
 
-[node name="Icon" type="TextureRect" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/Insights/Content"]
+[node name="Icon" type="TextureRect" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/Insights/Content" unique_id=2030716754]
 custom_minimum_size = Vector2(32, 30)
 layout_mode = 2
 size_flags_vertical = 4
@@ -545,72 +572,53 @@ texture = ExtResource("16_insights")
 expand_mode = 1
 stretch_mode = 5
 
-[node name="Text" type="Label" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/Insights/Content"]
+[node name="Text" type="Label" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/Insights/Content" unique_id=1626615572]
 layout_mode = 2
 theme_type_variation = &"NavText"
 text = "Insights"
 
-[node name="NewsBadge" type="PanelContainer" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/News"]
-layout_mode = 1
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -22.0
-offset_top = -12.0
-offset_right = 2.0
-offset_bottom = 12.0
-mouse_filter = 2
-theme_type_variation = &"NewsBadge"
-
-[node name="Count" type="Label" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/News/NewsBadge"]
-layout_mode = 2
-theme_type_variation = &"BadgeNumber"
-text = "2"
-horizontal_alignment = 1
-vertical_alignment = 1
-theme_override_colors/font_color = Color(0.161, 0.180, 0.314, 1.0)
-
-[node name="Sidebar" type="PanelContainer" parent="Margin/Columns"]
+[node name="Sidebar" type="PanelContainer" parent="Margin/Columns" unique_id=36173881]
 unique_name_in_owner = true
-script = ExtResource("23_sidebar")
 custom_minimum_size = Vector2(316, 0)
 layout_mode = 2
 theme_type_variation = &"SidebarPanel"
+script = ExtResource("23_sidebar")
 
-[node name="Rows" type="VBoxContainer" parent="Margin/Columns/Sidebar"]
+[node name="Rows" type="VBoxContainer" parent="Margin/Columns/Sidebar" unique_id=1711384343]
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="Header" type="HBoxContainer" parent="Margin/Columns/Sidebar/Rows"]
+[node name="Header" type="HBoxContainer" parent="Margin/Columns/Sidebar/Rows" unique_id=1095308016]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="Title" type="Label" parent="Margin/Columns/Sidebar/Rows/Header"]
+[node name="Title" type="Label" parent="Margin/Columns/Sidebar/Rows/Header" unique_id=749751026]
 layout_mode = 2
+size_flags_horizontal = 3
 theme_type_variation = &"SidebarTitle"
 text = "Bubbles"
-size_flags_horizontal = 3
 
-[node name="NeedPill" type="PanelContainer" parent="Margin/Columns/Sidebar/Rows/Header"]
+[node name="NeedPill" type="PanelContainer" parent="Margin/Columns/Sidebar/Rows/Header" unique_id=905167151]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 4
 theme_type_variation = &"NeedPill"
 
-[node name="NeedLabel" type="Label" parent="Margin/Columns/Sidebar/Rows/Header/NeedPill"]
+[node name="NeedLabel" type="Label" parent="Margin/Columns/Sidebar/Rows/Header/NeedPill" unique_id=1935774328]
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"NeedText"
 text = "3 need you"
 
-[node name="Tabs" type="PanelContainer" parent="Margin/Columns/Sidebar/Rows"]
+[node name="Tabs" type="PanelContainer" parent="Margin/Columns/Sidebar/Rows" unique_id=118416155]
 layout_mode = 2
 theme_type_variation = &"TabsPanel"
 
-[node name="Row" type="HBoxContainer" parent="Margin/Columns/Sidebar/Rows/Tabs"]
+[node name="Row" type="HBoxContainer" parent="Margin/Columns/Sidebar/Rows/Tabs" unique_id=1566652872]
 layout_mode = 2
 theme_override_constants/separation = 4
 
-[node name="TabAll" type="Button" parent="Margin/Columns/Sidebar/Rows/Tabs/Row"]
+[node name="TabAll" type="Button" parent="Margin/Columns/Sidebar/Rows/Tabs/Row" unique_id=1373593581]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 30)
 layout_mode = 2
@@ -618,7 +626,7 @@ size_flags_horizontal = 3
 theme_type_variation = &"TabActive"
 text = "All"
 
-[node name="TabQuestions" type="Button" parent="Margin/Columns/Sidebar/Rows/Tabs/Row"]
+[node name="TabQuestions" type="Button" parent="Margin/Columns/Sidebar/Rows/Tabs/Row" unique_id=1184902810]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 30)
 layout_mode = 2
@@ -626,7 +634,7 @@ size_flags_horizontal = 3
 theme_type_variation = &"TabInactive"
 text = "Questions"
 
-[node name="TabReviews" type="Button" parent="Margin/Columns/Sidebar/Rows/Tabs/Row"]
+[node name="TabReviews" type="Button" parent="Margin/Columns/Sidebar/Rows/Tabs/Row" unique_id=1570456168]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 30)
 layout_mode = 2
@@ -634,19 +642,19 @@ size_flags_horizontal = 3
 theme_type_variation = &"TabInactive"
 text = "Reviews"
 
-[node name="Scroll" type="ScrollContainer" parent="Margin/Columns/Sidebar/Rows"]
+[node name="Scroll" type="ScrollContainer" parent="Margin/Columns/Sidebar/Rows" unique_id=1523967312]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
 
-[node name="Cards" type="VBoxContainer" parent="Margin/Columns/Sidebar/Rows/Scroll"]
+[node name="Cards" type="VBoxContainer" parent="Margin/Columns/Sidebar/Rows/Scroll" unique_id=1745214151]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 10
 
-[node name="EmptyLabel" type="Label" parent="Margin/Columns/Sidebar/Rows/Scroll/Cards"]
+[node name="EmptyLabel" type="Label" parent="Margin/Columns/Sidebar/Rows/Scroll/Cards" unique_id=416961853]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(1, 60)
 layout_mode = 2
@@ -656,34 +664,34 @@ horizontal_alignment = 1
 vertical_alignment = 1
 autowrap_mode = 3
 
-[node name="MoodCard" type="PanelContainer" parent="Margin/Columns/Sidebar/Rows"]
+[node name="MoodCard" type="PanelContainer" parent="Margin/Columns/Sidebar/Rows" unique_id=1760515784]
 layout_mode = 2
 theme_type_variation = &"MoodCard"
 
-[node name="Row" type="HBoxContainer" parent="Margin/Columns/Sidebar/Rows/MoodCard"]
+[node name="Row" type="HBoxContainer" parent="Margin/Columns/Sidebar/Rows/MoodCard" unique_id=1474389419]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="Smile" type="TextureRect" parent="Margin/Columns/Sidebar/Rows/MoodCard/Row"]
+[node name="Smile" type="TextureRect" parent="Margin/Columns/Sidebar/Rows/MoodCard/Row" unique_id=858133138]
+modulate = Color(0.298, 0.576, 0.384, 1)
 custom_minimum_size = Vector2(18, 18)
 layout_mode = 2
 size_flags_vertical = 4
 mouse_filter = 2
-modulate = Color(0.298, 0.576, 0.384, 1.0)
 texture = ExtResource("20_smile")
 expand_mode = 1
 stretch_mode = 5
 
-[node name="Title" type="Label" parent="Margin/Columns/Sidebar/Rows/MoodCard/Row"]
+[node name="Title" type="Label" parent="Margin/Columns/Sidebar/Rows/MoodCard/Row" unique_id=205332122]
 layout_mode = 2
-theme_type_variation = &"LabelStrong"
-text = "Island mood"
 size_flags_horizontal = 3
+theme_type_variation = &"LabelStrong"
 theme_override_font_sizes/font_size = 14
+text = "Island mood"
 
-[node name="MoodSummary" type="Label" parent="Margin/Columns/Sidebar/Rows/MoodCard/Row"]
+[node name="MoodSummary" type="Label" parent="Margin/Columns/Sidebar/Rows/MoodCard/Row" unique_id=1902781592]
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"LabelStrong"
-text = "4 happy · 1 sleepy"
 theme_override_font_sizes/font_size = 14
+text = "4 happy · 1 sleepy"

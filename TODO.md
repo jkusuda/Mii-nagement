@@ -25,8 +25,11 @@ Backend design: [docs/architecture.md](docs/architecture.md).
 - [ ] **GitHub issue in → real PR out** (`github.py`, via the `gh` CLI): the
       workshop commits, the post office pushes and opens the PR.
 - [ ] **Lab runs the real tests** and passes/fails on the exit code.
-- [ ] **Insights** (`insights.py`): per resident, per brain, per building stats,
-      shown on the Insights screen.
+- [x] **Insights screen** (Godot): stat cards, packages per day, where packages
+      wait, comfort report. Shows dashes until the backend sends the fields.
+- [ ] **Insights backend** (`insights.py`): fill the payload in
+      [docs/architecture.md](docs/architecture.md) ("Insights payload"): per-day
+      counts, answer time, test pass rate, previous-range numbers, tip.
 - [ ] **Replay** (`replay.py`): re-play a recorded good run if anything fails on stage.
 - [x] **Game: live island**: residents on the 3D island walking the roads, states
       (working / idle / sleeping), bubble icons, station counts, the Bubbles
@@ -43,7 +46,10 @@ Backend design: [docs/architecture.md](docs/architecture.md).
 
 ## 🌈 Stretch
 
-- [ ] Island News (daily recap of what happened on the island)
+- [x] Island News tab (Godot): stories from live events, headline, unread badge, daily digest
+- [ ] `GET /islands/{id}/events` so News shows history from before the game started
+      ([docs/architecture.md](docs/architecture.md), "Events history"); `prs_merged`
+      and `keys_lent` in the insights payload for News' "This week"
 - [ ] Archipelago: multiple islands / repos
 - [ ] Run several tasks at once (one per free resident)
 - [ ] Friendship meter between residents who hand off to each other

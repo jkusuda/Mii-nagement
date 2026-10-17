@@ -1,0 +1,170 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/insights/insights_screen.gd" id="1_screen"]
+[ext_resource type="Texture2D" path="res://assets/icons/smile.svg" id="2_smile"]
+
+[node name="InsightsScreen" type="PanelContainer"]
+size_flags_vertical = 3
+theme_type_variation = &"ScreenPanel"
+script = ExtResource("1_screen")
+
+[node name="Rows" type="VBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="Header" type="HBoxContainer" parent="Rows"]
+layout_mode = 2
+
+[node name="Titles" type="VBoxContainer" parent="Rows/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = -2
+
+[node name="Title" type="Label" parent="Rows/Header/Titles"]
+layout_mode = 2
+theme_type_variation = &"ScreenTitle"
+text = "Insights"
+
+[node name="Subtitle" type="Label" parent="Rows/Header/Titles"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"LabelMuted"
+text = "How Pebble Cove is doing"
+
+[node name="Ranges" type="HBoxContainer" parent="Rows/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_constants/separation = 4
+
+[node name="Stats" type="HBoxContainer" parent="Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Charts" type="HBoxContainer" parent="Rows"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 14
+
+[node name="PerDayPanel" type="PanelContainer" parent="Rows/Charts"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 1.15
+theme_type_variation = &"ChartPanel"
+
+[node name="Rows" type="VBoxContainer" parent="Rows/Charts/PerDayPanel"]
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="Title" type="Label" parent="Rows/Charts/PerDayPanel/Rows"]
+layout_mode = 2
+theme_type_variation = &"SectionTitle"
+theme_override_font_sizes/font_size = 19
+text = "Packages delivered per day"
+
+[node name="Hint" type="Label" parent="Rows/Charts/PerDayPanel/Rows"]
+layout_mode = 2
+theme_type_variation = &"LabelMuted"
+theme_override_font_sizes/font_size = 12
+text = "A little progress adds up."
+
+[node name="Chart" type="Control" parent="Rows/Charts/PerDayPanel/Rows"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Bars" type="HBoxContainer" parent="Rows/Charts/PerDayPanel/Rows/Chart"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 10
+
+[node name="ChartEmpty" type="Label" parent="Rows/Charts/PerDayPanel/Rows/Chart"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_type_variation = &"LabelMuted"
+text = "No deliveries recorded yet. They'll show up here."
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 3
+
+[node name="WaitingPanel" type="PanelContainer" parent="Rows/Charts"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"ChartPanel"
+
+[node name="Rows" type="VBoxContainer" parent="Rows/Charts/WaitingPanel"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Title" type="Label" parent="Rows/Charts/WaitingPanel/Rows"]
+layout_mode = 2
+theme_type_variation = &"SectionTitle"
+theme_override_font_sizes/font_size = 19
+text = "Where packages are waiting"
+
+[node name="Waiting" type="VBoxContainer" parent="Rows/Charts/WaitingPanel/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Spacer" type="Control" parent="Rows/Charts/WaitingPanel/Rows"]
+layout_mode = 2
+size_flags_vertical = 3
+mouse_filter = 2
+
+[node name="TipBox" type="PanelContainer" parent="Rows/Charts/WaitingPanel/Rows"]
+layout_mode = 2
+theme_type_variation = &"TipBox"
+
+[node name="Tip" type="Label" parent="Rows/Charts/WaitingPanel/Rows/TipBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(1, 0)
+layout_mode = 2
+theme_type_variation = &"LabelStrong"
+theme_override_font_sizes/font_size = 13
+text = "The Mailbox is looking busy."
+autowrap_mode = 3
+
+[node name="Comfort" type="PanelContainer" parent="Rows"]
+layout_mode = 2
+theme_type_variation = &"ComfortBar"
+
+[node name="Row" type="HBoxContainer" parent="Rows/Comfort"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Smile" type="TextureRect" parent="Rows/Comfort/Row"]
+custom_minimum_size = Vector2(16, 16)
+layout_mode = 2
+size_flags_vertical = 4
+modulate = Color(0.298, 0.576, 0.384, 1)
+texture = ExtResource("2_smile")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="ComfortLabel" type="Label" parent="Rows/Comfort/Row"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"LabelStrong"
+theme_override_font_sizes/font_size = 13
+text = "Comfort report: residents happy."
+text_overrun_behavior = 3
+
+[node name="SeeResidents" type="Button" parent="Rows/Comfort/Row"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"FlatIconButton"
+theme_override_colors/font_color = Color(0.118, 0.62, 0.416, 1)
+theme_override_font_sizes/font_size = 13
+text = "See residents ›"
