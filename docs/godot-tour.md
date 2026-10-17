@@ -46,8 +46,11 @@ autoload. Change these through **Project → Project Settings**.
 - When the server goes away, it waits 2 seconds and tries again.
 - `send_answer(bubble_id, text)` sends your reply to a bubble.
 
-Right now only the connection pill listens to it. Residents and bubbles get
-connected next.
+- `island` is the latest island state: the snapshot, updated by every event
+  after it (states, moods, bubbles, tasks). After each change Net emits
+  `island_changed`, and the screens redraw from `Net.island`. Signals like
+  `agent_moved` are for things that need the moment itself (starting a walk).
+- `send_resident(data)` creates or edits a resident (the creator).
 
 ### 3. `scenes/game.tscn` + `game.gd`: the main screen
 ```
@@ -101,7 +104,29 @@ tilt the camera. Click **Preview** at the top of the 3D view to look through the
   show in the Inspector; `@tool` makes the editor preview update live.
 - `answer_button.gd`: paints the wavy orange button background in code.
 
-### 7. `ui/theme.tres` and `shaders/water.gdshader`
+### 7. `scenes/residents/` and `scenes/mii/`: Residents tab and creator
+- The **Residents** nav button swaps the island frame for `residents_screen`
+  (`game.gd` `show_screen()` just toggles `visible`). "+ New resident", "Invite a
+  resident", and each card's **Edit** open `resident_creator`; the sidebar hides
+  so the creator gets the full width. The back button steps back one screen.
+- `resident_data.gd` holds the lists (jobs, brains, sliders, house keys, gifts)
+  and the mock residents shown until the backend sends a snapshot.
+- `mii.tscn` is the 3D Mii: the model plus `mii.gd`, which tints it and plays
+  idle / walk / run. `mii_preview.tscn` puts one Mii on its own little stage
+  (a SubViewport with `own_world_3d`, so it isn't standing on the island).
+- Plan for faces, hats, and portraits: [mii-customization.md](mii-customization.md).
+
+### 8. `scenes/island/`: residents on the 3D island
+- `island_residents.gd` (the `Residents` node in island_3d.tscn) makes one
+  `island_resident` per resident and listens to Net. On `move` it finds the
+  buildings to pass with a breadth-first search over the island's roads, then
+  asks `IslandPaths.route()` for the points along the sand path between them.
+- `island_resident.gd` walks through those points with a **Tween** (a node that
+  animates a property over time) and shows the state: hop = working, "z Z" =
+  asleep, an icon in a bubble = needs you.
+- `island_paths.gd` is the sand path as a rectangle, measured from the model.
+
+### 9. `ui/theme.tres` and `shaders/water.gdshader`
 - **Theme:** every color, font, and pill/button style. Each look is a named
   *type variation* (`PillWhite`, `NavButton`, …) that nodes pick with
   `theme_type_variation`. Double-click the file to open the theme editor.
@@ -115,7 +140,11 @@ tilt the camera. Click **Preview** at the top of the 3D view to look through the
 - Scroll, pinch, or the − / + buttons zoom; click and drag pans. The name pills
   follow their buildings.
 - The connection pill turns green when the backend is running.
-- Everything else (sidebar cards, day, weather, counts) is placeholder data for now.
+- With the backend and simulator running (`uv run python -m mii.seed --loop`),
+  residents walk the sand path between buildings, hop while working, show
+  "z Z" when asleep, and get an icon over their head when they need you. The
+  sidebar fills with their bubbles, and the building pills count who's there.
+- Day, weather, and the News badge are still placeholders.
 
 ## Handy editor tricks
 

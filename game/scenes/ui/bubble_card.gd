@@ -8,8 +8,20 @@ extends PanelContainer
 ## game.tscn sets its own name, colors, and text there. The `set(value):` part
 ## re-applies them so the editor preview updates as you type.
 ##
-## TODO(mvp): build these cards from Net.bubble_shown instead of mock data,
-## and make Answer open the reply box (Net.send_answer).
+## In the game, bubbles_sidebar.gd makes one card per open bubble and calls
+## setup(). Answer opens the reply box: one button per option when the bubble
+## has `options`, otherwise a text field. The reply goes to Net.send_answer();
+## the card disappears when the server sends `bubble_resolved`.
+
+## bubble kind -> tag color
+const KIND_COLORS := {
+	"confused": Color("7553DF"), "struggling": Color("E36F1E"), "permission": Color("D6457A"),
+	"ready": Color("009D85"), "tired": Color("C57722"),
+}
+
+var bubble_id := ""
+var _since := 0.0
+var _place := ""
 
 @export var resident_name := "Mo":
 	set(value):
@@ -47,6 +59,64 @@ extends PanelContainer
 
 func _ready() -> void:
 	_apply()
+	if Engine.is_editor_hint():
+		return  # in the editor, only the preview
+	%AnswerButton.pressed.connect(open_reply)
+	%Send.pressed.connect(func(): _send(%ReplyEdit.text))
+	%ReplyEdit.text_submitted.connect(_send)
+
+
+## Fill the card from a bubble and its resident (dictionaries from Net.island).
+func setup(bubble: Dictionary, resident: Dictionary, place: String) -> void:
+	bubble_id = str(bubble["id"])
+	_since = float(bubble.get("since", Time.get_unix_time_from_system()))
+	_place = place
+	var kind := str(bubble["kind"])
+	var tag: Array = ResidentData.BUBBLE_TAGS.get(kind, ["Needs you", null, "Answer"])
+	resident_name = str(resident.get("name", bubble["agent"]))
+	role = ResidentData.role_line(resident) if resident else ""
+	tag_text = tag[0]
+	tag_icon = tag[1]
+	tag_color = KIND_COLORS.get(kind, Color("7553DF"))
+	quote = "“%s”" % bubble["text"]
+	card_color = Color(str(resident.get("color", "#FFFFFF"))).lerp(Color.WHITE, 0.86)
+	%AnswerButton.text = tag[2]
+
+	# Options become buttons; without options you type a reply.
+	var options = bubble.get("options")
+	%InputRow.visible = not options
+	for child in %Options.get_children():
+		child.queue_free()
+	if options:
+		for option in options:
+			var button := Button.new()
+			button.text = str(option)
+			button.theme_type_variation = &"OutlineButton"
+			button.add_theme_font_size_override("font_size", 13)
+			button.pressed.connect(_send.bind(str(option)))
+			%Options.add_child(button)
+	refresh_age()
+
+
+## Update "Lab · 2m ago". The sidebar calls this every few seconds.
+func refresh_age() -> void:
+	var minutes := int((Time.get_unix_time_from_system() - _since) / 60.0)
+	footer = "%s · %s" % [_place, "just now" if minutes < 1 else "%dm ago" % minutes]
+
+
+func open_reply() -> void:
+	%ReplyBox.visible = true
+	if %InputRow.visible:
+		%ReplyEdit.grab_focus()
+
+
+func _send(text: String) -> void:
+	if text.strip_edges() == "":
+		return
+	Net.send_answer(bubble_id, text.strip_edges())
+	%ReplyBox.visible = false
+	%AnswerButton.disabled = true
+	%AnswerButton.text = "Sent!"
 
 
 func _apply() -> void:

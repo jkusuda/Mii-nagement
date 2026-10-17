@@ -20,7 +20,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
-from mii import events, github, seed
+from mii import events, github, residents, seed
 from mii.agents import make_runner
 from mii.agents.acp import available_brains
 from mii.config import settings
@@ -144,21 +144,39 @@ async def websocket_endpoint(ws: WebSocket, island: str | None = None):
     bus.add_client(ws)
     try:
         while True:
-            await handle_client_message(ws, await ws.receive_text())
+            await handle_client_message(ws, island_id, await ws.receive_text())
     except WebSocketDisconnect:
         pass
     finally:
         bus.remove_client(ws)
 
 
-async def handle_client_message(ws: WebSocket, raw: str) -> None:
+async def handle_client_message(ws: WebSocket, island_id: str, raw: str) -> None:
     """Client -> server messages (docs/protocol.md). Unknown types are ignored."""
     try:
         message = json.loads(raw)
     except json.JSONDecodeError:
         await ws.send_json(events.error("message is not valid JSON"))
         return
-    if message.get("type") == "answer_bubble":
+    if not isinstance(message, dict):
+        await ws.send_json(events.error("message must be a JSON object"))
+        return
+    kind = message.get("type")
+    if kind == "answer_bubble":
         bubble_id = message.get("id", "")
         if not bubbles.answer(bubble_id, str(message.get("response", ""))):
             await ws.send_json(events.error(f"unknown bubble id: {bubble_id}"))
+    elif kind in ("create_resident", "update_resident"):
+        data = message.get("resident")
+        if not isinstance(data, dict):
+            await ws.send_json(events.error(f"{kind} needs a `resident` object"))
+            return
+        save = residents.create_resident if kind == "create_resident" else residents.update_resident
+        try:
+            with Session(db_engine) as session:
+                resident = save(session, island_id, data)
+                event = events.resident(resident)
+        except residents.ResidentError as e:
+            await ws.send_json(events.error(str(e)))
+            return
+        await bus.emit(island_id, event)  # every client, including this one

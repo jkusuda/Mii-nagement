@@ -47,6 +47,9 @@ The client should rebuild its view from scratch when it gets one.
         "id": "jun", "name": "Jun", "job": "planner",
         "brain": "gemini", "model": null, "color": "#F4A261",
         "catchphrase": "Let's map it out!",
+        "bluntness": 0.3, "caution": 0.7, "chattiness": 0.6, "creativity": 0.5,
+        "keys": {"read": "yes", "edit": "ask", "execute": "ask", "fetch": "no"},
+        "gifts": [],
         "state": "idle", "building": "mailbox", "mood": "happy"
       }
     ],
@@ -67,6 +70,13 @@ The client should rebuild its view from scratch when it gets one.
   `claude-code`, `codex`, or `gemini`. `model` is an optional model override
   (`null` = the agent's default). Use it for a small brain badge.
 - `roads[].condition`: `always`, `pass`, or `fail` (see the workflow section below).
+- `residents[].bluntness / caution / chattiness / creativity`: personality
+  sliders, 0.0-1.0 (see `backend/mii/personality.py`).
+- `residents[].keys`: house keys, what the resident may do without asking.
+  Keys `read`, `edit`, `execute`, `fetch` (ACP tool kinds), each `yes`, `ask`,
+  or `no`. Stored only for now; the ACP runner doesn't use them yet.
+- `residents[].gifts`: ids of extra MCP servers (`browser`, `github`, `docs`,
+  `database`, `terminal`). Stored only for now.
 - `bubbles`: bubbles still waiting for an answer.
 - `tasks[].status`: `queued`, `in_progress`, `done`, or `failed`.
 
@@ -154,6 +164,13 @@ A task package's status changed. Lets the client show who is carrying a package.
 {"type": "task", "id": "t_12", "title": "Fix login typo", "status": "in_progress", "building": "lab", "agent": "carlos", "pr_url": null}
 ```
 
+### `resident`
+A resident was created or edited (by any client). Add it, or replace the
+resident with the same `id`. Same shape as `snapshot.island.residents[]`.
+```json
+{"type": "resident", "resident": {"id": "mo_3f2a", "name": "Mo", "job": "coder", "...": "..."}}
+```
+
 ### `error`
 The server couldn't handle something the client sent.
 ```json
@@ -171,6 +188,37 @@ sends `bubble_resolved` to every client.
 {"type": "answer_bubble", "id": "b_3f2a", "response": "Use tests/test_login.py"}
 ```
 If the bubble ID is unknown or already resolved, the server replies with `error`.
+
+### `create_resident`
+Move a new resident onto the island (the resident creator's "Move in"). The
+server picks the `id` and home building (planner → `mailbox`, coder →
+`workshop`, reviewer → `courthouse`), then sends a `resident` event to every
+client.
+```json
+{
+  "type": "create_resident",
+  "resident": {
+    "name": "Mo", "job": "coder", "color": "#9B87F5", "catchphrase": "Let me poke at it!",
+    "brain": "claude-code", "model": null,
+    "bluntness": 0.2, "caution": 0.8, "chattiness": 0.6, "creativity": 0.4,
+    "keys": {"read": "yes", "edit": "ask", "execute": "ask", "fetch": "no"},
+    "gifts": ["docs"]
+  }
+}
+```
+`name` is required (1-20 characters). Every other field is optional and gets a
+default. Unknown `job`, `brain`, key values, or gifts are rejected with `error`.
+
+New residents are placeholders for now: they live on the island and show up in
+the game, but the workflow keeps using the residents assigned to buildings.
+
+### `update_resident`
+Edit a resident (the creator's "Save"). Same fields as `create_resident` plus
+`id`; only the fields you send change. The server replies with a `resident`
+event to every client, or `error` if the id is unknown.
+```json
+{"type": "update_resident", "resident": {"id": "mo_3f2a", "caution": 0.9, "gifts": []}}
+```
 
 ---
 

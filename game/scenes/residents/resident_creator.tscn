@@ -1,0 +1,363 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://scenes/residents/resident_creator.gd" id="1_creator"]
+[ext_resource type="PackedScene" path="res://scenes/mii/mii_preview.tscn" id="2_preview"]
+[ext_resource type="Script" path="res://scenes/ui/answer_button.gd" id="3_answer"]
+[ext_resource type="Texture2D" path="res://assets/icons/map-pin.svg" id="4_pin"]
+[ext_resource type="Texture2D" path="res://assets/icons/shuffle.svg" id="5_shuffle"]
+[ext_resource type="Texture2D" path="res://assets/icons/chevron-right.svg" id="6_chevron"]
+[ext_resource type="Texture2D" path="res://assets/icons/sprout.svg" id="7_sprout"]
+
+[node name="ResidentCreator" type="PanelContainer"]
+size_flags_vertical = 3
+theme_type_variation = &"ScreenPanel"
+script = ExtResource("1_creator")
+
+[node name="Rows" type="VBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Header" type="HBoxContainer" parent="Rows"]
+layout_mode = 2
+
+[node name="Titles" type="VBoxContainer" parent="Rows/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = -2
+
+[node name="Title" type="Label" parent="Rows/Header/Titles"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"ScreenTitle"
+text = "Create a resident"
+
+[node name="Subtitle" type="Label" parent="Rows/Header/Titles"]
+layout_mode = 2
+theme_type_variation = &"LabelMuted"
+text = "A new face. A little personality. Real work."
+
+[node name="MovingPill" type="PanelContainer" parent="Rows/Header"]
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"SoftPill"
+
+[node name="Row" type="HBoxContainer" parent="Rows/Header/MovingPill"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Pin" type="TextureRect" parent="Rows/Header/MovingPill/Row"]
+custom_minimum_size = Vector2(15, 15)
+layout_mode = 2
+size_flags_vertical = 4
+modulate = Color(0.298, 0.576, 0.384, 1)
+texture = ExtResource("4_pin")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="MovingLabel" type="Label" parent="Rows/Header/MovingPill/Row"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"LabelStrong"
+theme_override_font_sizes/font_size = 13
+text = "Moving to Pebble Cove"
+
+[node name="Columns" type="HBoxContainer" parent="Rows"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 12
+
+[node name="PreviewPanel" type="PanelContainer" parent="Rows/Columns"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(196, 0)
+layout_mode = 2
+theme_type_variation = &"SectionPanel"
+
+[node name="Rows" type="VBoxContainer" parent="Rows/Columns/PreviewPanel"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="SpeechPill" type="PanelContainer" parent="Rows/Columns/PreviewPanel/Rows"]
+layout_mode = 2
+theme_type_variation = &"SpeechPill"
+
+[node name="Speech" type="Label" parent="Rows/Columns/PreviewPanel/Rows/SpeechPill"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(1, 0)
+layout_mode = 2
+theme_type_variation = &"LabelStrong"
+theme_override_font_sizes/font_size = 13
+text = "“Let me poke at it!”"
+horizontal_alignment = 1
+autowrap_mode = 3
+
+[node name="Preview" parent="Rows/Columns/PreviewPanel/Rows" instance=ExtResource("2_preview")]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+tooltip_text = "Drag to spin"
+
+[node name="PreviewName" type="Label" parent="Rows/Columns/PreviewPanel/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"CardName"
+text = "Mo"
+horizontal_alignment = 1
+text_overrun_behavior = 3
+
+[node name="JobPill" type="PanelContainer" parent="Rows/Columns/PreviewPanel/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 4
+theme_type_variation = &"TagPill"
+
+[node name="JobLabel" type="Label" parent="Rows/Columns/PreviewPanel/Rows/JobPill"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"TagText"
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+text = "Coder"
+
+[node name="Buttons" type="HBoxContainer" parent="Rows/Columns/PreviewPanel/Rows"]
+layout_mode = 2
+alignment = 1
+theme_override_constants/separation = 6
+
+[node name="SurpriseButton" type="Button" parent="Rows/Columns/PreviewPanel/Rows/Buttons"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 32)
+layout_mode = 2
+focus_mode = 0
+theme_type_variation = &"SelectorButton"
+theme_override_constants/icon_max_width = 15
+text = "Surprise me"
+icon = ExtResource("5_shuffle")
+
+[node name="NextAnimButton" type="Button" parent="Rows/Columns/PreviewPanel/Rows/Buttons"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(32, 32)
+layout_mode = 2
+focus_mode = 0
+tooltip_text = "Try another move"
+theme_type_variation = &"OutlineButton"
+theme_override_constants/icon_max_width = 14
+icon = ExtResource("6_chevron")
+icon_alignment = 1
+
+[node name="IdentityPanel" type="PanelContainer" parent="Rows/Columns"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 1.1
+theme_type_variation = &"SectionPanel"
+
+[node name="Rows" type="VBoxContainer" parent="Rows/Columns/IdentityPanel"]
+layout_mode = 2
+theme_override_constants/separation = 5
+
+[node name="NameLabel" type="Label" parent="Rows/Columns/IdentityPanel/Rows"]
+layout_mode = 2
+theme_type_variation = &"FieldLabel"
+text = "Name"
+
+[node name="NameEdit" type="LineEdit" parent="Rows/Columns/IdentityPanel/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "Give them a name"
+max_length = 20
+
+[node name="ColourLabel" type="Label" parent="Rows/Columns/IdentityPanel/Rows"]
+layout_mode = 2
+theme_type_variation = &"FieldLabel"
+text = "Colour"
+
+[node name="Swatches" type="HBoxContainer" parent="Rows/Columns/IdentityPanel/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 5
+
+[node name="CatchphraseLabel" type="Label" parent="Rows/Columns/IdentityPanel/Rows"]
+layout_mode = 2
+theme_type_variation = &"FieldLabel"
+text = "Catchphrase"
+
+[node name="CatchphraseEdit" type="LineEdit" parent="Rows/Columns/IdentityPanel/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "Let me poke at it!"
+max_length = 40
+
+[node name="JobTitle" type="Label" parent="Rows/Columns/IdentityPanel/Rows"]
+layout_mode = 2
+theme_type_variation = &"FieldLabel"
+text = "Job"
+
+[node name="Jobs" type="HBoxContainer" parent="Rows/Columns/IdentityPanel/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="BrainLabel" type="Label" parent="Rows/Columns/IdentityPanel/Rows"]
+layout_mode = 2
+theme_type_variation = &"FieldLabel"
+text = "Brain"
+
+[node name="BrainRow" type="HBoxContainer" parent="Rows/Columns/IdentityPanel/Rows"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="BrainPicker" type="OptionButton" parent="Rows/Columns/IdentityPanel/Rows/BrainRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 34)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 0
+tooltip_text = "The coding agent that runs this resident (over ACP)"
+theme_type_variation = &"OutlineButton"
+text_overrun_behavior = 3
+
+[node name="ModelEdit" type="LineEdit" parent="Rows/Columns/IdentityPanel/Rows/BrainRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "Optional model override. Leave blank for the agent's default."
+theme_override_font_sizes/font_size = 13
+placeholder_text = "default model"
+
+[node name="PersonalityPanel" type="PanelContainer" parent="Rows/Columns"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"SectionPanel"
+
+[node name="Rows" type="VBoxContainer" parent="Rows/Columns/PersonalityPanel"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Title" type="Label" parent="Rows/Columns/PersonalityPanel/Rows"]
+layout_mode = 2
+theme_type_variation = &"SectionTitle"
+text = "Personality"
+
+[node name="Sliders" type="VBoxContainer" parent="Rows/Columns/PersonalityPanel/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Spacer" type="Control" parent="Rows/Columns/PersonalityPanel/Rows"]
+layout_mode = 2
+size_flags_vertical = 3
+mouse_filter = 2
+
+[node name="NoteBox" type="PanelContainer" parent="Rows/Columns/PersonalityPanel/Rows"]
+layout_mode = 2
+theme_type_variation = &"NoteBox"
+
+[node name="Rows" type="VBoxContainer" parent="Rows/Columns/PersonalityPanel/Rows/NoteBox"]
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="ActTitle" type="Label" parent="Rows/Columns/PersonalityPanel/Rows/NoteBox/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"FieldLabel"
+text = "How Mo will act"
+
+[node name="ActText" type="Label" parent="Rows/Columns/PersonalityPanel/Rows/NoteBox/Rows"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(1, 0)
+layout_mode = 2
+theme_type_variation = &"BodyText"
+theme_override_font_sizes/font_size = 13
+text = "Asks before anything risky, keeps notes short, sticks to well-known solutions, and is gentle with bad news."
+autowrap_mode = 3
+
+[node name="ToolsPanel" type="PanelContainer" parent="Rows/Columns"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"SectionPanel"
+
+[node name="Rows" type="VBoxContainer" parent="Rows/Columns/ToolsPanel"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="GiftsHeader" type="HBoxContainer" parent="Rows/Columns/ToolsPanel/Rows"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Title" type="Label" parent="Rows/Columns/ToolsPanel/Rows/GiftsHeader"]
+layout_mode = 2
+theme_type_variation = &"SectionTitle"
+text = "Gifts"
+
+[node name="Hint" type="Label" parent="Rows/Columns/ToolsPanel/Rows/GiftsHeader"]
+layout_mode = 2
+size_flags_vertical = 8
+theme_type_variation = &"LabelMuted"
+theme_override_font_sizes/font_size = 11
+text = "extra MCP tools"
+
+[node name="Gifts" type="GridContainer" parent="Rows/Columns/ToolsPanel/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/h_separation = 6
+theme_override_constants/v_separation = 6
+columns = 3
+
+[node name="KeysHeader" type="HBoxContainer" parent="Rows/Columns/ToolsPanel/Rows"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Title" type="Label" parent="Rows/Columns/ToolsPanel/Rows/KeysHeader"]
+layout_mode = 2
+theme_type_variation = &"SectionTitle"
+text = "House keys"
+
+[node name="Hint" type="Label" parent="Rows/Columns/ToolsPanel/Rows/KeysHeader"]
+layout_mode = 2
+size_flags_vertical = 8
+theme_type_variation = &"LabelMuted"
+theme_override_font_sizes/font_size = 11
+text = "without asking you"
+
+[node name="Keys" type="GridContainer" parent="Rows/Columns/ToolsPanel/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 6
+columns = 2
+
+[node name="Footer" type="HBoxContainer" parent="Rows"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Sprout" type="TextureRect" parent="Rows/Footer"]
+custom_minimum_size = Vector2(16, 16)
+layout_mode = 2
+size_flags_vertical = 4
+modulate = Color(0.298, 0.576, 0.384, 1)
+texture = ExtResource("7_sprout")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="FooterLabel" type="Label" parent="Rows/Footer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"LabelMuted"
+text = "Mo will move into the Workshop and pick up the next package there."
+
+[node name="CancelButton" type="Button" parent="Rows/Footer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(96, 40)
+layout_mode = 2
+theme_type_variation = &"OutlineButton"
+theme_override_font_sizes/font_size = 15
+text = "Cancel"
+
+[node name="MoveInButton" type="Button" parent="Rows/Footer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(124, 40)
+layout_mode = 2
+theme_type_variation = &"AnswerButton"
+text = "Move in"
+icon = ExtResource("6_chevron")
+icon_alignment = 2
+script = ExtResource("3_answer")

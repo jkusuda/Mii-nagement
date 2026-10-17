@@ -1,9 +1,8 @@
-[gd_scene load_steps=21 format=3]
+[gd_scene load_steps=23 format=3]
 
 [ext_resource type="Theme" path="res://ui/theme.tres" id="1_theme"]
 [ext_resource type="Script" path="res://scenes/game.gd" id="2_game"]
 [ext_resource type="PackedScene" path="res://scenes/island_3d.tscn" id="3_island_3d"]
-[ext_resource type="PackedScene" path="res://scenes/ui/bubble_card.tscn" id="4_bubble_card"]
 [ext_resource type="Texture2D" path="res://assets/icons/chevron-left.svg" id="5_chevron_left"]
 [ext_resource type="Texture2D" path="res://assets/icons/sprout.svg" id="6_sprout"]
 [ext_resource type="Texture2D" path="res://assets/icons/chevron-down.svg" id="7_chevron_down"]
@@ -16,10 +15,10 @@
 [ext_resource type="Texture2D" path="res://assets/ui/friends.png" id="14_friends"]
 [ext_resource type="Texture2D" path="res://assets/ui/news.png" id="15_news"]
 [ext_resource type="Texture2D" path="res://assets/ui/insights.png" id="16_insights"]
-[ext_resource type="Texture2D" path="res://assets/icons/circle-help.svg" id="17_circle_help"]
-[ext_resource type="Texture2D" path="res://assets/icons/check.svg" id="18_check"]
-[ext_resource type="Texture2D" path="res://assets/icons/moon.svg" id="19_moon"]
 [ext_resource type="Texture2D" path="res://assets/icons/smile.svg" id="20_smile"]
+[ext_resource type="PackedScene" path="res://scenes/residents/residents_screen.tscn" id="21_residents"]
+[ext_resource type="PackedScene" path="res://scenes/residents/resident_creator.tscn" id="22_creator"]
+[ext_resource type="Script" path="res://scenes/ui/bubbles_sidebar.gd" id="23_sidebar"]
 
 [node name="Game" type="Control"]
 anchors_preset = 15
@@ -67,6 +66,7 @@ theme_override_constants/separation = 10
 custom_minimum_size = Vector2(0, 48)
 
 [node name="BackButton" type="Button" parent="Margin/Columns/Left/TopBar"]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(48, 48)
 layout_mode = 2
 theme_type_variation = &"BackButton"
@@ -104,11 +104,13 @@ size_flags_vertical = 4
 theme_override_constants/separation = 0
 
 [node name="IslandName" type="Label" parent="Margin/Columns/Left/TopBar/IslandSelector/Row/Names"]
+unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"IslandName"
 text = "Pebble Cove"
 
 [node name="Repo" type="Label" parent="Margin/Columns/Left/TopBar/IslandSelector/Row/Names"]
+unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"LabelMuted"
 text = "your-org/pebble-api"
@@ -203,6 +205,7 @@ text = "Little lives. Real work."
 horizontal_alignment = 2
 
 [node name="IslandFrame" type="Control" parent="Margin/Columns/Left"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 
@@ -289,7 +292,8 @@ layout_mode = 2
 theme_type_variation = &"LabelStrong"
 text = "Island view"
 
-[node name="Count" type="Label" parent="Margin/Columns/Left/IslandFrame/ViewPill/Row"]
+[node name="ResidentCount" type="Label" parent="Margin/Columns/Left/IslandFrame/ViewPill/Row"]
+unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"LabelMuted"
 text = "5 residents"
@@ -401,6 +405,16 @@ theme_type_variation = &"FlatIconButton"
 icon = ExtResource("12_plus")
 icon_alignment = 1
 
+[node name="ResidentsScreen" parent="Margin/Columns/Left" instance=ExtResource("21_residents")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="ResidentCreator" parent="Margin/Columns/Left" instance=ExtResource("22_creator")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
 [node name="NavRow" type="CenterContainer" parent="Margin/Columns/Left"]
 layout_mode = 2
 
@@ -412,12 +426,13 @@ theme_type_variation = &"NavTray"
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="Build" type="Button" parent="Margin/Columns/Left/NavRow/NavTray/Buttons"]
+[node name="IslandNav" type="Button" parent="Margin/Columns/Left/NavRow/NavTray/Buttons"]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(160, 50)
 layout_mode = 2
 theme_type_variation = &"NavButton"
 
-[node name="Content" type="HBoxContainer" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/Build"]
+[node name="Content" type="HBoxContainer" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/IslandNav"]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -428,7 +443,7 @@ mouse_filter = 2
 theme_override_constants/separation = 8
 alignment = 1
 
-[node name="Icon" type="TextureRect" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/Build/Content"]
+[node name="Icon" type="TextureRect" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/IslandNav/Content"]
 custom_minimum_size = Vector2(32, 30)
 layout_mode = 2
 size_flags_vertical = 4
@@ -437,12 +452,13 @@ texture = ExtResource("13_build")
 expand_mode = 1
 stretch_mode = 5
 
-[node name="Text" type="Label" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/Build/Content"]
+[node name="Text" type="Label" parent="Margin/Columns/Left/NavRow/NavTray/Buttons/IslandNav/Content"]
 layout_mode = 2
 theme_type_variation = &"NavText"
-text = "Build"
+text = "Island"
 
 [node name="Residents" type="Button" parent="Margin/Columns/Left/NavRow/NavTray/Buttons"]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(160, 50)
 layout_mode = 2
 theme_type_variation = &"NavButton"
@@ -473,6 +489,7 @@ theme_type_variation = &"NavText"
 text = "Residents"
 
 [node name="News" type="Button" parent="Margin/Columns/Left/NavRow/NavTray/Buttons"]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(160, 50)
 layout_mode = 2
 theme_type_variation = &"NavButton"
@@ -503,6 +520,7 @@ theme_type_variation = &"NavText"
 text = "News"
 
 [node name="Insights" type="Button" parent="Margin/Columns/Left/NavRow/NavTray/Buttons"]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(160, 50)
 layout_mode = 2
 theme_type_variation = &"NavButton"
@@ -552,7 +570,9 @@ vertical_alignment = 1
 theme_override_colors/font_color = Color(0.161, 0.180, 0.314, 1.0)
 
 [node name="Sidebar" type="PanelContainer" parent="Margin/Columns"]
-custom_minimum_size = Vector2(292, 0)
+unique_name_in_owner = true
+script = ExtResource("23_sidebar")
+custom_minimum_size = Vector2(316, 0)
 layout_mode = 2
 theme_type_variation = &"SidebarPanel"
 
@@ -571,11 +591,13 @@ text = "Bubbles"
 size_flags_horizontal = 3
 
 [node name="NeedPill" type="PanelContainer" parent="Margin/Columns/Sidebar/Rows/Header"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 4
 theme_type_variation = &"NeedPill"
 
-[node name="Need" type="Label" parent="Margin/Columns/Sidebar/Rows/Header/NeedPill"]
+[node name="NeedLabel" type="Label" parent="Margin/Columns/Sidebar/Rows/Header/NeedPill"]
+unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"NeedText"
 text = "3 need you"
@@ -588,64 +610,51 @@ theme_type_variation = &"TabsPanel"
 layout_mode = 2
 theme_override_constants/separation = 4
 
-[node name="All" type="Button" parent="Margin/Columns/Sidebar/Rows/Tabs/Row"]
+[node name="TabAll" type="Button" parent="Margin/Columns/Sidebar/Rows/Tabs/Row"]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 30)
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"TabActive"
 text = "All"
 
-[node name="Questions" type="Button" parent="Margin/Columns/Sidebar/Rows/Tabs/Row"]
+[node name="TabQuestions" type="Button" parent="Margin/Columns/Sidebar/Rows/Tabs/Row"]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 30)
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"TabInactive"
 text = "Questions"
 
-[node name="Reviews" type="Button" parent="Margin/Columns/Sidebar/Rows/Tabs/Row"]
+[node name="TabReviews" type="Button" parent="Margin/Columns/Sidebar/Rows/Tabs/Row"]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 30)
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"TabInactive"
 text = "Reviews"
 
-[node name="Cards" type="VBoxContainer" parent="Margin/Columns/Sidebar/Rows"]
+[node name="Scroll" type="ScrollContainer" parent="Margin/Columns/Sidebar/Rows"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="Cards" type="VBoxContainer" parent="Margin/Columns/Sidebar/Rows/Scroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
 theme_override_constants/separation = 10
 
-[node name="MoCard" parent="Margin/Columns/Sidebar/Rows/Cards" instance=ExtResource("4_bubble_card")]
+[node name="EmptyLabel" type="Label" parent="Margin/Columns/Sidebar/Rows/Scroll/Cards"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(1, 60)
 layout_mode = 2
-resident_name = "Mo"
-role = "Tester · Puzzled"
-tag_text = "Confused"
-tag_icon = ExtResource("17_circle_help")
-tag_color = Color(0.459, 0.325, 0.875, 1.0)
-quote = "“Two auth tests fail only on Tuesdays. Should I skip them or fix the clock mock?”"
-footer = "Lab · 2m ago"
-card_color = Color(0.941, 0.925, 1.000, 1.0)
-
-[node name="BeaCard" parent="Margin/Columns/Sidebar/Rows/Cards" instance=ExtResource("4_bubble_card")]
-layout_mode = 2
-resident_name = "Bea"
-role = "Reviewer · Proud"
-tag_text = "Ready"
-tag_icon = ExtResource("18_check")
-tag_color = Color(0.000, 0.616, 0.522, 1.0)
-quote = "“PR #142 'Add rate limiting' is tidy and tested. Want a look?”"
-footer = "Courthouse · 6m ago"
-card_color = Color(0.898, 0.973, 0.937, 1.0)
-
-[node name="OttoCard" parent="Margin/Columns/Sidebar/Rows/Cards" instance=ExtResource("4_bubble_card")]
-layout_mode = 2
-resident_name = "Otto"
-role = "Planner · Sleepy"
-tag_text = "Tired"
-tag_icon = ExtResource("19_moon")
-tag_color = Color(0.773, 0.467, 0.133, 1.0)
-quote = "“My notebook's 92% full. Can I nap and start fresh with a summary?”"
-footer = "Mailbox · 11m ago"
-card_color = Color(1.000, 0.949, 0.871, 1.0)
+theme_type_variation = &"LabelMuted"
+text = "Waiting for the island…"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 3
 
 [node name="MoodCard" type="PanelContainer" parent="Margin/Columns/Sidebar/Rows"]
 layout_mode = 2
@@ -672,7 +681,8 @@ text = "Island mood"
 size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 14
 
-[node name="Summary" type="Label" parent="Margin/Columns/Sidebar/Rows/MoodCard/Row"]
+[node name="MoodSummary" type="Label" parent="Margin/Columns/Sidebar/Rows/MoodCard/Row"]
+unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"LabelStrong"
 text = "4 happy · 1 sleepy"

@@ -28,10 +28,17 @@ Backend design: [docs/architecture.md](docs/architecture.md).
 - [ ] **Insights** (`insights.py`): per resident, per brain, per building stats,
       shown on the Insights screen.
 - [ ] **Replay** (`replay.py`): re-play a recorded good run if anything fails on stage.
-- [ ] **Game: live island**: residents walking with packages on the 3D island
-      (the walk function is the owner's Godot exercise), brain badges, activity thought bubbles, bubbles with option
-      buttons, the Bubbles sidebar filled from real bubbles.
-- [ ] **Resident creator**: name, job, personality sliders, brain, color, catchphrase.
+- [x] **Game: live island**: residents on the 3D island walking the roads, states
+      (working / idle / sleeping), bubble icons, station counts, the Bubbles
+      sidebar from real bubbles with option buttons / typed answers.
+- [ ] **Game: island extras**: packages carried while walking, brain badges,
+      activity thought bubbles, click a resident on the island.
+- [x] **Residents tab + resident creator UI** (Godot): cards, filters, creator with
+      live 3D Mii preview, brain/model, sliders, gifts, house keys.
+- [x] **Resident creator, backend half**: `create_resident` / `update_resident`,
+      `keys` / `gifts` columns (new residents are placeholders for now).
+- [ ] **ACP honours house keys and gifts**, and new residents can be given a building
+      ([docs/mii-customization.md](docs/mii-customization.md)).
 - [ ] **Build mode**: place the 5 building types and draw pass/fail roads.
 
 ## 🌈 Stretch
@@ -40,6 +47,7 @@ Backend design: [docs/architecture.md](docs/architecture.md).
 - [ ] Archipelago: multiple islands / repos
 - [ ] Run several tasks at once (one per free resident)
 - [ ] Friendship meter between residents who hand off to each other
+- [ ] Mii faces (with mood expressions), hats, hair, portraits ([docs/mii-customization.md](docs/mii-customization.md))
 - [ ] Dreams, parties, apartment interiors
 - [ ] Blueprints (save and share island layouts as workflow templates)
 - [ ] Mock-mode web demo (Godot web export + hosted mock backend)

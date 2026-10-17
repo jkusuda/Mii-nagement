@@ -1,0 +1,97 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scenes/residents/residents_screen.gd" id="1_screen"]
+[ext_resource type="Script" path="res://scenes/ui/dashed_button.gd" id="2_dashed"]
+
+[node name="ResidentsScreen" type="PanelContainer"]
+size_flags_vertical = 3
+theme_type_variation = &"ScreenPanel"
+script = ExtResource("1_screen")
+
+[node name="Rows" type="VBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="Header" type="HBoxContainer" parent="Rows"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Titles" type="VBoxContainer" parent="Rows/Header"]
+layout_mode = 2
+theme_override_constants/separation = -2
+
+[node name="Title" type="Label" parent="Rows/Header/Titles"]
+layout_mode = 2
+theme_type_variation = &"ScreenTitle"
+text = "Residents"
+
+[node name="Subtitle" type="Label" parent="Rows/Header/Titles"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"LabelMuted"
+text = "5 little lives on Pebble Cove"
+
+[node name="Filters" type="HBoxContainer" parent="Rows/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 6
+size_flags_vertical = 4
+theme_override_constants/separation = 4
+
+[node name="NewButton" type="Button" parent="Rows/Header"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"OutlineButton"
+theme_override_font_sizes/font_size = 15
+text = "+ New resident"
+
+[node name="Scroll" type="ScrollContainer" parent="Rows"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="Grid" type="GridContainer" parent="Rows/Scroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/h_separation = 14
+theme_override_constants/v_separation = 14
+columns = 3
+
+[node name="InviteButton" type="Button" parent="Rows/Scroll/Grid"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 196)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"FlatIconButton"
+script = ExtResource("2_dashed")
+
+[node name="Content" type="VBoxContainer" parent="Rows/Scroll/Grid/InviteButton"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+alignment = 1
+
+[node name="Plus" type="Label" parent="Rows/Scroll/Grid/InviteButton/Content"]
+layout_mode = 2
+theme_type_variation = &"ScreenTitle"
+text = "+"
+horizontal_alignment = 1
+
+[node name="Title" type="Label" parent="Rows/Scroll/Grid/InviteButton/Content"]
+layout_mode = 2
+theme_type_variation = &"SectionTitle"
+text = "Invite a resident"
+horizontal_alignment = 1
+
+[node name="Hint" type="Label" parent="Rows/Scroll/Grid/InviteButton/Content"]
+layout_mode = 2
+theme_type_variation = &"LabelMuted"
+text = "Pick a colour, a job, and a brain"
+horizontal_alignment = 1

@@ -9,23 +9,38 @@ extends Node
 ## script *emits* signals, and other scripts *connect* functions to them:
 ##     Net.mood_changed.connect(_on_mood_changed)
 ## so they don't need to know anything about WebSockets.
+##
+## Net also keeps `island`: the last snapshot, updated by every event after it.
+## Screens draw from `island` and redraw on `island_changed`, so everything they
+## show comes from the backend. Signals like `agent_moved` are still there for
+## things that need the moment itself (starting a walk animation).
 
 signal connected
 signal disconnected
 signal snapshot_received(island: Dictionary)
 signal agent_state_changed(agent: String, state: String, building: String)
 signal agent_moved(agent: String, from_building: String, to_building: String)
-signal bubble_shown(agent: String, kind: String, bubble_id: String, text: String)
+signal bubble_shown(bubble: Dictionary)
 signal bubble_resolved(bubble_id: String)
 signal handoff_happened(from_agent: String, to_agent: String, task: String, outcome: String)
 signal mood_changed(agent: String, mood: String)
 signal task_updated(task: Dictionary)
 signal server_error(message: String)
+## A resident was created or edited (by this client or another one).
+signal resident_updated(resident: Dictionary)
+signal activity_reported(agent: String, text: String)
+## Something in `island` changed (after any of the signals above).
+signal island_changed
 
-const URL := "ws://localhost:8000/ws"
+## Set MII_SERVER (e.g. "localhost:8001") to use another backend.
+var url := "ws://%s/ws" % (OS.get_environment("MII_SERVER") if OS.has_environment("MII_SERVER") else "localhost:8000")
 const RECONNECT_SECONDS := 2.0
 
 var is_online := false
+## The latest island from the server: the last snapshot, kept up to date with
+## every event since. Empty until the first snapshot arrives. Each open bubble
+## also gets `"since"`: when we first saw it (Unix seconds), for "2m ago".
+var island := {}
 
 var _socket := WebSocketPeer.new()
 var _seconds_until_retry := 0.0
@@ -59,6 +74,26 @@ func _process(delta: float) -> void:
 				_try_connect()
 
 
+## The resident fields the server accepts (docs/protocol.md, create_resident).
+const RESIDENT_FIELDS := ["id", "name", "job", "color", "catchphrase", "brain", "model",
+	"bluntness", "caution", "chattiness", "creativity", "keys", "gifts"]
+
+
+## Create a resident (no "id") or edit one (with "id"). The server answers with a
+## `resident` event (-> resident_updated) or an `error` (-> server_error).
+func send_resident(resident: Dictionary) -> bool:
+	if not is_online:
+		push_warning("Not connected; resident not sent.")
+		return false
+	var data := {}
+	for field in RESIDENT_FIELDS:
+		if resident.has(field):
+			data[field] = resident[field]
+	var kind := "update_resident" if data.has("id") else "create_resident"
+	_socket.send_text(JSON.stringify({"type": kind, "resident": data}))
+	return true
+
+
 ## Answer a resident's bubble. The server replies with `bubble_resolved`.
 func send_answer(bubble_id: String, text: String) -> void:
 	if not is_online:
@@ -70,9 +105,9 @@ func send_answer(bubble_id: String, text: String) -> void:
 func _try_connect() -> void:
 	_seconds_until_retry = RECONNECT_SECONDS
 	_socket = WebSocketPeer.new()  # a fresh peer for each attempt
-	var error := _socket.connect_to_url(URL)
+	var error := _socket.connect_to_url(url)
 	if error != OK:
-		push_warning("Could not start connecting to %s (error %d)" % [URL, error])
+		push_warning("Could not start connecting to %s (error %d)" % [url, error])
 
 
 func _handle_message(text: String) -> void:
@@ -82,22 +117,107 @@ func _handle_message(text: String) -> void:
 		return
 
 	# Unknown event types are ignored on purpose (see the rules in docs/protocol.md).
+	# Each branch updates `island` first, then tells listeners.
 	match event.get("type", ""):
 		"snapshot":
-			snapshot_received.emit(event["island"])
+			island = event["island"]
+			for bubble in island.get("bubbles", []):
+				bubble["since"] = Time.get_unix_time_from_system()
+			snapshot_received.emit(island)
+		"resident":
+			_remember_resident(event["resident"])
+			resident_updated.emit(event["resident"])
 		"agent_state":
-			agent_state_changed.emit(str(event["agent"]), str(event["state"]), str(event.get("building", "")))
+			var building := _str(event.get("building"))
+			_patch_resident(event["agent"], {"state": event["state"], "building": building})
+			agent_state_changed.emit(str(event["agent"]), str(event["state"]), building)
 		"move":
-			agent_moved.emit(str(event["agent"]), str(event["from"]), str(event["to"]))
+			agent_moved.emit(str(event["agent"]), _str(event["from"]), _str(event["to"]))
 		"bubble":
-			bubble_shown.emit(str(event["agent"]), str(event["kind"]), str(event["id"]), str(event["text"]))
+			var bubble := {
+				"id": str(event["id"]), "agent": str(event["agent"]), "kind": str(event["kind"]),
+				"text": str(event["text"]), "options": event.get("options"),
+				"since": Time.get_unix_time_from_system(),
+			}
+			_bubbles().append(bubble)
+			bubble_shown.emit(bubble)
 		"bubble_resolved":
+			var open := _bubbles()
+			for i in range(open.size() - 1, -1, -1):
+				if open[i]["id"] == event["id"]:
+					open.remove_at(i)
 			bubble_resolved.emit(str(event["id"]))
 		"handoff":
 			handoff_happened.emit(str(event["from"]), str(event["to"]), str(event["task"]), str(event["outcome"]))
+			return  # nothing in `island` changes
 		"mood":
+			_patch_resident(event["agent"], {"mood": event["mood"]})
 			mood_changed.emit(str(event["agent"]), str(event["mood"]))
+		"activity":
+			_patch_resident(event["agent"], {"activity": event["text"]})
+			activity_reported.emit(str(event["agent"]), str(event["text"]))
 		"task":
+			_remember_task(event)
 			task_updated.emit(event)
 		"error":
 			server_error.emit(str(event["message"]))
+			return
+		_:
+			return
+	island_changed.emit()
+
+
+## The resident with this id from `island`, or {} if there's none.
+func find_resident(agent_id: String) -> Dictionary:
+	for r in island.get("residents", []):
+		if r["id"] == agent_id:
+			return r
+	return {}
+
+
+## The building with this id from `island`, or {} if there's none.
+func find_building(building_id: String) -> Dictionary:
+	for b in island.get("buildings", []):
+		if b["id"] == building_id:
+			return b
+	return {}
+
+
+func _bubbles() -> Array:
+	if not island.has("bubbles"):
+		island["bubbles"] = []
+	return island["bubbles"]
+
+
+func _patch_resident(agent_id, changes: Dictionary) -> void:
+	var r := find_resident(str(agent_id))
+	if not r.is_empty():
+		r.merge(changes, true)
+
+
+func _remember_resident(data: Dictionary) -> void:
+	var r := find_resident(str(data["id"]))
+	if r.is_empty():
+		if not island.has("residents"):
+			island["residents"] = []
+		island["residents"].append(data)
+	else:
+		r.merge(data, true)
+
+
+## The snapshot only lists queued and in-progress tasks; keep it that way.
+func _remember_task(event: Dictionary) -> void:
+	var tasks: Array = island.get("tasks", [])
+	for i in range(tasks.size() - 1, -1, -1):
+		if tasks[i]["id"] == event["id"]:
+			tasks.remove_at(i)
+	if event["status"] in ["queued", "in_progress"]:
+		var t := event.duplicate()
+		t.erase("type")
+		tasks.append(t)
+	island["tasks"] = tasks
+
+
+## JSON null -> "" (instead of the string "<null>").
+func _str(value) -> String:
+	return "" if value == null else str(value)

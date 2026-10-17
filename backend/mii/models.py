@@ -22,6 +22,9 @@ def utcnow() -> datetime:
 
 # --- Tables -----------------------------------------------------------------
 
+# House keys: ACP tool kind group -> "yes" | "ask" | "no" (docs/protocol.md).
+DEFAULT_KEYS = {"read": "yes", "edit": "ask", "execute": "ask", "fetch": "no"}
+
 
 class Island(SQLModel, table=True):
     id: str = Field(primary_key=True)
@@ -45,6 +48,11 @@ class Resident(SQLModel, table=True):
     model: str | None = None  # optional model override; None = the agent's default
     catchphrase: str = ""
     color: str = "#FFFFFF"
+
+    # Set in the resident creator. Stored only for now (see docs/mii-customization.md):
+    # keys = what the agent may do without asking, gifts = extra MCP server ids.
+    keys: dict = Field(default_factory=lambda: dict(DEFAULT_KEYS), sa_column=Column(JSON))
+    gifts: list = Field(default_factory=list, sa_column=Column(JSON))
 
     # Live state, shown in the game
     state: str = "idle"  # idle | walking | working | sleeping
@@ -140,6 +148,12 @@ def resident_to_dict(r: Resident) -> dict:
         "model": r.model,
         "color": r.color,
         "catchphrase": r.catchphrase,
+        "bluntness": r.bluntness,
+        "caution": r.caution,
+        "chattiness": r.chattiness,
+        "creativity": r.creativity,
+        "keys": r.keys,
+        "gifts": r.gifts,
         "state": r.state,
         "building": r.building_id,
         "mood": r.mood,

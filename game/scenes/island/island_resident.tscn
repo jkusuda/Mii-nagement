@@ -1,0 +1,63 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scenes/island/island_resident.gd" id="1_resident"]
+[ext_resource type="PackedScene" path="res://scenes/mii/mii.tscn" id="2_mii"]
+[ext_resource type="FontFile" path="res://assets/font/DreamLife-V1.0.0_by_MaxiGamer.ttf" id="3_font"]
+[ext_resource type="Texture2D" path="res://assets/ui/bubble_disc.svg" id="4_disc"]
+
+[node name="IslandResident" type="Node3D"]
+script = ExtResource("1_resident")
+
+[node name="Mii" parent="." instance=ExtResource("2_mii")]
+unique_name_in_owner = true
+
+[node name="NameTag" type="Label3D" parent="."]
+unique_name_in_owner = true
+position = Vector3(0, 3.1, 0)
+pixel_size = 0.022
+billboard = 1
+no_depth_test = true
+render_priority = 1
+outline_render_priority = 0
+modulate = Color(0.161, 0.18, 0.314, 1)
+outline_modulate = Color(1, 1, 1, 1)
+text = "Mo"
+font = ExtResource("3_font")
+font_size = 44
+outline_size = 14
+
+[node name="Bubble" type="Node3D" parent="."]
+unique_name_in_owner = true
+visible = false
+position = Vector3(0, 4.3, 0)
+
+[node name="Disc" type="Sprite3D" parent="Bubble"]
+pixel_size = 0.032
+billboard = 1
+no_depth_test = true
+render_priority = 2
+texture = ExtResource("4_disc")
+
+[node name="BubbleIcon" type="Sprite3D" parent="Bubble"]
+unique_name_in_owner = true
+position = Vector3(0, 0.08, 0)
+pixel_size = 0.022
+billboard = 1
+no_depth_test = true
+render_priority = 3
+
+[node name="Zz" type="Label3D" parent="."]
+unique_name_in_owner = true
+visible = false
+position = Vector3(1.1, 3.9, 0)
+pixel_size = 0.025
+billboard = 1
+no_depth_test = true
+render_priority = 1
+outline_render_priority = 0
+modulate = Color(0.161, 0.18, 0.314, 1)
+outline_modulate = Color(1, 1, 1, 1)
+text = "z Z"
+font = ExtResource("3_font")
+font_size = 48
+outline_size = 14

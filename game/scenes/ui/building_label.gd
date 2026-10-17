@@ -6,8 +6,9 @@ extends PanelContainer
 ## world?" with unproject_position(), and move the pill there. So the pill
 ## sticks to its building while you drag and zoom.
 
-## Where the pill sits relative to the building's base: just in front of the door.
-const FRONT_OFFSET := Vector3(0, 0, 4.4)
+## Where the pill sits relative to the building's center: just above the roof,
+## so residents standing in front of the building stay visible.
+const FRONT_OFFSET := Vector3(0, 3.4, 0)
 
 var target: Node3D
 var camera: Camera3D
@@ -29,6 +30,14 @@ func setup(building: Node3D, view_camera: Camera3D, title: String, icon: Texture
 	var style: StyleBoxFlat = get_theme_stylebox("panel", "BadgeCircle").duplicate()
 	style.bg_color = color
 	badge.add_theme_stylebox_override("panel", style)
+
+
+## How many residents are here (0 included). `title` renames the pill (the
+## backend's building name), unless it's empty.
+func show_count(count: int, title := "") -> void:
+	count_label.text = str(count)
+	if title:
+		name_label.text = title
 
 
 func _process(_delta: float) -> void:

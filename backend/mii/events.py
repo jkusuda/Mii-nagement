@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 from sqlmodel import Session
 
-from mii.models import Event, Task, task_to_dict
+from mii.models import Event, Task, resident_to_dict, task_to_dict
 
 log = logging.getLogger(__name__)
 
@@ -54,6 +54,10 @@ def activity(agent: str, text: str) -> dict:
 
 def task(t: Task) -> dict:
     return {"type": "task", **task_to_dict(t)}
+
+
+def resident(r) -> dict:
+    return {"type": "resident", "resident": resident_to_dict(r)}
 
 
 def error(message: str) -> dict:

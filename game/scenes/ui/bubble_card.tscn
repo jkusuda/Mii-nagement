@@ -91,6 +91,7 @@ theme_type_variation = &"LabelMuted"
 text = "Lab · 2m ago"
 
 [node name="AnswerButton" type="Button" parent="Rows/FooterRow"]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(92, 30)
 layout_mode = 2
 theme_type_variation = &"AnswerButton"
@@ -98,3 +99,34 @@ text = "Answer"
 icon = ExtResource("3_chevron")
 icon_alignment = 2
 script = ExtResource("2_answer")
+
+[node name="ReplyBox" type="VBoxContainer" parent="Rows"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Options" type="HFlowContainer" parent="Rows/ReplyBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/h_separation = 6
+theme_override_constants/v_separation = 6
+
+[node name="InputRow" type="HBoxContainer" parent="Rows/ReplyBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="ReplyEdit" type="LineEdit" parent="Rows/ReplyBox/InputRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 13
+placeholder_text = "Your answer"
+
+[node name="Send" type="Button" parent="Rows/ReplyBox/InputRow"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"OutlineButton"
+theme_override_font_sizes/font_size = 13
+text = "Send"

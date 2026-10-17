@@ -36,6 +36,7 @@ backend/mii/
   personality.py   job + sliders -> the prompt preamble
   events.py        event bus (save + broadcast) + bubbles
   engine.py        island graph + building handlers + task loop
+  residents.py     create / edit residents (from the game's resident creator)
   sandbox.py       one git worktree per task + is_inside() path check
   agents/
     __init__.py    AgentJob, StepResult, BrainRunner, make_runner()
@@ -54,7 +55,7 @@ backend/mii/
 | Table | What it holds |
 |---|---|
 | `Island` | id, name, GitHub repo |
-| `Resident` | name, job, 4 personality sliders, `brain`, optional `model`, catchphrase, color, live state / building / mood |
+| `Resident` | name, job, 4 personality sliders, `brain`, optional `model`, catchphrase, color, house `keys`, `gifts`, live state / building / mood |
 | `Building` | type, name, lot position, resident |
 | `Road` | from, to, condition |
 | `Task` | title, status, where the package is, who carries it, `issue_number`, `branch`, `pr_url` |
@@ -87,7 +88,7 @@ backend/mii/
 
 | Endpoint | Purpose |
 |---|---|
-| `WS /ws` | snapshot + live events; the game sends `answer_bubble` |
+| `WS /ws` | snapshot + live events; the game sends `answer_bubble`, `create_resident`, `update_resident` |
 | `GET /health` | is the server up, which mode |
 | `GET /brains` | which agent CLIs are installed |
 | `GET /islands/{id}` | the island snapshot |
