@@ -21,6 +21,7 @@
 [ext_resource type="Script" uid="uid://bw8qqfpb1kegp" path="res://scenes/ui/bubbles_sidebar.gd" id="23_sidebar"]
 [ext_resource type="PackedScene" path="res://scenes/insights/insights_screen.tscn" id="24_insights"]
 [ext_resource type="PackedScene" path="res://scenes/news/news_screen.tscn" id="25_news"]
+[ext_resource type="PackedScene" path="res://scenes/home/home.tscn" id="26_home"]
 
 [node name="Game" type="Control" unique_id=146576168]
 layout_mode = 3
@@ -43,6 +44,7 @@ mouse_filter = 2
 color = Color(0.412, 0.831, 0.922, 1)
 
 [node name="Margin" type="MarginContainer" parent="." unique_id=1687314651]
+unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -78,6 +80,9 @@ icon_alignment = 1
 expand_icon = true
 
 [node name="IslandSelector" type="PanelContainer" parent="Margin/Columns/Left/TopBar" unique_id=1790632703]
+unique_name_in_owner = true
+mouse_default_cursor_shape = 2
+tooltip_text = "Switch island"
 layout_mode = 2
 theme_type_variation = &"PillYellowOutline"
 
@@ -236,7 +241,7 @@ stretch = true
 handle_input_locally = false
 msaa_3d = 2
 size = Vector2i(908, 550)
-render_target_update_mode = 4
+render_target_update_mode = 2
 
 [node name="Island3D" parent="Margin/Columns/Left/IslandFrame/Mask/ViewportContainer/SubViewport" unique_id=1237179246 instance=ExtResource("3_island_3d")]
 unique_name_in_owner = true
@@ -695,3 +700,8 @@ layout_mode = 2
 theme_type_variation = &"LabelStrong"
 theme_override_font_sizes/font_size = 14
 text = "4 happy · 1 sleepy"
+
+[node name="Home" parent="." instance=ExtResource("26_home")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1

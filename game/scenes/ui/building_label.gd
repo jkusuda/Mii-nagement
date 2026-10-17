@@ -41,7 +41,7 @@ func show_count(count: int, title := "") -> void:
 
 
 func _process(_delta: float) -> void:
-	if target == null or camera == null:
+	if target == null or camera == null or not target.visible:
 		return
 	var world_point := target.global_position + FRONT_OFFSET
 	visible = not camera.is_position_behind(world_point)

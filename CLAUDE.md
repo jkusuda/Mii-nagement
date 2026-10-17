@@ -42,13 +42,16 @@ backend/mii/
   watch.py        tiny WebSocket client that prints events
 backend/tests/    pytest
 game/
-  net.gd          autoload singleton `Net`: WebSocket -> signals, send_answer()
+  net.gd          autoload singleton `Net`: WebSocket -> signals, send_answer(), visit_island()
+  islands.gd      autoload `Islands`: every island (GET /islands + snapshots) + 3D thumbnails
   scenes/game.tscn     MAIN SCENE: top bar, framed 3D island, nav, Bubbles sidebar. Driven by
                        Net.island (kept live by net.gd); day/weather are still placeholders.
   scenes/island_3d.tscn  3D world (models, sun, water); rendered inside game.tscn's SubViewport
   scenes/camera_rig.gd   zoom (wheel/trackpad/buttons) + drag-to-pan
   scenes/residents/    Residents tab (residents_screen, resident_card), resident_creator,
                        resident_data (jobs/brains/keys/gifts lists + mock residents)
+  scenes/home/         Archipelago home screen (island cards, Waiting on you), island_card,
+                       island_dropdown (switcher under the island name in the top bar)
   scenes/news/         News tab: news_stories turns Net events (+ GET /islands/{id}/events, planned)
                        into stories; unread count drives the nav badge; daily digest setting
   scenes/insights/     Insights tab: GET /islands/{id}/insights (shape in architecture.md) + live
@@ -112,7 +115,7 @@ On the Windows machine, Godot 4.7.2 lives in Downloads (use the `_console.exe` f
   (subscription login or API key env var). Keep brain-specific details inside
   that table/runner, never in the engine, protocol, or game.
 - **Keep the backend small.** Out of scope on purpose: LangChain/direct API
-  runners, friendship, ML router, multiple islands, parallel tasks. Island News
+  runners, friendship, ML router, parallel tasks. Island News
   is written in the game from stored events; the backend only serves them.
 - **No migrations yet.** After changing a table in `models.py`, reset the dev
   database: `uv run python -m mii.seed --reset` (stop the server first).

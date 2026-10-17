@@ -1,0 +1,323 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://scenes/home/home.gd" id="1_home"]
+[ext_resource type="Texture2D" path="res://assets/icons/sun.svg" id="2_sun"]
+[ext_resource type="Texture2D" path="res://assets/icons/map.svg" id="3_map"]
+[ext_resource type="Texture2D" path="res://assets/icons/plus.svg" id="4_plus"]
+[ext_resource type="Texture2D" path="res://assets/icons/user.svg" id="5_user"]
+[ext_resource type="Texture2D" path="res://assets/icons/settings.svg" id="6_settings"]
+[ext_resource type="Script" path="res://scenes/ui/dashed_button.gd" id="7_dashed"]
+
+[node name="Home" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_home")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.412, 0.831, 0.922, 1)
+
+[node name="Margin" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 18
+theme_override_constants/margin_bottom = 16
+
+[node name="Columns" type="HBoxContainer" parent="Margin"]
+layout_mode = 2
+theme_override_constants/separation = 18
+
+[node name="Left" type="VBoxContainer" parent="Margin/Columns"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+
+[node name="TopBar" type="HBoxContainer" parent="Margin/Columns/Left"]
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="Logo" type="VBoxContainer" parent="Margin/Columns/Left/TopBar"]
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_constants/separation = -2
+
+[node name="Title" type="Label" parent="Margin/Columns/Left/TopBar/Logo"]
+layout_mode = 2
+theme_type_variation = &"LogoTitle"
+theme_override_font_sizes/font_size = 28
+text = "Mii-nagement"
+
+[node name="Tagline" type="Label" parent="Margin/Columns/Left/TopBar/Logo"]
+layout_mode = 2
+theme_type_variation = &"LogoTagline"
+text = "Little lives. Real work."
+
+[node name="ConnectedPill" type="PanelContainer" parent="Margin/Columns/Left/TopBar"]
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"PillYellow"
+
+[node name="Row" type="HBoxContainer" parent="Margin/Columns/Left/TopBar/ConnectedPill"]
+layout_mode = 2
+theme_override_constants/separation = 7
+
+[node name="StatusDot" type="Panel" parent="Margin/Columns/Left/TopBar/ConnectedPill/Row"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(10, 10)
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"StatusDot"
+
+[node name="StatusLabel" type="Label" parent="Margin/Columns/Left/TopBar/ConnectedPill/Row"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"LabelStrong"
+text = "Connected"
+
+[node name="SyncedLabel" type="Label" parent="Margin/Columns/Left/TopBar/ConnectedPill/Row"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"LabelMuted"
+text = "1 island synced"
+
+[node name="DayPill" type="PanelContainer" parent="Margin/Columns/Left/TopBar"]
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"PillNavy"
+
+[node name="Row" type="HBoxContainer" parent="Margin/Columns/Left/TopBar/DayPill"]
+layout_mode = 2
+theme_override_constants/separation = 7
+
+[node name="Sun" type="TextureRect" parent="Margin/Columns/Left/TopBar/DayPill/Row"]
+custom_minimum_size = Vector2(18, 18)
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+modulate = Color(0.992, 0.788, 0.008, 1)
+texture = ExtResource("2_sun")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Day" type="Label" parent="Margin/Columns/Left/TopBar/DayPill/Row"]
+layout_mode = 2
+theme_type_variation = &"WhiteStrong"
+text = "Day 12 · 10:42"
+
+[node name="Frame" type="Control" parent="Margin/Columns/Left"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Water" type="Panel" parent="Margin/Columns/Left/Frame"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_type_variation = &"FrameMask"
+
+[node name="Border" type="Panel" parent="Margin/Columns/Left/Frame"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_type_variation = &"FrameBorder"
+
+[node name="Inner" type="MarginContainer" parent="Margin/Columns/Left/Frame"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 18
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 18
+theme_override_constants/margin_bottom = 14
+
+[node name="Rows" type="VBoxContainer" parent="Margin/Columns/Left/Frame/Inner"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="ArchPill" type="PanelContainer" parent="Margin/Columns/Left/Frame/Inner/Rows"]
+layout_mode = 2
+size_flags_horizontal = 0
+mouse_filter = 2
+theme_type_variation = &"PillWhite"
+
+[node name="Row" type="HBoxContainer" parent="Margin/Columns/Left/Frame/Inner/Rows/ArchPill"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 7
+
+[node name="Map" type="TextureRect" parent="Margin/Columns/Left/Frame/Inner/Rows/ArchPill/Row"]
+custom_minimum_size = Vector2(17, 17)
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+modulate = Color(0.161, 0.18, 0.314, 1)
+texture = ExtResource("3_map")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Title" type="Label" parent="Margin/Columns/Left/Frame/Inner/Rows/ArchPill/Row"]
+layout_mode = 2
+theme_type_variation = &"LabelStrong"
+text = "Archipelago"
+
+[node name="Count" type="Label" parent="Margin/Columns/Left/Frame/Inner/Rows/ArchPill/Row"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"LabelMuted"
+text = "1 island"
+
+[node name="Scroll" type="ScrollContainer" parent="Margin/Columns/Left/Frame/Inner/Rows"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="Grid" type="GridContainer" parent="Margin/Columns/Left/Frame/Inner/Rows/Scroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/h_separation = 24
+theme_override_constants/v_separation = 16
+columns = 2
+
+[node name="NewIsland" type="Button" parent="Margin/Columns/Left/Frame/Inner/Rows/Scroll/Grid"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(250, 190)
+layout_mode = 2
+size_flags_horizontal = 3
+tooltip_text = "Island creation is coming next"
+theme_type_variation = &"FlatIconButton"
+disabled = true
+script = ExtResource("7_dashed")
+
+[node name="Content" type="VBoxContainer" parent="Margin/Columns/Left/Frame/Inner/Rows/Scroll/Grid/NewIsland"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+alignment = 1
+
+[node name="Plus" type="Label" parent="Margin/Columns/Left/Frame/Inner/Rows/Scroll/Grid/NewIsland/Content"]
+layout_mode = 2
+theme_type_variation = &"ScreenTitle"
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+text = "+"
+horizontal_alignment = 1
+
+[node name="Title" type="Label" parent="Margin/Columns/Left/Frame/Inner/Rows/Scroll/Grid/NewIsland/Content"]
+layout_mode = 2
+theme_type_variation = &"SectionTitle"
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+text = "New island"
+horizontal_alignment = 1
+
+[node name="Hint" type="Label" parent="Margin/Columns/Left/Frame/Inner/Rows/Scroll/Grid/NewIsland/Content"]
+layout_mode = 2
+theme_type_variation = &"LabelMuted"
+theme_override_colors/font_color = Color(1, 1, 1, 0.85)
+text = "Link a repo, coming next"
+horizontal_alignment = 1
+
+[node name="NavRow" type="CenterContainer" parent="Margin/Columns/Left"]
+layout_mode = 2
+
+[node name="NavTray" type="PanelContainer" parent="Margin/Columns/Left/NavRow"]
+layout_mode = 2
+theme_type_variation = &"NavTray"
+
+[node name="Buttons" type="HBoxContainer" parent="Margin/Columns/Left/NavRow/NavTray"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="NewIslandNav" type="Button" parent="Margin/Columns/Left/NavRow/NavTray/Buttons"]
+custom_minimum_size = Vector2(180, 50)
+layout_mode = 2
+tooltip_text = "Island creation is coming next"
+theme_type_variation = &"NavButton"
+disabled = true
+text = "New island"
+icon = ExtResource("4_plus")
+
+[node name="Caretaker" type="Button" parent="Margin/Columns/Left/NavRow/NavTray/Buttons"]
+custom_minimum_size = Vector2(180, 50)
+layout_mode = 2
+tooltip_text = "Coming soon"
+theme_type_variation = &"NavButton"
+disabled = true
+text = "Caretaker"
+icon = ExtResource("5_user")
+
+[node name="Settings" type="Button" parent="Margin/Columns/Left/NavRow/NavTray/Buttons"]
+custom_minimum_size = Vector2(180, 50)
+layout_mode = 2
+tooltip_text = "Coming soon"
+theme_type_variation = &"NavButton"
+disabled = true
+text = "Settings"
+icon = ExtResource("6_settings")
+
+[node name="Sidebar" type="PanelContainer" parent="Margin/Columns"]
+custom_minimum_size = Vector2(316, 0)
+layout_mode = 2
+theme_type_variation = &"SidebarPanel"
+
+[node name="Rows" type="VBoxContainer" parent="Margin/Columns/Sidebar"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Titles" type="VBoxContainer" parent="Margin/Columns/Sidebar/Rows"]
+layout_mode = 2
+theme_override_constants/separation = -2
+
+[node name="Title" type="Label" parent="Margin/Columns/Sidebar/Rows/Titles"]
+layout_mode = 2
+theme_type_variation = &"SidebarTitle"
+theme_override_font_sizes/font_size = 30
+text = "Waiting on you"
+
+[node name="WaitingSummary" type="Label" parent="Margin/Columns/Sidebar/Rows/Titles"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"LabelMuted"
+text = "Nobody's waiting"
+
+[node name="Scroll" type="ScrollContainer" parent="Margin/Columns/Sidebar/Rows"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="Groups" type="VBoxContainer" parent="Margin/Columns/Sidebar/Rows/Scroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 10

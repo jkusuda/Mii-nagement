@@ -5,6 +5,7 @@ Run from backend/:  uv run uvicorn mii.server:app --reload --port 8000
     WS   /ws?island=<id>               snapshot + live events (docs/protocol.md)
     GET  /health                       is the server up? which mode?
     GET  /brains                       which agent CLIs are installed
+    GET  /islands                      every island: id, name, repo
     GET  /islands/{id}                 the island snapshot
     POST /islands/{id}/tasks           {"title": "...", "description": "..."} or {"issue": 42}
     GET  /islands/{id}/insights        stats for the Insights screen
@@ -83,6 +84,13 @@ def brains() -> dict:
     return available_brains()
 
 
+@app.get("/islands")
+def list_islands() -> dict:
+    with Session(db_engine) as session:
+        islands = session.exec(select(Island).order_by(Island.name)).all()
+        return {"islands": [{"id": i.id, "name": i.name, "repo": i.repo} for i in islands]}
+
+
 @app.get("/islands/{island_id}")
 def get_island(island_id: str) -> dict:
     with Session(db_engine) as session:
@@ -141,7 +149,7 @@ async def websocket_endpoint(ws: WebSocket, island: str | None = None):
             return
     await ws.send_json({"type": "snapshot", "island": snapshot})
 
-    bus.add_client(ws)
+    bus.add_client(ws, island_id)  # only this island's events
     try:
         while True:
             await handle_client_message(ws, island_id, await ws.receive_text())

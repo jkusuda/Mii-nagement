@@ -91,3 +91,18 @@ async def test_websocket_create_broadcasts_resident(db, monkeypatch):
     # A bad message only goes back to the sender, as an error.
     await server.handle_client_message(sender, "sunny", json.dumps({"type": "create_resident", "resident": {}}))
     assert sender.sent[-1]["type"] == "error" and len(watcher.sent) == 1
+
+
+async def test_bus_sends_events_only_to_that_islands_clients(db):
+    bus = events.EventBus(db)
+    sunny, other, everything = FakeClient(), FakeClient(), FakeClient()
+    bus.add_client(sunny, "sunny")
+    bus.add_client(other, "maple")
+    bus.add_client(everything)
+    await bus.emit("sunny", events.mood("jun", "proud"))
+    assert len(sunny.sent) == 1 and other.sent == [] and len(everything.sent) == 1
+
+
+def test_list_islands(db, monkeypatch):
+    monkeypatch.setattr(server, "db_engine", db)
+    assert server.list_islands() == {"islands": [{"id": "sunny", "name": "Sunny Isle", "repo": None}]}

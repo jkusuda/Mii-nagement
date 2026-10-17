@@ -13,13 +13,13 @@ extends Control
 ## the screen". That's what lets the 3D world sit in a rounded frame next to
 ## normal 2D UI instead of filling the whole window.
 ##
-## TODO(mvp): Build mode and the island picker.
+## TODO(mvp): Build mode, island creation.
 ## TODO(mvp): real day/time and weather from the backend.
 
 const BuildingLabelScene := preload("res://scenes/ui/building_label.tscn")
 
-## Building id (backend), default label, icon, color. The node in island_3d.tscn
-## is the id in PascalCase ("post_office" -> PostOffice).
+## Building type (backend), default label, icon, color. The node in
+## island_3d.tscn is the type in PascalCase ("post_office" -> PostOffice).
 const BUILDINGS := [
 	["mailbox", "Mailbox", preload("res://assets/icons/mail.svg"), Color("F5708F")],
 	["workshop", "Workshop", preload("res://assets/icons/code.svg"), Color("E39537")],
@@ -35,12 +35,15 @@ const BUILDINGS := [
 @onready var creator: ResidentCreator = %ResidentCreator
 @onready var insights: InsightsScreen = %InsightsScreen
 @onready var news: NewsScreen = %NewsScreen
+@onready var home: Home = %Home
+var dropdown := IslandDropdown.new()
 
-## Which screen is showing: "island", "residents", "creator", "insights", or "news".
+## Which screen is showing: "home" (the archipelago), "island", "residents",
+## "creator", "insights", or "news".
 var screen := "island"
 ## True while the creator waits for the server to accept a resident.
 var _saving_resident := false
-var _labels := {}  # building id -> BuildingLabel
+var _labels := {}  # building type -> BuildingLabel
 
 
 func _ready() -> void:
@@ -67,7 +70,16 @@ func _ready() -> void:
 	%News.pressed.connect(func(): show_screen("island" if screen == "news" else "news"))
 	news.unread_changed.connect(_show_unread)
 	_show_unread(news.unread())
-	%BackButton.pressed.connect(func(): show_screen("residents" if screen == "creator" else "island"))
+	%BackButton.pressed.connect(_go_back)
+
+	# The archipelago and the island switcher.
+	home.visit.connect(_visit_island)
+	add_child(dropdown)
+	dropdown.visit.connect(_visit_island)
+	dropdown.go_home.connect(show_screen.bind("home"))
+	%IslandSelector.gui_input.connect(func(event: InputEvent):
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			dropdown.open_below(%IslandSelector))
 	residents_screen.new_resident_requested.connect(_open_creator)
 	residents_screen.edit_requested.connect(_open_creator)
 	residents_screen.action_requested.connect(_on_card_action)
@@ -80,14 +92,15 @@ func _ready() -> void:
 	Net.resident_updated.connect(_on_resident_updated)
 	Net.server_error.connect(_on_server_error)
 	_show_island()
-	# Daily digest: the first start of the day opens on the newspaper.
-	show_screen("news" if news.wants_morning_paper() else "island")
+	show_screen("home")
 
 
 ## Show one screen and hide the others. The top bar and nav always stay; the
 ## Bubbles sidebar hides for the creator, which needs the whole width.
 func show_screen(which: String) -> void:
 	screen = which
+	home.visible = which == "home"
+	%Margin.visible = which != "home"
 	%IslandFrame.visible = which == "island"
 	residents_screen.visible = which == "residents"
 	creator.visible = which == "creator"
@@ -149,21 +162,42 @@ func _show_island() -> void:
 	residents_screen.show_snapshot(data)
 	_show_resident_summary(data.get("residents", []))
 
-	# Station badges: how many residents are at each building right now, 0 included
-	# (walking residents count for nowhere until they arrive).
-	for id in _labels:
+	# Show only the buildings this island has, each with how many residents are
+	# there right now, 0 included (walking residents count once they arrive).
+	var by_type := {}
+	for b in data.get("buildings", []):
+		by_type[str(b["type"])] = b
+	for type in _labels:
+		var building: Dictionary = by_type.get(type, {})
+		island.get_node("Buildings/" + type.to_pascal_case()).visible = not building.is_empty()
+		_labels[type].visible = not building.is_empty()
 		var here := 0
 		for r in data.get("residents", []):
-			if r.get("building") == id and r.get("state") != "walking":
+			if r.get("building") == building.get("id") and r.get("state") != "walking":
 				here += 1
-		var building := Net.find_building(id)
-		_labels[id].show_count(here, str(building.get("name", "")))
+		_labels[type].show_count(here, str(building.get("name", "")))
 
 
 ## "5 residents" on the island view, and "4 happy · 1 tired" in the sidebar.
 func _show_resident_summary(residents: Array) -> void:
 	%ResidentCount.text = "%d resident%s" % [residents.size(), "" if residents.size() == 1 else "s"]
 	%MoodSummary.text = ResidentData.mood_summary(residents)
+
+
+## The back button: creator -> Residents, island -> archipelago, others -> island.
+func _go_back() -> void:
+	match screen:
+		"creator": show_screen("residents")
+		"island": show_screen("home")
+		_: show_screen("island")
+
+
+## Go to an island (from the archipelago or the switcher). Net reconnects to it;
+## every screen redraws when its snapshot arrives.
+func _visit_island(id: String) -> void:
+	Net.visit_island(id)
+	# Daily digest: the first island visit of the day opens on the newspaper.
+	show_screen("news" if news.wants_morning_paper() else "island")
 
 
 ## The News button's badge: stories you haven't seen yet.

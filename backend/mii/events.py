@@ -68,31 +68,35 @@ def error(message: str) -> dict:
 
 
 class EventBus:
-    """Saves events to SQLite and broadcasts them to all connected clients.
+    """Saves events to SQLite and broadcasts them to the clients watching that island.
 
     A "client" is anything with an async `send_json(dict)` method: a FastAPI
-    WebSocket, or a fake one in tests.
+    WebSocket, or a fake one in tests. Each client watches one island, or every
+    island (`island_id=None`, what tests use).
     """
 
     def __init__(self, db_engine):
         self.db_engine = db_engine
-        self.clients: set = set()
+        self.clients: dict = {}  # client -> island id it watches (None = all)
 
-    def add_client(self, client) -> None:
-        self.clients.add(client)
+    def add_client(self, client, island_id: str | None = None) -> None:
+        self.clients[client] = island_id
 
     def remove_client(self, client) -> None:
-        self.clients.discard(client)
+        self.clients.pop(client, None)
 
     async def emit(self, island_id: str | None, event: dict) -> None:
         event = {**event, "ts": datetime.now(timezone.utc).isoformat()}
         with Session(self.db_engine) as session:
             session.add(Event(island_id=island_id, type=event["type"], payload=event))
             session.commit()
-        await self.broadcast(event)
+        await self.broadcast(event, island_id)
 
-    async def broadcast(self, event: dict) -> None:
-        for client in list(self.clients):
+    async def broadcast(self, event: dict, island_id: str | None = None) -> None:
+        """Send to every client watching `island_id` (None = send to everyone)."""
+        for client, watching in list(self.clients.items()):
+            if island_id is not None and watching is not None and watching != island_id:
+                continue
             try:
                 await client.send_json(event)
             except Exception:

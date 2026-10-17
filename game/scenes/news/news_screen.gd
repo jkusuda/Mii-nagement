@@ -31,6 +31,7 @@ const WEEKDAYS := ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Frid
 var _desk := NewsStories.new()
 var _live_events: Array[Dictionary] = []  # this session's events, to replay over the history
 var _filter := "all"
+var _island_id := ""
 var _last_seen := 0.0
 var _last_opened_day := ""
 var _week := {}  # the insights `island` section
@@ -50,6 +51,11 @@ func _ready() -> void:
 
 	Net.event_received.connect(_on_event)
 	Net.snapshot_received.connect(func(island: Dictionary):
+		if island.get("id") != _island_id:  # another island: start a fresh paper
+			_island_id = str(island.get("id"))
+			_desk = NewsStories.new()
+			_live_events.clear()
+			_week = {}
 		_desk.know_residents(island.get("residents", []))
 		_history.cancel_request()
 		_history.request(Net.http_url("/islands/%s/events?limit=200" % island["id"])))

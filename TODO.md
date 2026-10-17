@@ -50,7 +50,9 @@ Backend design: [docs/architecture.md](docs/architecture.md).
 - [ ] `GET /islands/{id}/events` so News shows history from before the game started
       ([docs/architecture.md](docs/architecture.md), "Events history"); `prs_merged`
       and `keys_lent` in the insights payload for News' "This week"
-- [ ] Archipelago: multiple islands / repos
+- [x] Archipelago home screen + island switcher (GET /islands, per-island events)
+- [ ] Island creation (New island: name + linked repo), Caretaker, Settings
+- [ ] "Celebrating" island status (needs recent shipped tasks: the events endpoint)
 - [ ] Run several tasks at once (one per free resident)
 - [ ] Friendship meter between residents who hand off to each other
 - [ ] Mii faces (with mood expressions), hats, hair, portraits ([docs/mii-customization.md](docs/mii-customization.md))

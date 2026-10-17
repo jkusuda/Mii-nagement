@@ -141,7 +141,18 @@ tilt the camera. Click **Preview** at the top of the 3D view to look through the
   saves when you last looked in `user://news.cfg` (a per-user folder Godot
   gives every game), along with the Daily digest setting.
 
-### 11. `ui/theme.tres` and `shaders/water.gdshader`
+### 11. `islands.gd` and `scenes/home/`: the Archipelago
+- The game opens on the Archipelago (`home.tscn`): one card per island with a
+  picture of its 3D model, and "Waiting on you" with every island's bubbles.
+- `islands.gd` (the `Islands` autoload) asks the backend for every island and
+  keeps their snapshots fresh. Its `thumbnail()` renders an island into a hidden
+  **SubViewport** with an orthographic camera, once, and hands out the texture.
+- Clicking an island calls `Net.visit_island(id)`: Net reconnects to that
+  island's events, and every screen redraws from the new snapshot. The island
+  name in the top bar opens `island_dropdown.gd`, a **PopupPanel** (a small
+  window that closes when you click outside it).
+
+### 12. `ui/theme.tres` and `shaders/water.gdshader`
 - **Theme:** every color, font, and pill/button style. Each look is a named
   *type variation* (`PillWhite`, `NavButton`, …) that nodes pick with
   `theme_type_variation`. Double-click the file to open the theme editor.

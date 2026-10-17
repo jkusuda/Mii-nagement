@@ -18,7 +18,7 @@ const SLOT_SPACING := 1.4  # gap between residents lined up at one building
 const CLEARANCE := 1.2     # how far past a building's edge a hidden stop slides
 
 var _walkers := {}  # resident id -> IslandResident
-var _stops := {}    # building id -> Vector3, worked out once per building
+var _stops := {}    # building id -> Vector3, worked out once per building (per island)
 
 @onready var buildings: Node3D = get_node("../Buildings")
 
@@ -31,6 +31,7 @@ func _ready() -> void:
 
 ## Throw everything away and place everyone exactly where the snapshot says.
 func _rebuild() -> void:
+	_stops.clear()  # maybe another island
 	for walker in _walkers.values():
 		walker.queue_free()
 	_walkers.clear()
@@ -177,8 +178,10 @@ func _building_position(building_id: String) -> Vector3:
 	return node.global_position if node else Vector3.ZERO
 
 
-## Building ids are snake_case ("post_office"); their nodes are PascalCase ("PostOffice").
+## The 3D node for a building id. Nodes are named by building *type*, in
+## PascalCase ("post_office" -> PostOffice), since ids differ per island.
 func _building_node(building_id: String) -> Node3D:
-	if building_id == "":
+	var type := str(Net.find_building(building_id).get("type", ""))
+	if type == "":
 		return null
-	return buildings.get_node_or_null(building_id.to_pascal_case())
+	return buildings.get_node_or_null(type.to_pascal_case())

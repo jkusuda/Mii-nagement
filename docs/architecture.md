@@ -91,6 +91,7 @@ backend/mii/
 | `WS /ws` | snapshot + live events; the game sends `answer_bubble`, `create_resident`, `update_resident` |
 | `GET /health` | is the server up, which mode |
 | `GET /brains` | which agent CLIs are installed |
+| `GET /islands` | every island: id, name, repo (the Archipelago screen) |
 | `GET /islands/{id}` | the island snapshot |
 | `POST /islands/{id}/tasks` | `{"title": ...}` or `{"issue": 42}` |
 | `GET /islands/{id}/insights` | stats for the Insights screen |
@@ -163,6 +164,6 @@ grep -rn "TODO(mvp)" backend/mii
 
 ## Not in scope (on purpose)
 
-LangChain / direct API runners, friendship scores, the ML team router, multiple
-islands, running several tasks at once. (Island News is written by the game from
+LangChain / direct API runners, friendship scores, the ML team router, running
+several tasks at once. (Several islands work: one task queue for all of them.) (Island News is written by the game from
 stored events; the backend only serves them, see "Events history".)

@@ -44,8 +44,27 @@ var is_online := false
 ## also gets `"since"`: when we first saw it (Unix seconds), for "2m ago".
 var island := {}
 
+## Which island to watch. "" = let the server pick (its first island).
+## Change it with visit_island().
+var island_id := ""
+
 var _socket := WebSocketPeer.new()
 var _seconds_until_retry := 0.0
+
+
+## Switch to another island: drop the current connection and reconnect to that
+## island's events. Its snapshot arrives as usual (snapshot_received).
+func visit_island(id: String) -> void:
+	if id == island_id and is_online and island.get("id") == id:
+		return
+	island_id = id
+	island = {}
+	_socket.close()
+	if is_online:
+		is_online = false
+		disconnected.emit()
+	island_changed.emit()
+	_try_connect()
 
 
 ## Godot concept: _ready() runs once, when the node enters the scene tree.
@@ -112,7 +131,7 @@ func send_answer(bubble_id: String, text: String) -> void:
 func _try_connect() -> void:
 	_seconds_until_retry = RECONNECT_SECONDS
 	_socket = WebSocketPeer.new()  # a fresh peer for each attempt
-	var error := _socket.connect_to_url(url)
+	var error := _socket.connect_to_url(url + ("?island=%s" % island_id.uri_encode() if island_id else ""))
 	if error != OK:
 		push_warning("Could not start connecting to %s (error %d)" % [url, error])
 
@@ -132,6 +151,7 @@ func _handle_message(text: String) -> void:
 	match event.get("type", ""):
 		"snapshot":
 			island = event["island"]
+			island_id = str(island.get("id", ""))
 			for bubble in island.get("bubbles", []):
 				bubble["since"] = Time.get_unix_time_from_system()
 			snapshot_received.emit(island)

@@ -4,7 +4,8 @@ This file is the **single source of truth** for messages between the backend
 (`backend/`) and the Godot client (`game/`). If you change a message, change it
 here first, then update both halves.
 
-- Endpoint: `ws://localhost:8000/ws`
+- Endpoint: `ws://localhost:8000/ws?island=<id>` (leave out `island` for the
+  server's first island). A client only gets events for the island it watches.
 - Every message is one JSON object with a `"type"` field.
 - The server sends a `snapshot` as soon as a client connects, then a live stream
   of events.
@@ -277,5 +278,8 @@ Roads:
 
 With `MOCK_AGENTS=1` (the default), every resident runs on the mock brain anyway.
 
-In the 3D client, each building id matches a node under `Buildings/` in
+In the 3D client, each building **type** matches a node under `Buildings/` in
 `game/scenes/island_3d.tscn` (`mailbox` → `Mailbox`, `post_office` → `PostOffice`).
+Building ids are unique across all islands, so other islands use ids like
+`maple_mailbox`; the client always goes by `type`. Buildings an island doesn't
+have are hidden.
