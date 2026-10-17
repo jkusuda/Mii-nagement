@@ -71,6 +71,8 @@ class Resident(models.Model):
     # Set in the resident creator (see docs/mii-customization.md):
     # keys = what the agent may do without asking (honoured by the ACP runner), gifts = extra MCP server ids.
     keys = models.JSONField(default=default_keys)
+    # The master key: this resident never asks (every "ask" key is a "yes", every bubble answers itself).
+    master_key = models.BooleanField(default=False)
     gifts = models.JSONField(default=list)
     # How their Mii looks (skin, hair, eyes, ...). Only the game reads it; see MiiParts in the game.
     appearance = models.JSONField(default=dict, blank=True)
@@ -215,6 +217,7 @@ def resident_to_dict(r: Resident) -> dict:
         "chattiness": r.chattiness,
         "creativity": r.creativity,
         "keys": r.keys,
+        "master_key": r.master_key,
         "gifts": r.gifts,
         "appearance": r.appearance,
         "state": r.state,

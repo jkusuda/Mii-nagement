@@ -68,7 +68,7 @@ class AgentJob:
     sandbox: "Sandbox | None" = None  # the island's Sandbox, for path checks (None in mock mode)
     read_only: bool = False  # True at buildings where the resident must not change files
     rules: dict = field(default_factory=dict)  # the island's house rules (see permission_for)
-    master_key: bool = False  # the `master_key` setting: every "ask" house key counts as "yes"
+    master_key: bool = False  # the `master_key` setting or Resident.master_key: every "ask" house key counts as "yes"
     notebook: NotebookFn | None = None  # how full the agent's context window is (ACP usage updates)
     messages: list[str] = field(default_factory=list)  # "Jun: ..." notes neighbours left for this resident on this task
     notes: str = ""  # the resident's diary (Resident.notes), what they chose to remember from earlier tasks

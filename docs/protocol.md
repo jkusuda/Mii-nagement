@@ -128,6 +128,10 @@ The client should rebuild its view from scratch when it gets one.
   Keys `read`, `edit`, `execute`, `fetch` (ACP tool kinds), each `yes`, `ask`,
   or `no`. The ACP runner honours them: `yes` answers the agent's own
   "allow once" option, `ask` shows a ✋ bubble, `no` rejects.
+- `residents[].master_key`: `true` = this resident never asks you: every `ask`
+  key counts as `yes` and every bubble they raise answers itself (like the
+  `master_key` setting, but for one resident). A `no` key still refuses.
+  Default `false`.
 - `residents[].gifts`: ids of extra MCP servers (`browser`, `github`, `docs`,
   `database`, `terminal`, `godot`, `video`) the resident brings to every ACP session (the `GIFTS`
   table in `backend/mii/agents/acp.py`). `GET /gifts` says which ones work on
@@ -208,7 +212,8 @@ A bubble was answered (by any client) or timed out. Remove it.
 ```
 `answered` is `false` (and `response` `null`) when the bubble timed out. The
 insights endpoint counts answers and answer times from these.
-With the `master_key` setting on, every `bubble` is followed right away by its
+With the `master_key` setting on (or for a resident whose own `master_key` is
+`true`), every `bubble` is followed right away by its
 `bubble_resolved`, answered by the backend: the first option that isn't a refusal,
 or "carry on" for a question.
 
@@ -406,6 +411,7 @@ every client.
     "brain": "claude-code", "model": null,
     "bluntness": 0.2, "caution": 0.8, "chattiness": 0.6, "creativity": 0.4,
     "keys": {"read": "yes", "edit": "ask", "execute": "ask", "fetch": "no"},
+    "master_key": false,
     "gifts": ["docs"],
     "appearance": {"skin": "#F2C6A0", "hair": 12, "hair_color": "#3B2418", "eyes": 3, "brows": 1, "nose": 0, "mouth": 2}
   }

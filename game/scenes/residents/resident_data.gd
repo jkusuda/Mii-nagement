@@ -162,6 +162,7 @@ static func blank() -> Dictionary:
 		"chattiness": 0.5,
 		"creativity": 0.5,
 		"keys": default_keys(),
+		"master_key": false,
 		"gifts": [],
 		"appearance": MiiParts.DEFAULT.duplicate(),
 	}

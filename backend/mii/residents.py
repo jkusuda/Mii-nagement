@@ -69,6 +69,10 @@ def clean_fields(data: dict, partial: bool) -> dict:
         if not isinstance(keys, dict) or any(k not in DEFAULT_KEYS or v not in KEY_VALUES for k, v in keys.items()):
             raise ResidentError(f"keys must map {list(DEFAULT_KEYS)} to one of {list(KEY_VALUES)}")
         out["keys"] = {**DEFAULT_KEYS, **keys}
+    if "master_key" in data:
+        if not isinstance(data["master_key"], bool):
+            raise ResidentError("master_key must be true or false")
+        out["master_key"] = data["master_key"]
     if "gifts" in data:
         gifts = data["gifts"]
         if not isinstance(gifts, list) or any(g not in GIFTS for g in gifts):

@@ -837,10 +837,11 @@ class WorkflowEngine:
             helped=helped,
         )
         bubbles_raised = 0
+        master_key = self.master_key or resident.master_key  # the island-wide setting, or this resident's own
 
         async def ask(kind: str, text: str, options: list[str] | None = None, detail: str | None = None) -> str | None:
             nonlocal bubbles_raised
-            if self.master_key:  # shown and closed at once, so News still tells the story
+            if master_key:  # shown and closed at once, so News still tells the story
                 auto = master_key_answer(options)
                 return await self.bubbles.ask(
                     task.island_id, resident.id, kind, text, 0, options, task.id, detail, auto
@@ -879,7 +880,7 @@ class WorkflowEngine:
             sandbox=sandbox,
             read_only=handler.read_only,
             rules=island.rules or {},
-            master_key=self.master_key,
+            master_key=master_key,
             notebook=partial(self._set_notebook, resident),
             messages=messages,
             notes=resident.notes,
