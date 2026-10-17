@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('mii', '0004_island_plan_rules'),
+        ('mii', '0005_setting'),
     ]
 
     operations = [
