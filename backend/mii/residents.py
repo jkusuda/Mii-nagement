@@ -131,7 +131,7 @@ async def delete_resident(island_id: str, resident_id: str) -> Resident:
         raise ResidentError(f"{resident.name} is carrying a package; wait or cancel the task first")
     where = [b.name async for b in Building.objects.filter(island_id=island_id, resident_id=resident_id)]
     if where:
-        raise ResidentError(f"{resident.name} works at the {where[0]}; move someone else in first (update_resident with `buildings`)")
+        raise ResidentError(f"{resident.name} runs the {where[0]}; give it to someone else first (their 'Works at')")
     await Friendship.objects.filter(island_id=island_id).filter(Q(a=resident_id) | Q(b=resident_id)).adelete()
     await resident.adelete()  # tasks they carried keep their history (agent becomes null), Step rows stay
     return resident

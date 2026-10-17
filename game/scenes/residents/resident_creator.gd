@@ -11,9 +11,15 @@ extends PanelContainer
 ##
 ## "Move in" / "Save" emits `saved`; game.gd sends it to the backend
 ## (Net.send_resident) and comes back here with show_error() if it's refused.
+## "Move away" (editing only) emits `move_away_requested` after asking first.
+##
+## Gifts the backend can't run on this computer (GET /gifts) are greyed out.
+## "Works at" picks the buildings this resident runs (`buildings` in
+## create_resident / update_resident): they take over from whoever was there.
 
 signal saved(resident: Dictionary)
 signal cancelled
+signal move_away_requested(resident_id: String)
 
 const ARROW := preload("res://assets/ui/dropdown_arrow.svg")
 
@@ -36,6 +42,12 @@ var _swatches: Array[Button] = []
 var _job_buttons := {}
 var _sliders := {}
 var _gift_buttons := {}
+var _gift_info := {}  # GET /gifts: gift -> {ok, label, hint}; empty until it answers
+var _building_chips := {}  # building id -> toggle Button ("Works at")
+var _works_at_now: Array = []  # building ids this resident runs already (editing)
+var _works_at_box := VBoxContainer.new()
+var _live := true  # false while drafting a resident for a new island (not on Net.island yet)
+var _move_away := Button.new()
 var _key_pickers := {}
 var _brain_ids: Array = ResidentData.BRAINS.keys()
 ## OpenRouter model ids for the model picker (GET /models), loaded the first
@@ -53,6 +65,8 @@ func _ready() -> void:
 	_build_sliders()
 	_build_gifts()
 	_build_keys()
+	_build_works_at()
+	_build_move_away()
 
 	# Godot concept: text_changed fires on every keystroke, so the preview
 	# updates while you type.
@@ -72,9 +86,14 @@ func _ready() -> void:
 
 
 ## Show the creator, empty (a new resident) or filled in (editing one).
-func open(resident: Dictionary = {}, island_name := "Pebble Cove") -> void:
+## `live` = false when drafting a resident for an island that doesn't exist yet.
+func open(resident: Dictionary = {}, island_name := "Pebble Cove", live := true) -> void:
 	_editing = not resident.is_empty()
+	_live = live
 	_data = ResidentData.blank().merged(resident, true)
+	_data.erase("buildings")  # only sent when "Works at" changes
+	_move_away.visible = live and _editing and not Net.find_resident(str(resident.get("id", ""))).is_empty()
+	_fill_works_at()
 	%Title.text = "Edit %s" % resident.get("name", "") if _editing else "Create a resident"
 	%MovingLabel.text = ("Lives on %s" if _editing else "Moving to %s") % island_name
 	%MoveInButton.text = "Save" if _editing else "Move in"
@@ -82,6 +101,7 @@ func open(resident: Dictionary = {}, island_name := "Pebble Cove") -> void:
 	_load_widgets()
 	_refresh()
 	_check_brains()
+	_check_gifts()
 
 
 ## Copy _data into every widget (after open() or "Surprise me").
@@ -113,7 +133,10 @@ func _refresh() -> void:
 	%ActText.text = _describe()
 	var home: String = ResidentData.JOB_HOMES.get(_data["job"], "island")
 	%FooterLabel.remove_theme_color_override("font_color")
-	if _editing:
+	var picked := _picked_buildings().map(func(id): return str(Net.find_building(id).get("name", id)))
+	if picked.size() > _works_at_now.size():
+		%FooterLabel.text = "%s will work at the %s." % [shown_name, " and the ".join(picked)]
+	elif _editing:
 		%FooterLabel.text = "Changes start with %s's next package." % shown_name
 	else:
 		%FooterLabel.text = "%s will move into the %s and pick up the next package there." % [shown_name, home]
@@ -154,8 +177,12 @@ func _on_move_in() -> void:
 		%NameEdit.placeholder_text = "Everyone needs a name!"
 		return
 	# A new resident has no id yet: the backend picks it (and their home building).
+	var data := _data.duplicate(true)
+	var picked := _picked_buildings()
+	if picked.size() > _works_at_now.size():
+		data["buildings"] = picked  # take over these buildings
 	%MoveInButton.disabled = true
-	saved.emit(_data.duplicate(true))
+	saved.emit(data)
 
 
 ## The backend refused the resident (an `error` event). Show why, and let the
@@ -300,7 +327,8 @@ func _build_gifts() -> void:
 			if on and g[0] not in _data["gifts"]:
 				_data["gifts"].append(g[0])
 			elif not on:
-				_data["gifts"].erase(g[0]))
+				_data["gifts"].erase(g[0])
+			_show_gift(g[0]))
 		%Gifts.add_child(tile)
 		_gift_buttons[g[0]] = tile
 
@@ -342,6 +370,111 @@ func _check_brains() -> void:
 			%BrainPicker.set_item_text(i, ResidentData.BRAINS[_brain_ids[i]] + ("" if ready else " (not set up)"))
 			tips.append("%s: %s" % [ResidentData.BRAINS[_brain_ids[i]], info.get("hint", "unknown")])
 		%BrainPicker.tooltip_text = "\n".join(tips))
+
+
+## Ask the backend which gifts can run here (GET /gifts) and grey out the rest,
+## with why in the tooltip ("install `npx` first").
+func _check_gifts() -> void:
+	Net.request_json("/gifts", func(ok: bool, gifts: Dictionary):
+		if not ok:
+			return  # backend offline: leave every gift selectable
+		_gift_info = gifts
+		for gift in _gift_buttons:
+			_show_gift(gift))
+
+
+## A gift that can't run here is greyed out, unless the resident already has
+## it: then it stays clickable, so you can take it back.
+func _show_gift(gift: String) -> void:
+	var info: Dictionary = _gift_info.get(gift, {})
+	if info.is_empty():
+		return
+	var tile: Button = _gift_buttons[gift]
+	var ready: bool = info.get("ok", false)
+	tile.disabled = not ready and not tile.button_pressed
+	tile.tooltip_text = "%s: %s" % [info.get("label", gift), info.get("hint", "")] if ready \
+		else "Can't hand this over yet: %s" % info.get("hint", "not set up")
+
+
+# --- Works at ---------------------------------------------------------------------
+
+func _build_works_at() -> void:
+	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", 6)
+	var title := Label.new()
+	title.text = "Works at"
+	title.theme_type_variation = &"SectionTitle"
+	var hint := Label.new()
+	hint.text = "takes over from whoever's there"
+	hint.theme_type_variation = &"LabelMuted"
+	hint.add_theme_font_size_override("font_size", 11)
+	hint.size_flags_vertical = Control.SIZE_SHRINK_END
+	header.add_child(title)
+	header.add_child(hint)
+	_works_at_box.add_theme_constant_override("separation", 8)
+	_works_at_box.add_child(header)
+	var chips := HFlowContainer.new()
+	chips.name = "Chips"
+	chips.add_theme_constant_override("h_separation", 6)
+	chips.add_theme_constant_override("v_separation", 6)
+	_works_at_box.add_child(chips)
+	%BrainPicker.get_parent().add_sibling(_works_at_box)  # under Brain, where there's room
+
+
+## One chip per building on the island: "Lab · Mo". The buildings this resident
+## already runs are locked on: every building needs someone, so give it to
+## another resident (in their creator) instead.
+func _fill_works_at() -> void:
+	var chips: HFlowContainer = _works_at_box.get_node("Chips")
+	for child in chips.get_children():
+		child.queue_free()
+	_building_chips.clear()
+	var id := str(_data.get("id", ""))
+	var buildings: Array = Net.island.get("buildings", []) if _live else []
+	_works_at_box.visible = not buildings.is_empty()
+	_works_at_now = buildings.filter(func(b): return id != "" and str(b.get("resident", "")) == id) \
+		.map(func(b): return str(b["id"]))
+	for b in buildings:
+		var bid := str(b["id"])
+		var worker := str(Net.find_resident(str(b.get("resident", ""))).get("name", "nobody"))
+		var mine := bid in _works_at_now
+		var chip := Button.new()
+		chip.text = "%s · %s" % [b.get("name", bid), "you" if mine else worker]
+		chip.toggle_mode = true
+		chip.button_pressed = mine
+		chip.disabled = mine
+		chip.theme_type_variation = &"FilterChip"
+		chip.add_theme_stylebox_override("disabled", get_theme_stylebox("pressed", "FilterChip"))  # locked on
+		for state in ["font_pressed_color", "font_hover_pressed_color", "font_disabled_color"]:
+			chip.add_theme_color_override(state, Color("292E50"))  # dark ink on the yellow "on" chip
+		chip.focus_mode = Control.FOCUS_NONE
+		chip.tooltip_text = ("Works here already. To move them, give the %s to someone else." % b.get("name", bid)) if mine \
+			else "Make them the worker at the %s (instead of %s)" % [b.get("name", bid), worker]
+		chip.toggled.connect(func(_on): _refresh())
+		chips.add_child(chip)
+		_building_chips[bid] = chip
+
+
+func _picked_buildings() -> Array:
+	return _building_chips.keys().filter(func(bid): return _building_chips[bid].button_pressed)
+
+
+# --- Move away --------------------------------------------------------------------
+
+func _build_move_away() -> void:
+	_move_away.text = "Move away"
+	_move_away.theme_type_variation = &"OutlineButton"
+	_move_away.add_theme_color_override("font_color", Color("C0392B"))
+	_move_away.add_theme_color_override("font_hover_color", Color("C0392B"))
+	_move_away.focus_mode = Control.FOCUS_NONE
+	_move_away.visible = false
+	_move_away.pressed.connect(func():
+		var who := str(_data.get("name", "This resident"))
+		ConfirmPopup.ask(self, "%s is moving away?" % who,
+			"%s leaves the island for good. Their past work stays in Insights and News." % who,
+			"Say goodbye", func(): move_away_requested.emit(str(_data.get("id", "")))))
+	%CancelButton.add_sibling(_move_away)
+	%CancelButton.get_parent().move_child(_move_away, %CancelButton.get_index())
 
 
 func _tint(node: Control, theme_type: String, color: Color) -> void:

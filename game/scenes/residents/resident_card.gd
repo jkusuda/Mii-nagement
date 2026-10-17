@@ -7,6 +7,8 @@ signal edit_pressed(resident: Dictionary)
 signal action_pressed(resident: Dictionary)
 
 var resident := {}
+## "♥ Best friends with Jun · 68%": the friendship meter (made in code, under Doing).
+var _friend := Label.new()
 
 
 func setup(data: Dictionary) -> void:
@@ -28,6 +30,15 @@ func setup(data: Dictionary) -> void:
 		%Doing.text = str(data["activity"])
 	else:
 		%Doing.text = "Taking it easy." if data.get("state") != "working" else "Busy at work."
+
+	# Their closest friend: residents who hand packages to each other grow closer
+	# (`friendships` in the snapshot, live `friendship` events).
+	var friend: Dictionary = data.get("friend", {})
+	_friend.visible = not friend.is_empty()
+	if friend:
+		_friend.text = "♥ %s %s · %d%%" % [ResidentData.friendship_words(friend["score"]), friend["name"], roundi(friend["score"] * 100.0)]
+		_friend.tooltip_text = "%d package%s handed between them" % [friend["handoffs"], "" if friend["handoffs"] == 1 else "s"]
+		_friend.add_theme_color_override("font_color", ink)
 
 	# The notebook is how full the agent's context window is (0-1). The backend
 	# sends it (`notebook` in the snapshot and the `notebook` event) once the
@@ -57,6 +68,11 @@ func setup(data: Dictionary) -> void:
 
 
 func _ready() -> void:
+	_friend.theme_type_variation = &"LabelStrong"
+	_friend.add_theme_font_size_override("font_size", 12)
+	_friend.mouse_filter = Control.MOUSE_FILTER_PASS  # so the tooltip shows
+	_friend.visible = false
+	%Doing.add_sibling(_friend)
 	%EditButton.pressed.connect(func(): edit_pressed.emit(resident))
 	%ActionButton.pressed.connect(func(): action_pressed.emit(resident))
 	%VisitButton.pressed.connect(func(): action_pressed.emit(resident))

@@ -46,6 +46,10 @@ func show_snapshot(island: Dictionary) -> void:
 		var copy: Dictionary = resident.duplicate()
 		if bubbles.has(resident["id"]):
 			copy["bubble"] = bubbles[resident["id"]]
+		var friend := ResidentData.best_friend(str(resident["id"]), island.get("friendships", []))
+		if friend:
+			friend["name"] = str(Net.find_resident(friend["id"]).get("name", friend["id"]))
+			copy["friend"] = friend
 		residents.append(copy)
 	_rebuild()
 

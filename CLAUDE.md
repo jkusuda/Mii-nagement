@@ -96,7 +96,8 @@ game/
                        building_data (per-type name/icon/color/stage words), building_picker
                        (which building is under the mouse: ray vs. bounding boxes)
   scenes/ui/           building_label (follows a 3D building, resident count), bubbles_sidebar,
-                       bubble_card, answer_popup (answer a bubble: review, key request, question), answer_button, dashed_button,
+                       bubble_card, answer_popup (answer a bubble: review, key request, question),
+                       confirm_popup ("are you sure?"), toast (server errors), answer_button, dashed_button,
                        building_panel (click a building: Mailbox issues + send, or what's at
                        that stage), package_form (POST /islands/{id}/tasks),
                        settings_popup (GET/PUT /settings, /health, /brains/detail)

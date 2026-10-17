@@ -28,6 +28,8 @@ signal task_updated(task: Dictionary)
 signal server_error(message: String)
 ## A resident was created or edited (by this client or another one).
 signal resident_updated(resident: Dictionary)
+## A resident moved away (`resident_removed`).
+signal resident_removed(resident_id: String)
 signal activity_reported(agent: String, text: String)
 ## Every event from the server, as it arrived (the News tab turns them into stories).
 signal event_received(event: Dictionary)
@@ -99,7 +101,7 @@ func _process(delta: float) -> void:
 
 ## The resident fields the server accepts (docs/protocol.md, create_resident).
 const RESIDENT_FIELDS := ["id", "name", "job", "color", "catchphrase", "brain", "model",
-	"bluntness", "caution", "chattiness", "creativity", "keys", "gifts"]
+	"bluntness", "caution", "chattiness", "creativity", "keys", "gifts", "buildings"]
 
 
 ## Create a resident (no "id") or edit one (with "id"). The server answers with a
@@ -145,6 +147,26 @@ func request_json(path: String, done: Callable, method := HTTPClient.METHOD_GET,
 	if error != OK:
 		http.queue_free()
 		done.call(false, {"error": "could not start the request (error %d)" % error})
+
+
+## Move a resident away. The server replies with `resident_removed`, or an `error`
+## (they're carrying a package, or a building still counts on them).
+func send_delete_resident(resident_id: String) -> bool:
+	return _send({"type": "delete_resident", "id": resident_id})
+
+
+## Take a package back. The server replies with a `task` event (status
+## `cancelled`), or an `error` if it already finished.
+func send_cancel_task(task_id: String) -> bool:
+	return _send({"type": "cancel_task", "id": task_id})
+
+
+func _send(message: Dictionary) -> bool:
+	if not is_online:
+		push_warning("Not connected; %s not sent." % message["type"])
+		return false
+	_socket.send_text(JSON.stringify(message))
+	return true
 
 
 ## Answer a resident's bubble. The server replies with `bubble_resolved`.
@@ -215,6 +237,22 @@ func _handle_message(text: String) -> void:
 		"activity":
 			_patch_resident(event["agent"], {"activity": event["text"]})
 			activity_reported.emit(str(event["agent"]), str(event["text"]))
+		"resident_removed":
+			var residents: Array = island.get("residents", [])
+			for i in range(residents.size() - 1, -1, -1):
+				if residents[i]["id"] == event["id"]:
+					residents.remove_at(i)
+			resident_removed.emit(str(event["id"]))
+		"friendship":
+			# Two residents handed a package over: replace that pair's entry.
+			var pairs: Array = island.get_or_add("friendships", [])
+			for i in range(pairs.size() - 1, -1, -1):
+				if pairs[i]["a"] == event["a"] and pairs[i]["b"] == event["b"]:
+					pairs.remove_at(i)
+			var pair: Dictionary = event.duplicate()
+			pair.erase("type")
+			pair.erase("ts")
+			pairs.append(pair)
 		"notebook":
 			# How full the resident's context window is (0-1); resident_card shows it.
 			_patch_resident(event["agent"], {"notebook": event["value"]})

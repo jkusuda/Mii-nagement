@@ -56,12 +56,15 @@ var building_panel := BuildingPanel.new()
 var picker: BuildingPicker
 var settings_popup := SettingsPopup.new()
 var build_mode := BuildMode.new()
+var toast := Toast.new()  # server errors no screen handled itself
 
 ## Which screen is showing: "home" (the archipelago), "island_creator",
 ## "island", "residents", "creator", "insights", or "news".
 var screen := "island"
 ## True while the creator waits for the server to accept a resident.
 var _saving_resident := false
+## The resident the creator asked to move away, until the server answers.
+var _removing_resident := ""
 ## The resident creator is making a draft for the island creator (not sent yet),
 ## and which of its residents it replaces (-1 = a new one).
 var _drafting := false
@@ -126,7 +129,7 @@ func _ready() -> void:
 	island_creator.resident_requested.connect(func(resident: Dictionary, index: int):
 		_drafting = true
 		_draft_index = index
-		creator.open(resident, island_creator.island_name())
+		creator.open(resident, island_creator.island_name(), false)
 		show_screen("creator"))
 	island_creator.founded.connect(_on_island_founded)
 	Net.snapshot_received.connect(_move_residents_in)
@@ -143,6 +146,15 @@ func _ready() -> void:
 	residents_screen.action_requested.connect(_on_card_action)
 	creator.cancelled.connect(func(): show_screen("island_creator" if _drafting else "residents"))
 	creator.saved.connect(_save_resident)
+	creator.move_away_requested.connect(func(id: String):
+		if Net.send_delete_resident(id):
+			_removing_resident = id)
+	Net.resident_removed.connect(func(id: String):
+		if id == _removing_resident:
+			_removing_resident = ""
+			show_screen("residents"))
+	dropdown.abandoned.connect(_on_island_abandoned)
+	dropdown.failed.connect(toast.show_message)
 
 	# Island data from the backend. Net keeps Net.island current and announces
 	# every change; until the first snapshot the Residents screen shows mock data.
@@ -157,6 +169,8 @@ func _ready() -> void:
 	building_panel.closed.connect(rig.unfocus)
 	building_panel.answer_requested.connect(%Sidebar.open_reply)
 	Net.snapshot_received.connect(func(_island): building_panel.close())  # another island
+
+	add_child(toast)
 
 	Clock.ticked.connect(_show_time)
 	_show_time()
@@ -220,6 +234,26 @@ func _on_server_error(message: String) -> void:
 	if _saving_resident:
 		_saving_resident = false
 		creator.show_error(message)
+	elif _removing_resident:
+		_removing_resident = ""
+		creator.show_error(message)
+	else:
+		toast.show_message(message)
+
+
+## An island was abandoned from the switcher. If we were on it, go to another
+## island (Net needs one to watch) and show the Archipelago.
+func _on_island_abandoned(id: String, repo_path: String) -> void:
+	var island_name := str(Islands.find(id).get("name", id))
+	toast.show_message("%s was abandoned. Its git repository stays on disk (…/%s)." % [island_name, repo_path.get_file()] if repo_path
+		else "%s was abandoned." % island_name)
+	if id != str(Net.island.get("id", "")):
+		return
+	for island in Islands.islands:
+		if str(island["id"]) != id:
+			Net.visit_island(str(island["id"]))
+			break
+	show_screen("home")
 
 
 ## A card's Answer / Review / Tuck in opens that bubble's reply in the sidebar;

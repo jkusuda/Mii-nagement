@@ -256,7 +256,32 @@ func _task_card(task: Dictionary, with_activity: bool) -> Control:
 	texts.add_child(_text(" · ".join(parts), 13, false))
 	if with_activity and resident.get("activity"):
 		texts.add_child(_activity(str(resident["activity"])))
-	return _card_row(_icon_tile(BuildingData.TYPES["mailbox"]["icon"], color), texts, _pill(status, color))
+	var right := VBoxContainer.new()
+	right.add_theme_constant_override("separation", 6)
+	right.add_child(_pill(status, color))
+	right.add_child(_take_back_button(task))
+	return _card_row(_icon_tile(BuildingData.TYPES["mailbox"]["icon"], color), texts, right)
+
+
+## "Take back": cancel the package (asks first). A queued one is cancelled on the
+## spot; a running one stops mid-step. The server answers with a `task` event
+## (status `cancelled`), which drops it from Net.island, so this card goes away.
+func _take_back_button(task: Dictionary) -> Button:
+	var button := Button.new()
+	button.text = "Take back"
+	button.theme_type_variation = &"OutlineButton"
+	button.add_theme_font_size_override("font_size", 13)
+	button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	button.focus_mode = Control.FOCUS_NONE
+	button.disabled = not Net.is_online
+	var title := str(task.get("title", "this package"))
+	var running: bool = task.get("status") == "in_progress"
+	button.pressed.connect(func():
+		ConfirmPopup.ask(self, "Take back “%s”?" % title,
+			("The resident working on it stops right away and puts it down."
+				if running else "It leaves the queue before anyone starts on it."),
+			"Take it back", func(): Net.send_cancel_task(str(task["id"]))))
+	return button
 
 
 ## One resident: initial, name, job · mood, what they're doing, and Answer if they need you.

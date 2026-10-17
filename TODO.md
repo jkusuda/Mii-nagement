@@ -53,8 +53,8 @@ Backend design: [docs/architecture.md](docs/architecture.md).
 - [x] **ACP honours house keys**: `yes` / `ask` / `no` per tool kind in `AcpRunner`.
 - [x] **Gifts as MCP servers** (the `GIFTS` table next to `BRAINS`, `GET /gifts`), and giving
       residents a building (`buildings` on `create_resident` / `update_resident`).
-- [ ] **Game: gifts and "works at"** in the creator: grey out gifts `GET /gifts` says won't run,
-      a building picker that sends `buildings`.
+- [x] **Game: gifts and "works at"** in the creator: gifts `GET /gifts` says won't run are greyed
+      out (with why), and "Works at" chips send `buildings`.
 - [x] **Game: `openrouter` brain** in the creator's brain list, with a model picker (GET /models).
 - [x] **Game: send a package** (POST /islands/{id}/tasks): title + details, or a GitHub issue number.
 - [x] **Game: click a building**: the camera glides to it and a panel opens (Mailbox: open issues +
@@ -78,9 +78,10 @@ Backend design: [docs/architecture.md](docs/architecture.md).
 - [ ] "Celebrating" island status (the events endpoint exists now; game side to do)
 - [ ] Run several tasks at once (one per free resident)
 - [x] Friendship meter between residents who hand off to each other (`Friendship` table,
-      `friendships` in the snapshot, `friendship` event; game side to do)
+      `friendships` in the snapshot, `friendship` event; resident cards show the best friend)
 - [x] Cancel a task (`cancel_task` / `POST .../cancel`), create one over the socket
-      (`create_task`), residents and islands can be deleted
+      (`create_task`), residents and islands can be deleted. Game: "Take back" on package
+      cards, "Move away" in the creator, ✕ on island switcher rows (all ask first)
 - [ ] Mii faces (with mood expressions), hats, hair, portraits ([docs/mii-customization.md](docs/mii-customization.md))
 - [ ] Dreams, parties, apartment interiors
 - [ ] Blueprints (save and share island layouts as workflow templates)
