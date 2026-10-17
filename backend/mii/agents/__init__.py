@@ -74,6 +74,17 @@ class AgentJob:
     neighbours: list[str] = field(default_factory=list)  # "Jun (planner)", so SAY TO has names to use
     think: ThinkFn | None = None  # the resident's train of thought, for the game's "thinking" dropdown
     attachments: list[str] = field(default_factory=list)  # files sent with the task, in <workdir>/.mii-attachments/
+    # A `talk` from the island owner (talk.py), not a package step: what they just said.
+    # `instructions` then holds the building role + conversation, and there is no VERDICT rule.
+    chat: str | None = None
+
+    @property
+    def summary_chars(self) -> int:
+        """How much of the final reply StepResult.summary keeps: a chat reply is the whole point."""
+        return CHAT_REPLY_CHARS if self.chat is not None else 400
+
+
+CHAT_REPLY_CHARS = 4000
 
 
 class ThinkingStream:
@@ -178,13 +189,16 @@ def parse_verdict(text: str, summary_chars: int = 400) -> StepResult:
 
 def build_prompt(job: AgentJob, system_prompt: str, diary: bool = True) -> str:
     """Personality + instructions + notes from earlier steps, as one text block.
-    `diary=False` leaves the diary out (an agent that already read it in this session)."""
+    `diary=False` leaves the diary out (an agent that already read it in this session).
+    A chat (job.chat) is personality + diary + instructions, without the step rules."""
     parts = [system_prompt]
     if job.notes and diary:
         parts += ["", "Things you remember from earlier tasks (your diary):"] + [
             f"- {line}" for line in job.notes.splitlines() if line.strip()
         ]
     parts += ["", job.instructions]
+    if job.chat is not None:
+        return "\n".join(parts).strip()
     if job.attachments:
         parts += [
             "",

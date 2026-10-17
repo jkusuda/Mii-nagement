@@ -36,6 +36,14 @@ static func route(layout: IslandLayout, from: Vector3, to: Vector3) -> Array[Vec
 	return points
 
 
+## A random point on the paths (the middle of a random path tile), for wandering.
+static func random_point(layout: IslandLayout, rng: RandomNumberGenerator) -> Vector3:
+	var tiles: Array = layout.path_tiles.keys()
+	if tiles.is_empty():
+		return Vector3(0, PATH_Y, 0)
+	return _center(tiles[rng.randi() % tiles.size()])
+
+
 ## Is `p` on the straight bit of path from `a` to `b` (give or take a little)?
 static func _between(p: Vector3, a: Vector3, b: Vector3) -> bool:
 	var p2 := Vector2(p.x, p.z)

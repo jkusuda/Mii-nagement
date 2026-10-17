@@ -75,11 +75,15 @@ class Sandbox:
                 return candidate
         return "HEAD"
 
-    def remove_worktree(self, task_id: str) -> None:
-        """Delete the worktree folder (the branch stays, so a pushed PR is unaffected)."""
+    def remove_worktree(self, task_id: str, delete_branch: bool = False) -> None:
+        """Delete the worktree folder. The branch stays (so a pushed PR is unaffected) unless
+        `delete_branch`: a throwaway worktree, like a talk's (talk.py), leaves nothing behind."""
         path = self.worktree_path(task_id)
         if path.exists():
             self._git(self.repo_path, "worktree", "remove", "--force", str(path))
+        if delete_branch:
+            self._git(self.repo_path, "branch", "-D", f"mii/{task_id}", check=False)
+            self.bases.pop(task_id, None)
 
     def add_attachments(self, task_id: str, files: list[tuple[str, bytes]]) -> None:
         """Write a task's attached files (plain names, see tasks.safe_file_name) into

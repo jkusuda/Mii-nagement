@@ -37,6 +37,7 @@ const FOCUS_SHIFT := -0.36
 
 var dropdown := IslandDropdown.new()
 var building_panel := BuildingPanel.new()
+var talk_popup := TalkPopup.new()  # chat with a resident, opened from the building panel
 var picker: BuildingPicker
 var settings_popup := SettingsPopup.new()
 var build_mode := BuildMode.new()
@@ -178,6 +179,10 @@ func _ready() -> void:
 	building_panel.closed.connect(rig.unfocus)
 	building_panel.answer_requested.connect(%Sidebar.open_reply)
 	Net.snapshot_received.connect(func(_island): building_panel.close())  # another island
+	# Over the building panel, which stays open underneath: closing the chat goes back to it.
+	add_child(talk_popup)
+	building_panel.talk_requested.connect(talk_popup.open)
+	Net.snapshot_received.connect(func(_island): talk_popup.close())
 
 	add_child(toast)
 
@@ -196,6 +201,7 @@ func show_screen(which: String) -> void:
 	screen = which
 	if which != "island":
 		building_panel.close()
+		talk_popup.close()
 	home.visible = which == "home"
 	island_creator.visible = which == "island_creator"
 	%Margin.visible = which not in ["home", "island_creator"]
@@ -435,6 +441,7 @@ func _open_build_mode() -> void:
 func _on_build_mode_toggled(building: bool) -> void:
 	if building:
 		building_panel.close()
+		talk_popup.close()
 	%Labels.visible = not building
 	if _dev_pill:
 		_dev_pill.visible = not building

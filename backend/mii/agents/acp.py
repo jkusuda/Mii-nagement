@@ -487,8 +487,12 @@ async def spawn_agent(client: Client, command: list[str], *, cwd: Path, env: dic
     CLI. Killing only `npx` would leave the CLI holding the stdout pipe for minutes.
     """
     group = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {"start_new_session": True}
+    # The full path: on Windows `npx` is `npx.cmd`, which CreateProcess won't find by its bare name.
+    program = command[0]
+    if not os.path.dirname(program):  # a bare name like `npx` (tests pass a full path)
+        program = shutil.which(program, path=env.get("PATH")) or program
     proc = await asyncio.create_subprocess_exec(
-        *command, cwd=str(cwd), env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, **group
+        program, *command[1:], cwd=str(cwd), env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, **group
     )
     conn = connect_to_agent(client, proc.stdin, proc.stdout)
     try:
@@ -506,7 +510,7 @@ async def _end_process_tree(proc: asyncio.subprocess.Process, grace: float = 2.0
         if sig is not None:
             with suppress(ProcessLookupError, PermissionError):
                 if os.name == "nt":
-                    proc.kill()
+                    await _taskkill_tree(proc.pid)  # proc.kill() would only end `npx`, not the CLI under it
                 else:
                     os.killpg(proc.pid, sig)
         try:
@@ -515,6 +519,14 @@ async def _end_process_tree(proc: asyncio.subprocess.Process, grace: float = 2.0
         except TimeoutError:
             continue
     log.warning("agent process %s did not exit", proc.pid)
+
+
+async def _taskkill_tree(pid: int) -> None:
+    """Windows: end a process and everything it started (there are no process groups to signal)."""
+    killer = await asyncio.create_subprocess_exec(
+        "taskkill", "/PID", str(pid), "/T", "/F", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
+    await killer.wait()
 
 
 # ACP has no "ask the user" request, so agents ask by ending their turn with a
@@ -785,20 +797,23 @@ class AcpRunner:
 
     async def _prompt(self, agent: LiveAgent, job: AgentJob, resumed: bool) -> tuple[StepResult, bool]:
         """Prompt the session (answering QUESTION lines with ❓ bubbles). Returns the result and
-        whether the session is still fit to keep for this resident's next visit."""
+        whether the session is still fit to keep for this resident's next visit. A chat (talk.py)
+        asks no questions, keeps its whole reply, and is never kept: its worktree goes right after."""
         conn, client, session_id = agent.conn, agent.client, agent.session.session_id
+        chat = job.chat is not None
         if resumed:
             intro = RESUMED.format(name=job.resident.name, building=job.building.name, attempt=job.attempt)
             prompt = build_prompt(job, intro, diary=False)
         else:
             prompt = build_prompt(job, build_system_prompt(job.resident))
-        prompt = f"{prompt}\n\n{QUESTION_RULE}"
+        if not chat:
+            prompt = f"{prompt}\n\n{QUESTION_RULE}"
         for asked in range(MAX_QUESTIONS + 1):
             client.text.clear()  # each turn's reply on its own: the last one carries the verdict
             response = await conn.prompt(session_id=session_id, prompt=[TextContentBlock(type="text", text=prompt)])
             if response.stop_reason != "end_turn":
                 return StepResult("fail", f"{self.brain} stopped early ({response.stop_reason})."), False
-            question = find_question("".join(client.text))
+            question = None if chat else find_question("".join(client.text))
             if question is None or asked == MAX_QUESTIONS:
                 break
             answer = await job.ask("confused", question)
@@ -808,7 +823,7 @@ class AcpRunner:
                 else "Nobody answered in time. Use your best judgement and carry on."
             )
             prompt += "\n\nWhen you're done, end with one line: `VERDICT: PASS` or `VERDICT: FAIL`."
-        return parse_verdict("".join(client.text)), True
+        return parse_verdict("".join(client.text), job.summary_chars), not chat
 
     async def _set_mode(self, conn, session, read_only: bool) -> None:
         """Switch on the agent's edit / read-only mode, when it offers it."""

@@ -33,6 +33,11 @@ signal resident_updated(resident: Dictionary)
 signal resident_removed(resident_id: String)
 ## More of a package's train of thought arrived (Net.thinking[task_id]).
 signal thinking_received(task_id: String)
+## Answers to send_talk() (talk_popup.gd): a tool line while the resident looks
+## something up, then their reply, or why they couldn't answer.
+signal talk_thinking(talk_id: String, text: String)
+signal talk_replied(talk_id: String, text: String)
+signal talk_failed(talk_id: String, message: String)
 ## Every event from the server, as it arrived (the News tab turns them into stories).
 signal event_received(event: Dictionary)
 ## Something in `island` changed (after any of the signals above).
@@ -196,6 +201,22 @@ func send_answer(bubble_id: String, text: String) -> bool:
 	return _send({"type": "answer_bubble", "id": bubble_id, "response": text})
 
 
+## Say something to a resident at a building. `history` is the conversation so far
+## ([{"from": "you" | "resident", "text"}]). The answer comes back to this client
+## only, as talk_thinking / talk_replied / talk_failed with the same `talk_id`.
+func send_talk(talk_id: String, resident_id: String, building_id: String, text: String, history: Array) -> bool:
+	return _send(
+		{
+			"type": "talk",
+			"id": talk_id,
+			"resident": resident_id,
+			"building": building_id,
+			"message": text,
+			"history": history,
+		}
+	)
+
+
 func _try_connect() -> void:
 	_seconds_until_retry = RECONNECT_SECONDS
 	_socket = WebSocketPeer.new()  # a fresh peer for each attempt
@@ -209,6 +230,18 @@ func _handle_message(text: String) -> void:
 	if typeof(event) != TYPE_DICTIONARY:
 		push_warning("Ignoring a message that isn't a JSON object: %s" % text)
 		return
+
+	# A talk is private and never stored: not an island event, so not News either.
+	match event.get("type", ""):
+		"talk_thinking":
+			talk_thinking.emit(str(event.get("id", "")), str(event.get("text", "")))
+			return
+		"talk_reply":
+			talk_replied.emit(str(event.get("id", "")), str(event.get("text", "")))
+			return
+		"talk_error":
+			talk_failed.emit(str(event.get("id", "")), str(event.get("message", "")))
+			return
 
 	if not event.has("ts"):
 		event["ts"] = Time.get_datetime_string_from_system(true) + "+00:00"

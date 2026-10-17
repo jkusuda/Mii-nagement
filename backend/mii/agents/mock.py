@@ -61,6 +61,16 @@ class MockRunner:
         "post_office": "Writing a short PR title and a description of what changed and why. ",
     }
 
+    # What a mock resident says when you talk to them at a building (talk.py). {topic} is
+    # the start of what you said.
+    TALK_LINES = {
+        "mailbox": ["Ooh, a letter? I'd plan that as three small steps.", "About {topic}... I'd read it twice."],
+        "workshop": ["I'd start with the smallest change that works.", "Hmm, {topic}? I'd poke at the code first."],
+        "lab": ["If it isn't tested, it isn't done!", "I'd write a test for {topic} before anything else."],
+        "courthouse": ["I'll be honest with you: keep it simple.", "On {topic}, I'd want a clear test, small diff."],
+        "post_office": ["Short PR, clear title, happy reviewers.", "I'd write {topic} up in two lines and ship it."],
+    }
+
     # Fake tool calls (title, sort, detail), so the dropdown's summary and details have something to show.
     TOOLS = {
         "mailbox": [
@@ -91,6 +101,8 @@ class MockRunner:
         self.rng = rng or random.Random()
 
     async def run(self, job: AgentJob) -> StepResult:
+        if job.chat is not None:
+            return await self._talk(job)
         await job.report(self.ACTIVITY.get(job.building.type, "Working"))
         if job.think:
             await job.think("thought", self.THOUGHTS.get(job.building.type, "Thinking it over. "))
@@ -123,6 +135,18 @@ class MockRunner:
         else:
             result = StepResult("pass", f"(mock) Done at the {job.building.name}.{note}")
         return self._chatter(job, result)
+
+    async def _talk(self, job: AgentJob) -> StepResult:
+        """A chat: a short pause, one tool line, an in-character answer. No bubbles, never fails."""
+        if job.think:
+            await job.think("tool", "Looking around the " + job.building.name)
+        await asyncio.sleep(self.rng.uniform(0.6, 1.6))
+        topic = " ".join(job.chat.split()[:5]).rstrip("?!.,") or "that"
+        line = self.rng.choice(self.TALK_LINES.get(job.building.type, ["Hmm, {topic}? Let me think."]))
+        reply = f"(mock) {line.format(topic=topic)}"
+        if job.resident.catchphrase:
+            reply += f" {job.resident.catchphrase}"
+        return StepResult("pass", reply)
 
     def _chatter(self, job: AgentJob, result: StepResult) -> StepResult:
         """Sometimes ask a neighbour for help (on a fail), leave a note, or write in the diary."""

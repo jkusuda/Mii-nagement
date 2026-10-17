@@ -8,6 +8,10 @@ extends Node3D
 ## walk along a list of points and how to look for each state. island_life.gd
 ## borrows idle residents for ambient strolls and chats (`life_busy`); any
 ## server event for them calls stop_life() and the server's word wins.
+##
+## Working residents go *inside* their building: enter() walks them to the door
+## and hides the Mii and its tags (the ✋ bubble stays, floating over the door).
+## The next walk() pops them back out of the door first.
 
 signal arrived
 
@@ -27,11 +31,14 @@ var is_walking := false
 var life_busy := false
 ## Where they stood before island_life took them for a stroll (so they can go back).
 var home_spot := Vector3.ZERO
+## True while they're inside a building (working): the Mii is hidden at the door.
+var inside := false
 
 var _facing := 0.0  # radians around y, 0 = toward the camera
 var _work_tween: Tween
 var _walk_tween: Tween
 var _emote_tween: Tween
+var _door_tween: Tween
 var _mood_tag: Label3D
 var _speech: SpeechBubble
 
@@ -90,13 +97,12 @@ func show_resident(resident: Dictionary, open_bubble: Dictionary) -> void:
 		bubble_icon.modulate = Protocol.bubble(kind)["color"]
 
 
-## Walk through `points` (world positions), then emit `arrived`.
+## Walk through `points` (world positions), then emit `arrived`. Someone inside a
+## building steps out of the door first.
 func walk(points: Array[Vector3]) -> void:
-	var distance := 0.0
-	var last := global_position
-	for p in points:
-		distance += last.distance_to(p)
-		last = p
+	if inside:
+		_come_out()
+	var distance := route_length(points)
 	if distance < 0.05:
 		arrived.emit()
 		return
@@ -112,7 +118,7 @@ func walk(points: Array[Vector3]) -> void:
 	if _walk_tween:
 		_walk_tween.kill()
 	_walk_tween = create_tween()
-	last = global_position
+	var last := global_position
 	for p in points:
 		var leg := last.distance_to(p)
 		if leg < 0.01:
@@ -127,10 +133,70 @@ func walk(points: Array[Vector3]) -> void:
 	)
 
 
+## How far it is from here through `points`.
+func route_length(points: Array[Vector3]) -> float:
+	var distance := 0.0
+	var last := global_position
+	for p in points:
+		distance += last.distance_to(p)
+		last = p
+	return distance
+
+
+## Go to work inside a building: walk through `points` (the last one is the door),
+## then shrink away through the door. Safe to call again while already inside.
+func enter(points: Array[Vector3]) -> void:
+	if inside:
+		return
+	inside = true
+	state = "working"
+	zz.visible = false
+	_stop_working()
+	if route_length(points) >= 0.05:
+		walk(points)
+		await arrived
+		if not inside or is_walking:
+			return  # the server sent them somewhere else on the way in
+	if not points.is_empty():
+		_face_toward(points[-1] + (points[-1] - _route_before_door(points)))
+	# Godot concept: tween_callback runs a function when the tween reaches it, so
+	# this is "shrink for a quarter second, then hide".
+	_door_tween = create_tween()
+	_door_tween.tween_property(mii, "scale", Vector3.ONE * MII_SCALE * 0.15, 0.25).set_ease(Tween.EASE_IN)
+	_door_tween.tween_callback(_set_shown.bind(false))
+
+
+## The point walked from just before the door (to face through the doorway).
+func _route_before_door(points: Array[Vector3]) -> Vector3:
+	return points[-2] if points.size() >= 2 else global_position
+
+
+## Pop back out of the door: visible again, full size.
+func _come_out() -> void:
+	inside = false
+	if _door_tween:
+		_door_tween.kill()
+	_set_shown(true)
+	mii.scale = Vector3.ONE * MII_SCALE * 0.15
+	_door_tween = create_tween()
+	_door_tween.tween_property(mii, "scale", Vector3.ONE * MII_SCALE, 0.2).set_ease(Tween.EASE_OUT)
+
+
+## Show or hide the Mii and its tags (the bubble and speech lines stay).
+func _set_shown(on: bool) -> void:
+	mii.visible = on
+	name_tag.visible = on
+	_mood_tag.visible = on
+
+
 ## Walk `route` (along the path) to its last point and stand still there in a
 ## state: "idle", "working", or "sleeping". `look_at_point` is what to face
-## while working (the building).
+## while working (the building). Someone inside comes out first, unless still at work.
 func settle(route: Array[Vector3], new_state: String, look_at_point: Vector3) -> void:
+	if inside:
+		if new_state == "working":
+			return  # still at work inside
+		_come_out()
 	if not route.is_empty() and global_position.distance_to(route[-1]) > 0.05:
 		walk(route)  # a few steps into place
 		await arrived
@@ -242,6 +308,8 @@ func place(spot: Vector3) -> void:
 	if _walk_tween:
 		_walk_tween.kill()
 	is_walking = false
+	if inside:
+		_come_out()
 	global_position = spot
 
 
