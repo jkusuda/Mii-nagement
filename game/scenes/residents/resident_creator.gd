@@ -66,6 +66,7 @@ var _works_at_box := VBoxContainer.new()
 var _live := true  # false while drafting a resident for a new island (not on Net.island yet)
 var _move_away := Button.new()
 var _key_pickers := {}
+var _master_key := CheckButton.new()  # on = this resident never asks (the backend auto-answers)
 var _brain_ids: Array = ResidentData.BRAINS.keys()
 var _part_tiles := {}  # kind -> Array of tile buttons, index = style (hair: index 0 is "none")
 var _part_grids := {}  # kind -> GridContainer
@@ -152,6 +153,7 @@ func _load_widgets() -> void:
 	for key in _key_pickers:
 		var choices: Array = ResidentData.KEY_CHOICES.keys()
 		_key_pickers[key].select(choices.find(_data["keys"].get(key, "ask")))
+	_master_key.set_pressed_no_signal(bool(_data.get("master_key", false)))
 	for kind in _part_tiles:
 		# Hair's tile 0 is "None" (style -1), so its tiles are shifted by one.
 		var index := int(_data["appearance"][kind]) + (1 if kind == "hair" else 0)
@@ -571,6 +573,18 @@ func _build_keys() -> void:
 		%Keys.add_child(label)
 		%Keys.add_child(picker)
 		_key_pickers[k[0]] = picker
+	# The master key: every "Ask me" counts as yes and every bubble answers itself ("No" still refuses).
+	var label := Label.new()
+	label.text = "Master key"
+	label.theme_type_variation = &"BodyText"
+	label.tooltip_text = 'Never ask me: answer every bubble and permission by yourself (a "No" key still refuses)'
+	label.mouse_filter = Control.MOUSE_FILTER_PASS  # so the tooltip shows
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_master_key.focus_mode = Control.FOCUS_NONE
+	_master_key.tooltip_text = label.tooltip_text
+	_master_key.toggled.connect(func(on: bool): _data["master_key"] = on)
+	%Keys.add_child(label)
+	%Keys.add_child(_master_key)
 
 
 ## Ask the backend which brains can run here (GET /brains/detail), grey out

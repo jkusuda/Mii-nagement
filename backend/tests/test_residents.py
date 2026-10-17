@@ -29,17 +29,18 @@ async def test_create_keeps_every_creator_field(island):
         "bluntness": 1.7,
         "caution": 0.25,
         "keys": {"edit": "yes"},
+        "master_key": True,
         "gifts": ["docs", "browser", "docs"],
         "appearance": {"skin": "#F2C6A0", "hair": 12, "eyes": 3},
     }
     r = await residents.create_resident("sunny", data)
     assert (r.color, r.brain, r.model, r.bluntness, r.caution) == ("#2FA37A", "openrouter", None, 1.0, 0.25)
     assert r.keys == {**DEFAULT_KEYS, "edit": "yes"}
-    assert r.gifts == ["docs", "browser"]
+    assert r.gifts == ["docs", "browser"] and r.master_key is True
     # ...and the snapshot sends it all to the game.
     sent = next(x for x in (await island_snapshot("sunny", []))["residents"] if x["id"] == r.id)
     assert sent["keys"]["edit"] == "yes" and sent["gifts"] == ["docs", "browser"] and sent["bluntness"] == 1.0
-    assert sent["appearance"] == {"skin": "#F2C6A0", "hair": 12, "eyes": 3}
+    assert sent["appearance"] == {"skin": "#F2C6A0", "hair": 12, "eyes": 3} and sent["master_key"] is True
 
 
 @pytest.mark.parametrize(
@@ -53,6 +54,7 @@ async def test_create_keeps_every_creator_field(island):
         {"name": "Mo", "caution": "very"},
         {"name": "Mo", "keys": {"edit": "maybe"}},
         {"name": "Mo", "keys": {"launch": "yes"}},
+        {"name": "Mo", "master_key": "yes"},
         {"name": "Mo", "gifts": ["jetpack"]},
         {"name": "Mo", "appearance": "bob"},
         {"name": "Mo", "appearance": {"hair": {"style": 1}}},

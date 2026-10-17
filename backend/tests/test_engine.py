@@ -219,6 +219,34 @@ async def test_the_master_key_answers_every_bubble_by_itself(island):
     assert workflow.bubbles.open == {}
 
 
+class QuestionRunner:
+    """Asks one question at the Workshop (Carlos) and one at the Courthouse (Sydney)."""
+
+    def __init__(self):
+        self.answers: dict[str, str | None] = {}
+        self.master_keys: dict[str, bool] = {}
+
+    async def run(self, job) -> StepResult:
+        if job.building.type in ("workshop", "courthouse"):
+            self.master_keys[job.resident.id] = job.master_key
+            self.answers[job.resident.id] = await job.ask("confused", "Which file?")
+        return StepResult("pass", "ok")
+
+
+async def test_a_resident_with_the_master_key_never_asks_but_their_neighbours_still_do(island):
+    await Resident.objects.filter(pk="carlos").aupdate(master_key=True)
+    runner = QuestionRunner()
+    workflow, client = make_workflow(runner, bubble_timeout=0.05)
+    task = await asyncio.wait_for(workflow.run_task((await workflow.submit("sunny", "Some questions")).id), 5)
+
+    assert task.status == "done"
+    assert runner.answers == {"carlos": "No need to ask: use your best judgement and carry on.", "sydney": None}
+    assert runner.master_keys == {"carlos": True, "sydney": False}  # what permission_for sees
+    resolved = {e["id"]: e["answered"] for e in client.of_type("bubble_resolved")}
+    asked_by = {e["id"]: e["agent"] for e in client.of_type("bubble")}
+    assert {asked_by[i]: answered for i, answered in resolved.items()} == {"carlos": True, "sydney": False}
+
+
 # --- Real-mode handlers (a throwaway git repo stands in for the island's repository) ----
 
 
@@ -435,6 +463,20 @@ async def test_unanswered_review_leaves_the_pr_open_and_rule_off_merges_without_
     workflow, client = make_workflow(WritingRunner(), sandboxes=sandboxes, test_command="true")
     task = await workflow.run_task((await workflow.submit("sunny", "Trusted")).id)
     assert gh.merged == [task.pr_url] and client.of_type("bubble") == []
+
+
+async def test_a_courthouse_judge_with_the_master_key_approves_the_merge_by_itself(
+    island, sandbox, sandboxes, monkeypatch
+):
+    gh = FakeGitHub(monkeypatch)
+    await Island.objects.filter(pk="sunny").aupdate(repo="o/r", rules={"merge_pr": True})
+    await Resident.objects.filter(pk="sydney").aupdate(master_key=True)
+    workflow, client = make_workflow(WritingRunner(), sandboxes=sandboxes, test_command="true")
+    task = await asyncio.wait_for(workflow.run_task((await workflow.submit("sunny", "Self-approved")).id), 10)
+
+    assert task.status == "done" and gh.merged == [task.pr_url]  # nobody answered: the key did
+    assert [e["kind"] for e in client.of_type("bubble")] == ["ready"]
+    assert client.of_type("bubble_resolved")[0]["response"] == "Approve & merge"
 
 
 def test_merge_tries_the_methods_the_repo_allows(monkeypatch):
