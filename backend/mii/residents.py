@@ -1,18 +1,15 @@
 """Creating and editing residents (`create_resident` / `update_resident`).
 
-The resident creator in the game sends these. New residents are placeholders
-for now: they're saved and shown in the game, but the workflow engine keeps
-using the residents assigned to buildings (Building.resident_id).
+The resident creator in the game sends these over the WebSocket. New residents
+move into the building of their job on the island (mailbox / workshop /
+courthouse). They're placeholders for the workflow for now: the engine keeps
+using the resident each building points at (Building.resident).
 """
 
 import re
 import uuid
 
-from sqlmodel import Session
-
 from mii.agents.acp import BRAINS
-from sqlmodel import select
-
 from mii.models import DEFAULT_KEYS, Building, Resident
 from mii.personality import JOBS
 
@@ -27,6 +24,10 @@ HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 class ResidentError(ValueError):
     """The client sent something we can't use. The message goes back as an `error` event."""
+
+
+def known_brains() -> set[str]:
+    return {"mock", "openrouter", *BRAINS}
 
 
 def clean_fields(data: dict, partial: bool) -> dict:
@@ -45,12 +46,12 @@ def clean_fields(data: dict, partial: bool) -> dict:
             raise ResidentError(f"unknown job: {data['job']}")
         out["job"] = data["job"]
     if "brain" in data:
-        if str(data["brain"]) != "mock" and str(data["brain"]) not in BRAINS:
+        if str(data["brain"]) not in known_brains():
             raise ResidentError(f"unknown brain: {data['brain']}")
         out["brain"] = data["brain"]
     if "model" in data:
         model = str(data["model"] or "").strip()
-        out["model"] = model or None  # blank = the agent's default
+        out["model"] = model or None  # blank = the brain's default
     if "catchphrase" in data:
         out["catchphrase"] = str(data["catchphrase"]).strip()[:60]
     if "color" in data:
@@ -76,35 +77,30 @@ def clean_fields(data: dict, partial: bool) -> dict:
     return out
 
 
-def create_resident(session: Session, island_id: str, data: dict) -> Resident:
+async def create_resident(island_id: str, data: dict) -> Resident:
     fields = clean_fields(data, partial=False)
     job = fields.setdefault("job", "coder")
     slug = re.sub(r"[^a-z0-9]+", "_", fields["name"].lower()).strip("_") or "resident"
-    resident = Resident(id=f"{slug}_{uuid.uuid4().hex[:4]}", island_id=island_id, **fields)
-
-    # Move in: home is this island's first building of the job's types. Any of
-    # those buildings nobody works at yet become theirs, so a new island's
-    # workflow has someone at each stop.
-    buildings = session.exec(select(Building).where(Building.island_id == island_id)).all()
+    buildings = [b async for b in Building.objects.filter(island_id=island_id).order_by("id")]
     mine = [b for t in JOB_BUILDINGS[job] for b in buildings if b.type == t]
-    resident.building_id = mine[0].id if mine else (buildings[0].id if buildings else None)
-    session.add(resident)
+    home = mine[0] if mine else (buildings[0] if buildings else None)
+    resident = await Resident.objects.acreate(
+        id=f"{slug}_{uuid.uuid4().hex[:4]}", island_id=island_id, building_id=home.id if home else None, **fields
+    )
     for b in mine:
         if b.resident_id is None:
             b.resident_id = resident.id
-            session.add(b)
-    session.commit()
-    session.refresh(resident)
+            await b.asave(update_fields=["resident_id"])
     return resident
 
 
-def update_resident(session: Session, island_id: str, data: dict) -> Resident:
-    resident = session.get(Resident, str(data.get("id", "")))
-    if resident is None or resident.island_id != island_id:
+async def update_resident(island_id: str, data: dict) -> Resident:
+    resident = await Resident.objects.filter(pk=str(data.get("id", "")), island_id=island_id).afirst()
+    if resident is None:
         raise ResidentError(f"unknown resident id: {data.get('id')}")
-    for field, value in clean_fields(data, partial=True).items():
+    changes = clean_fields(data, partial=True)
+    for field, value in changes.items():
         setattr(resident, field, value)
-    session.add(resident)
-    session.commit()
-    session.refresh(resident)
+    if changes:
+        await resident.asave(update_fields=list(changes))
     return resident

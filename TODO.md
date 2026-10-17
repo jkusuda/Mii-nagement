@@ -11,6 +11,7 @@ grep -rn "TODO(stretch)" backend/mii game/net.gd game/scenes
 
 - [x] Repo docs, protocol, env template
 - [x] Backend: models, personality prompts, workflow engine, mock agents, event bus, seed + simulator
+- [x] Backend ported to Django + Channels (same protocol, same endpoints)
 - [x] Godot: WebSocket client, island, buildings, residents, bubbles, connection indicator
 - [x] Runs end to end in mock mode
 
@@ -18,19 +19,24 @@ grep -rn "TODO(stretch)" backend/mii game/net.gd game/scenes
 
 Backend design: [docs/architecture.md](docs/architecture.md).
 
-- [ ] **ACP runner** (`agents/acp.py`): drive Claude Code first, then Codex and
-      Gemini CLI. Permission requests → ✋ bubbles with options, progress →
-      `activity` events, file requests path-checked, usage limits → 💤 bubbles.
-      Test it against a tiny fake ACP agent (`tests/test_acp.py`).
-- [ ] **GitHub issue in → real PR out** (`github.py`, via the `gh` CLI): the
+- [x] **ACP runner** (`agents/acp.py`): Claude Code, Codex and Gemini CLI on
+      your subscriptions. Permission requests → ✋ bubbles with the agent's own
+      options, progress → `activity` events, file requests path-checked, missing
+      login → 💤 bubble. Tested against a fake ACP agent (`tests/fake_acp_agent.py`).
+- [x] **OpenRouter brain** (`agents/openrouter.py`): any OpenRouter model as a
+      resident, no CLI needed (`OPENROUTER_API_KEY`).
+- [ ] **Real-mode run on stage**: a hands-on task through each live CLI. The Claude
+      Code adapter handshake (modes + model list) is verified; a full prompt run,
+      Codex, and Gemini haven't been watched yet.
+- [x] **GitHub issue in → real PR out** (`github.py`, via the `gh` CLI): the
       workshop commits, the post office pushes and opens the PR.
-- [ ] **Lab runs the real tests** and passes/fails on the exit code.
+- [x] **Lab runs the real tests** (`TEST_COMMAND`) and passes/fails on the exit code.
+- [x] **Insights** (`insights.py`): per resident, per brain, per building stats.
 - [x] **Insights screen** (Godot): stat cards, packages per day, where packages
       wait, comfort report. Shows dashes until the backend sends the fields.
-- [ ] **Insights backend** (`insights.py`): fill the payload in
-      [docs/architecture.md](docs/architecture.md) ("Insights payload"): per-day
-      counts, answer time, test pass rate, previous-range numbers, tip.
-- [ ] **Replay** (`replay.py`): re-play a recorded good run if anything fails on stage.
+- [ ] **Insights backend, rest of the payload** ([docs/architecture.md](docs/architecture.md)
+      "Insights payload"): per-day counts, answer time, test pass rate, previous-range numbers, tip.
+- [x] **Replay** (`replay.py`): re-play a recorded good run if anything fails on stage.
 - [x] **Game: live island**: residents on the 3D island walking the roads, states
       (working / idle / sleeping), bubble icons, station counts, the Bubbles
       sidebar from real bubbles with option buttons / typed answers.
@@ -40,8 +46,10 @@ Backend design: [docs/architecture.md](docs/architecture.md).
       live 3D Mii preview, brain/model, sliders, gifts, house keys.
 - [x] **Resident creator, backend half**: `create_resident` / `update_resident`,
       `keys` / `gifts` columns (new residents are placeholders for now).
-- [ ] **ACP honours house keys and gifts**, and new residents can be given a building
-      ([docs/mii-customization.md](docs/mii-customization.md)).
+- [x] **ACP honours house keys**: `yes` / `ask` / `no` per tool kind in `AcpRunner`.
+- [ ] **Gifts as MCP servers** (a `GIFTS` table next to `BRAINS`), and giving new
+      residents a building ([docs/mii-customization.md](docs/mii-customization.md)).
+- [ ] **Game: `openrouter` brain** in the creator's brain list (backend supports it).
 - [ ] **Build mode**: place the 5 building types and draw pass/fail roads.
 
 ## 🌈 Stretch
@@ -51,7 +59,8 @@ Backend design: [docs/architecture.md](docs/architecture.md).
       ([docs/architecture.md](docs/architecture.md), "Events history"); `prs_merged`
       and `keys_lent` in the insights payload for News' "This week"
 - [x] Archipelago home screen + island switcher (GET /islands, per-island events)
-- [x] Island creator: name, repo (via gh), branch, town plan, residents, house rules
+- [x] Island creator: name, repo (via gh), branch, town plan, residents, house rules;
+      every island gets its own git repository (`islands.py`)
 - [ ] Island looks (seasons), Caretaker, Settings
 - [ ] ACP runner honours island `branch` and house `rules`
 - [ ] "Celebrating" island status (needs recent shipped tasks: the events endpoint)

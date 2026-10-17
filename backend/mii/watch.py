@@ -1,11 +1,7 @@
-"""Tiny WebSocket client: prints every event from the backend.
-
-Run (with the server running):  uv run python -m mii.watch
-"""
+"""Tiny WebSocket client: prints every event from the backend (`manage.py watch`)."""
 
 import asyncio
 import json
-import sys
 
 import websockets
 
@@ -28,9 +24,9 @@ async def watch(url: str) -> None:
                 print(f"{event['type']:<16} {fields}")
 
 
-if __name__ == "__main__":
+def main(url: str = URL) -> None:
     try:
-        asyncio.run(watch(sys.argv[1] if len(sys.argv) > 1 else URL))
+        asyncio.run(watch(url))
     except KeyboardInterrupt:
         pass
     except OSError as e:

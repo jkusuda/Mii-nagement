@@ -1,4 +1,8 @@
-"""Settings, loaded once from the .env file at the repo root."""
+"""App settings, loaded once from the .env file at the repo root.
+
+This is *our* config (mock switch, repo path, keys, pacing). Django's own
+settings live in settings.py and read from here.
+"""
 
 import os
 from dataclasses import dataclass
@@ -17,29 +21,59 @@ def _optional_path(name: str) -> Path | None:
     return Path(value).expanduser().resolve() if value else None
 
 
+def _optional_str(name: str) -> str | None:
+    value = os.getenv(name, "").strip()
+    return value or None
+
+
+def _flag(name: str, default: str) -> bool:
+    return os.getenv(name, default).strip() not in ("0", "", "false", "no")
+
+
 @dataclass(frozen=True)
-class Settings:
+class Config:
     mock_agents: bool  # True = every resident uses the mock brain, whatever its `brain` field says
-    sandbox_repo_path: Path | None  # the git repo agents work on (worktrees of it)
-    worktree_root: Path
-    database_url: str
+    islands_root: Path | None  # where new island repos are created (None = Documents/Mii-nagement)
+    worktree_root: Path  # where per-task worktrees of island repos go
+    database_path: Path  # SQLite file
+
+    # OpenRouter (the direct `openrouter` brain, no CLI needed)
+    openrouter_api_key: str | None = None
+    openrouter_default_model: str = "anthropic/claude-sonnet-4.5"
+
+    # Real-mode plumbing
+    test_command: str | None = None  # what the Lab runs in the worktree, e.g. "uv run pytest -q"
+    keep_worktrees: bool = False  # keep a task's worktree after it finishes (debugging)
+    git_author: str = "Mii-nagement <mii@localhost>"  # author of the Workshop's commits
 
     # Pacing (seconds)
     walk_seconds: float = 2.0  # how long a walk between buildings takes (lets the game animate)
     bubble_timeout: float = 30.0  # how long a resident waits for your answer
+    permission_timeout: float | None = None  # same, for ✋ permission bubbles (None = bubble_timeout)
     sleep_after: float = 45.0  # idle this long -> residents fall asleep
     step_timeout: float = 600.0  # an agent taking longer than this gets stopped
 
 
-def load_settings() -> Settings:
+def load_config() -> Config:
     # Agent API keys (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY) aren't read
     # here: agent processes inherit them from the environment if they're set.
-    return Settings(
-        mock_agents=os.getenv("MOCK_AGENTS", "1").strip() != "0",
-        sandbox_repo_path=_optional_path("SANDBOX_REPO_PATH"),
+    permission = _optional_str("PERMISSION_TIMEOUT")
+    return Config(
+        mock_agents=_flag("MOCK_AGENTS", "1"),
+        islands_root=_optional_path("ISLANDS_ROOT"),
         worktree_root=_optional_path("WORKTREE_ROOT") or BACKEND_DIR / ".worktrees",
-        database_url=os.getenv("DATABASE_URL", f"sqlite:///{BACKEND_DIR / 'mii.db'}"),
+        database_path=_optional_path("DATABASE_PATH") or BACKEND_DIR / "mii.db",
+        openrouter_api_key=_optional_str("OPENROUTER_API_KEY"),
+        openrouter_default_model=_optional_str("OPENROUTER_MODEL") or "anthropic/claude-sonnet-4.5",
+        test_command=_optional_str("TEST_COMMAND"),
+        keep_worktrees=_flag("KEEP_WORKTREES", "0"),
+        git_author=_optional_str("GIT_AUTHOR") or "Mii-nagement <mii@localhost>",
+        walk_seconds=float(os.getenv("WALK_SECONDS", "2.0")),
+        bubble_timeout=float(os.getenv("BUBBLE_TIMEOUT", "30")),
+        permission_timeout=float(permission) if permission else None,
+        sleep_after=float(os.getenv("SLEEP_AFTER", "45")),
+        step_timeout=float(os.getenv("STEP_TIMEOUT", "600")),
     )
 
 
-settings = load_settings()
+config = load_config()

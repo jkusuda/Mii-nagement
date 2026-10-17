@@ -1,21 +1,20 @@
-"""Seed data + simulator.
+"""Seed data + simulator (used by `manage.py seed`).
 
-    uv run python -m mii.seed            # create the seed island (if missing)
-    uv run python -m mii.seed --reset    # wipe the database and re-seed (stop the server first)
-    uv run python -m mii.seed --loop     # simulator: keep sending fake tasks to the running server
+    uv run python manage.py seed            # create the seed island (if missing)
+    uv run python manage.py seed --reset    # wipe the database and re-seed (stop the server first)
+    uv run python manage.py seed --loop     # simulator: keep sending fake tasks to the running server
 
 The IDs and lot positions here must match the "Seed island IDs" table in
 docs/protocol.md, because the Godot client places buildings by these IDs.
 """
 
-import argparse
 import asyncio
 import random
 
 import httpx
-from sqlmodel import Session, SQLModel
+from django.db import transaction
 
-from mii.models import Building, Island, Resident, Road, db_engine, init_db
+from mii.models import Building, Event, Island, Resident, Road, Step, Task
 
 ISLAND_ID = "sunny"
 
@@ -23,6 +22,7 @@ ISLAND_ID = "sunny"
 def residents() -> list[Resident]:
     # One brain per vendor, for the demo: a Gemini planner, a Claude Code coder,
     # and a Codex reviewer. With MOCK_AGENTS=1 (the default) they all run on mock.
+    # A resident on the `openrouter` brain (any model, no CLI) is added later by the resident creator.
     return [
         Resident(
             id="jun", island_id="sunny", name="Jun", job="planner", brain="gemini",
@@ -66,19 +66,22 @@ def roads() -> list[Road]:
         ("courthouse", "post_office", "pass"),
         ("courthouse", "workshop", "fail"),
     ]
-    return [Road(island_id="sunny", from_id=a, to_id=b, condition=c) for a, b, c in rows]
+    return [Road(island_id="sunny", from_building_id=a, to_building_id=b, condition=c) for a, b, c in rows]
 
 
-def seed(engine=db_engine, reset: bool = False) -> str:
-    """Create the seed island if it doesn't exist. Returns the island id."""
-    if reset:
-        SQLModel.metadata.drop_all(engine)
-    init_db(engine)
-    with Session(engine) as session:
-        if session.get(Island, ISLAND_ID) is None:
-            session.add(Island(id=ISLAND_ID, name="Sunny Isle", repo=None))
-            session.add_all(residents() + buildings() + roads())
-            session.commit()
+def seed(reset: bool = False) -> str:
+    """Create the seed island if it doesn't exist. Returns the island id. (Sync: wrap with sync_to_async.)"""
+    with transaction.atomic():
+        if reset:
+            for model in (Event, Step, Task, Road, Building, Resident, Island):
+                model.objects.all().delete()
+        if not Island.objects.filter(pk=ISLAND_ID).exists():
+            Island.objects.create(id=ISLAND_ID, name="Sunny Isle", repo=None)
+            # Residents point at buildings and buildings at residents: SQLite checks
+            # foreign keys when the transaction commits, so the order doesn't matter.
+            Resident.objects.bulk_create(residents())
+            Building.objects.bulk_create(buildings())
+            Road.objects.bulk_create(roads())
             print(f"seeded island {ISLAND_ID!r}")
     return ISLAND_ID
 
@@ -115,25 +118,3 @@ async def simulate(base_url: str, island_id: str, pause: float) -> None:
                     break
             print(f"finished {task_id}")
             await asyncio.sleep(pause)
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Seed the island, optionally run the simulator.")
-    parser.add_argument("--reset", action="store_true", help="wipe the database first (stop the server first)")
-    parser.add_argument("--loop", action="store_true", help="keep sending fake tasks to the server")
-    parser.add_argument("--url", default="http://localhost:8000", help="server URL for --loop")
-    parser.add_argument("--pause", type=float, default=3.0, help="seconds between tasks")
-    args = parser.parse_args()
-
-    island_id = seed(reset=args.reset)
-    if args.loop:
-        try:
-            asyncio.run(simulate(args.url, island_id, args.pause))
-        except KeyboardInterrupt:
-            pass
-        except httpx.ConnectError:
-            print(f"could not reach {args.url}. Start the server first.")
-
-
-if __name__ == "__main__":
-    main()

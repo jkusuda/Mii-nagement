@@ -5,15 +5,18 @@ Context for Claude Code sessions working on this repo.
 ## What this is
 
 **Mii-nagement**: a Tomodachi Life-style multi-agent manager for real software
-work (hackathon project). An *island* is a project linked to a GitHub repo.
+work (hackathon project). An *island* is a project: a local git repository
+(created with the island; see `islands.py`), optionally linked to a GitHub repo.
 *Residents* have jobs and personality sliders, and a *brain*: a coding agent
-(Claude Code, Codex, Gemini CLI) driven over the Agent Client Protocol (ACP), or `mock`. *Buildings* are
+(Claude Code, Codex, Gemini CLI) driven over the Agent Client Protocol (ACP) on the
+user's subscription, `openrouter` (any OpenRouter model, no CLI), or `mock`. *Buildings* are
 workflow steps and *roads* are handoffs (with `always` / `pass` / `fail`
 conditions). A *task package* travels the road graph.
 
 Two halves talk over one WebSocket:
 
-- `backend/`: Python 3.12, uv, FastAPI, SQLModel + SQLite, pytest. Agents over ACP.
+- `backend/`: Python 3.12, uv, Django + Channels (ASGI via uvicorn), Django ORM +
+  SQLite, pytest-django. Agents over ACP, plus the OpenRouter brain.
   Owns **all** logic: workflow engine, agents, persistence, safety.
 - `game/`: Godot 4 (GDScript), a 3D island inside a 2D UI, 1280×720. **Display and input only.** It
   renders events and sends user input. Never put agent or workflow logic here.
@@ -25,23 +28,32 @@ for every message. Change it first, then update both halves to match.
 ## Structure
 
 ```
-backend/mii/
-  config.py       settings loaded from the root .env
-  models.py       tables (Island, Resident, Building, Road, Task, Step, Event) + DB setup + snapshot
+backend/manage.py Django CLI: migrate, makemigrations mii, seed [--reset|--loop], watch
+backend/mii/      one package = Django project + app
+  settings.py     Django settings (reads config.py)
+  config.py       app settings loaded from the root .env (`config`)
+  asgi.py         ASGI entry: HTTP + WebSocket + lifespan (starts the engine worker)
+  urls.py / views.py   async JSON endpoints: /health, /brains, /models, /islands/{id}, tasks, insights, replay
+  consumers.py    the /ws WebSocket consumer (Channels, no channel layer)
+  runtime.py      one sandbox / event bus / bubbles / engine per process (get_runtime())
+  models.py       tables (Island, Resident, Building, Road, Task, Step, Event) + snapshot
+  migrations/     Django migrations (checked in)
+  islands.py      an island = a git repo: create_island(), default_folder(), ensure_repo()
   personality.py  Resident -> prompt preamble
   events.py       event bus (persist to SQLite + broadcast) + bubbles
-  engine.py       island graph + building handlers + task loop (step timeout, Step rows)
+  engine.py       island graph + building handlers (commit, test run, PR) + task loop
   residents.py    create_resident / update_resident (the resident creator)
-  islands.py      POST /islands: found an island from a town plan
-  sandbox.py      one git worktree per task + is_inside()
-  agents/         __init__ (AgentJob, BrainRunner, make_runner), mock.py, acp.py (BRAINS table)
-  github.py       repo + branch lists via `gh`; issue in / PR out (boilerplate)
-  insights.py     stats from the Step table                     (mostly boilerplate)
-  replay.py       replay a recorded task into the game          (boilerplate)
-  server.py       FastAPI app: /ws, /health, /brains, /islands/{id}, tasks, insights, replay
-  seed.py         seed island; `--loop` = simulator
-  watch.py        tiny WebSocket client that prints events
-backend/tests/    pytest
+  islands.py      found an island: town plan + a git repo per island (POST /islands)
+  sandbox.py      Sandboxes (one per island repo) + worktree per task + commit_all/diff_stat + is_inside()
+  agents/         __init__ (AgentJob, BrainRunner, make_runner, parse_verdict), mock.py,
+                  acp.py (AcpRunner + BRAINS table), openrouter.py (OpenRouterRunner)
+  github.py       repo + branch lists via `gh`; issue in / PR out
+  insights.py     stats from the Step table
+  replay.py       replay a recorded task into the game
+  seed.py         seed island + simulator (via `manage.py seed`)
+  watch.py        tiny WebSocket client that prints events (via `manage.py watch`)
+  management/commands/   seed, watch
+backend/tests/    pytest (pytest-django; fake_acp_agent.py is a mini ACP agent)
 game/
   net.gd          autoload singleton `Net`: WebSocket -> signals, send_answer(), visit_island()
   islands.gd      autoload `Islands`: every island (GET /islands + snapshots) + 3D thumbnails
@@ -80,11 +92,12 @@ docs/mii-customization.md  the Mii model, how creator fields reach ACP, customiz
 All backend commands run from `backend/`:
 
 ```bash
-uv sync                                          # install
-uv run uvicorn mii.server:app --reload --port 8000   # server
-uv run python -m mii.seed --loop                 # simulator
-uv run python -m mii.watch                       # print event stream
-uv run pytest                                    # tests
+uv sync                                                        # install
+uv run python -m uvicorn mii.asgi:application --reload --port 8000   # server (migrates + seeds at startup)
+uv run python manage.py seed --loop                            # simulator
+uv run python manage.py watch                                  # print event stream
+uv run python manage.py makemigrations mii                     # after changing models.py
+uv run pytest                                                  # tests
 ```
 
 Godot is **not on PATH** on this machine. Use the full path:
@@ -111,23 +124,31 @@ On the Windows machine, Godot 4.7.2 lives in Downloads (use the `_console.exe` f
   Python but is **new to Godot**. When introducing a Godot concept for the first
   time (nodes, scenes, signals, autoloads, `_process`, SubViewport, Tween, etc.),
   explain it briefly in a comment or in chat.
-- **Brains over ACP.** Real residents are ACP coding agents (`claude-code`,
+- **Brains over ACP first.** Real residents are ACP coding agents (`claude-code`,
   `codex`, `gemini`), all through one `AcpRunner`; each brain is an entry in the
   `BRAINS` table in `agents/acp.py`. Agents authenticate the way their CLI does
-  (subscription login or API key env var). Keep brain-specific details inside
-  that table/runner, never in the engine, protocol, or game.
-- **Keep the backend small.** Out of scope on purpose: LangChain/direct API
-  runners, friendship, ML router, parallel tasks. Island News
-  is written in the game from stored events; the backend only serves them.
-- **No migrations yet.** After changing a table in `models.py`, reset the dev
-  database: `uv run python -m mii.seed --reset` (stop the server first).
+  (subscription login first, API key env var as fallback). The one direct-API
+  brain is `openrouter` (`agents/openrouter.py`): any OpenRouter model, no CLI.
+  Keep brain-specific details inside those runners, never in the engine,
+  protocol, or game.
+- **Keep the backend small.** Out of scope on purpose: LangChain or more direct
+  API runners (OpenRouter is the one), friendship, ML router, parallel tasks.
+  Several islands share one task queue. Island News is written in the game
+  from stored events; the backend only serves them.
+- **Migrations are Django's.** After changing a table in `models.py`, run
+  `uv run python manage.py makemigrations mii` and check the migration in. The
+  server runs `migrate` at startup. `manage.py seed --reset` wipes the rows.
 - **Mock mode is the default** (`MOCK_AGENTS=1`): fake work, no API cost. Every
   feature should keep working in mock mode.
-- **Safety:** agents may only read and write inside git worktrees of
-  `SANDBOX_REPO_PATH`. Never loosen `sandbox.py` checks to make something work.
+- **No machine-specific defaults.** Paths come from `Path.home()` / `.env`, never
+  from a hardcoded user folder, so the project runs on any macOS, Windows or Linux box.
+- **Safety:** agents may only read and write inside git worktrees of the
+  island's own repository; shell commands are gated by a ✋ bubble. Never loosen
+  `sandbox.py` checks to make something work. The engine is async: use the
+  async ORM (`aget`/`asave`/`async for`), and `asyncio.to_thread` for subprocesses.
 - Keep `.tscn` files simple. Put logic in `.gd` files and build nodes in code
   where that's clearer.
 - Residents walk along the roads in `scenes/island/` (`island_residents.gd` picks
   the route, `island_paths.gd` follows the sand path). The owner asked for it to
   be written; it's still a good file to read when learning Godot.
-- No version control yet: the project is local-only for now, so don't run git commands.
+- Git: the repo lives on GitHub (`origin`, branch `main`). Commit or push only when the owner asks.

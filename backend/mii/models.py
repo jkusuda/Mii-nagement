@@ -1,19 +1,19 @@
-"""Database tables and setup.
+"""Database tables (Django models) + converting rows to protocol dicts.
 
-SQLModel = SQLAlchemy + Pydantic. Each class with `table=True` is one SQLite
-table, and each instance is one row. Table models don't validate values, so
-personality.py clamps the sliders when it reads them.
+Each class is one SQLite table, each instance one row. Django creates and
+updates the tables through migrations:
 
-No migrations: after changing a table, run `uv run python -m mii.seed --reset`.
+    uv run python manage.py makemigrations mii   # after changing a model
+    uv run python manage.py migrate              # apply (the server also does this at startup)
+
+The engine is async, so it uses Django's async ORM methods (`aget`, `asave`,
+`acreate`, `async for`). Table models don't validate values, so personality.py
+clamps the sliders when it reads them.
 """
 
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Column
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Field, Session, SQLModel, create_engine, select
-
-from mii.config import settings
+from django.db import models
 
 
 def utcnow() -> datetime:
@@ -22,123 +22,118 @@ def utcnow() -> datetime:
 
 # --- Tables -----------------------------------------------------------------
 
-# House keys: ACP tool kind group -> "yes" | "ask" | "no" (docs/protocol.md).
+# House keys: ACP tool kind group -> "yes" | "ask" | "no" (docs/protocol.md). Used by agents/acp.py.
 DEFAULT_KEYS = {"read": "yes", "edit": "ask", "execute": "ask", "fetch": "no"}
 
 
-class Island(SQLModel, table=True):
-    id: str = Field(primary_key=True)
-    name: str
-    repo: str | None = None  # GitHub "owner/name"
-    branch: str = "main"  # residents branch off from here
-    plan: str = "classic"  # town plan it was founded with (islands.py TOWN_PLANS)
+def default_keys() -> dict:
+    return dict(DEFAULT_KEYS)
+
+
+class Island(models.Model):
+    id = models.CharField(primary_key=True, max_length=64)
+    name = models.CharField(max_length=200)
+    repo = models.CharField(max_length=200, null=True, blank=True)  # GitHub "owner/name"
+    repo_path = models.CharField(max_length=1000, null=True, blank=True)  # the local git repo (see islands.py)
+    branch = models.CharField(max_length=200, default="main")  # residents branch off from here
+    plan = models.CharField(max_length=50, default="classic")  # town plan it was founded with (islands.py TOWN_PLANS)
     # House rules from the island creator: True = ask me before doing this.
     # Stored only for now (merge_pr, install_packages, shell).
-    rules: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    rules = models.JSONField(default=dict)
 
 
-class Resident(SQLModel, table=True):
-    id: str = Field(primary_key=True)
-    island_id: str = Field(foreign_key="island.id", index=True)
-    name: str
-    job: str  # planner | coder | reviewer
+class Resident(models.Model):
+    id = models.CharField(primary_key=True, max_length=64)
+    island = models.ForeignKey(Island, on_delete=models.CASCADE, related_name="residents")
+    name = models.CharField(max_length=100)
+    job = models.CharField(max_length=50)  # planner | coder | reviewer
 
     # Personality sliders, each 0.0-1.0 (see personality.py)
-    bluntness: float = 0.5
-    caution: float = 0.5
-    chattiness: float = 0.5
-    creativity: float = 0.5
+    bluntness = models.FloatField(default=0.5)
+    caution = models.FloatField(default=0.5)
+    chattiness = models.FloatField(default=0.5)
+    creativity = models.FloatField(default=0.5)
 
-    brain: str = "mock"  # mock | claude-code | codex | gemini (see agents/acp.py BRAINS)
-    model: str | None = None  # optional model override; None = the agent's default
-    catchphrase: str = ""
-    color: str = "#FFFFFF"
+    brain = models.CharField(max_length=50, default="mock")  # mock | claude-code | codex | gemini | openrouter
+    model = models.CharField(max_length=200, null=True, blank=True)  # optional model override; None = the brain's default
+    catchphrase = models.CharField(max_length=200, blank=True, default="")
+    color = models.CharField(max_length=20, default="#FFFFFF")
 
-    # Set in the resident creator. Stored only for now (see docs/mii-customization.md):
-    # keys = what the agent may do without asking, gifts = extra MCP server ids.
-    keys: dict = Field(default_factory=lambda: dict(DEFAULT_KEYS), sa_column=Column(JSON))
-    gifts: list = Field(default_factory=list, sa_column=Column(JSON))
+    # Set in the resident creator (see docs/mii-customization.md):
+    # keys = what the agent may do without asking (honoured by the ACP runner), gifts = extra MCP server ids (stored only).
+    keys = models.JSONField(default=default_keys)
+    gifts = models.JSONField(default=list)
 
     # Live state, shown in the game
-    state: str = "idle"  # idle | walking | working | sleeping
-    building_id: str | None = None
-    mood: str = "happy"
+    state = models.CharField(max_length=20, default="idle")  # idle | walking | working | sleeping
+    building = models.ForeignKey("Building", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    mood = models.CharField(max_length=20, default="happy")
 
 
-class Building(SQLModel, table=True):
-    id: str = Field(primary_key=True)
-    island_id: str = Field(foreign_key="island.id", index=True)
-    type: str  # mailbox | workshop | lab | courthouse | post_office
-    name: str
-    x: int  # lot position on the island grid
-    y: int
-    resident_id: str | None = Field(default=None, foreign_key="resident.id")
+class Building(models.Model):
+    id = models.CharField(primary_key=True, max_length=64)
+    island = models.ForeignKey(Island, on_delete=models.CASCADE, related_name="buildings")
+    type = models.CharField(max_length=50)  # mailbox | workshop | lab | courthouse | post_office
+    name = models.CharField(max_length=100)
+    x = models.IntegerField()  # lot position on the island grid
+    y = models.IntegerField()
+    resident = models.ForeignKey(Resident, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
 
 
-class Road(SQLModel, table=True):
-    id: int | None = Field(default=None, primary_key=True)
-    island_id: str = Field(foreign_key="island.id", index=True)
-    from_id: str = Field(foreign_key="building.id")
-    to_id: str = Field(foreign_key="building.id")
-    condition: str = "always"  # always | pass | fail
+class Road(models.Model):
+    island = models.ForeignKey(Island, on_delete=models.CASCADE, related_name="roads")
+    from_building = models.ForeignKey(Building, on_delete=models.CASCADE, related_name="+")
+    to_building = models.ForeignKey(Building, on_delete=models.CASCADE, related_name="+")
+    condition = models.CharField(max_length=20, default="always")  # always | pass | fail
 
 
-class Task(SQLModel, table=True):
-    id: str = Field(primary_key=True)
-    island_id: str = Field(foreign_key="island.id", index=True)
-    title: str
-    description: str = ""
-    status: str = "queued"  # queued | in_progress | done | failed
-    building_id: str | None = None  # where the package is now
-    agent_id: str | None = None  # who is carrying it
-    issue_number: int | None = None  # the GitHub issue it came from
-    branch: str | None = None  # mii/<task_id>, in the task's worktree
-    pr_url: str | None = None  # set by the post office
-    created_at: datetime = Field(default_factory=utcnow)
+class Task(models.Model):
+    id = models.CharField(primary_key=True, max_length=64)
+    island = models.ForeignKey(Island, on_delete=models.CASCADE, related_name="tasks")
+    title = models.CharField(max_length=500)
+    description = models.TextField(blank=True, default="")
+    status = models.CharField(max_length=20, default="queued")  # queued | in_progress | done | failed
+    building = models.ForeignKey(Building, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")  # where the package is now
+    agent = models.ForeignKey(Resident, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")  # who is carrying it
+    issue_number = models.IntegerField(null=True, blank=True)  # the GitHub issue it came from
+    branch = models.CharField(max_length=200, null=True, blank=True)  # mii/<task_id>, in the task's worktree
+    pr_url = models.CharField(max_length=500, null=True, blank=True)  # set by the post office
+    created_at = models.DateTimeField(default=utcnow)
 
 
-class Step(SQLModel, table=True):
-    """One building visit by one resident. The source data for insights.py."""
+class Step(models.Model):
+    """One building visit by one resident. The source data for insights.py.
 
-    id: int | None = Field(default=None, primary_key=True)
-    island_id: str = Field(foreign_key="island.id", index=True)
-    task_id: str = Field(foreign_key="task.id", index=True)
-    building_id: str
-    building_type: str
-    resident_id: str
-    brain: str
-    outcome: str = ""  # pass | fail
-    timed_out: bool = False
-    bubbles_raised: int = 0
-    started_at: datetime = Field(default_factory=utcnow)
-    finished_at: datetime | None = None
+    Plain strings instead of foreign keys, so history survives residents and
+    buildings being renamed or removed.
+    """
+
+    island_id = models.CharField(max_length=64, db_index=True)
+    task_id = models.CharField(max_length=64, db_index=True)
+    building_id = models.CharField(max_length=64)
+    building_type = models.CharField(max_length=50)
+    resident_id = models.CharField(max_length=64)
+    brain = models.CharField(max_length=50)
+    outcome = models.CharField(max_length=10, blank=True, default="")  # pass | fail
+    timed_out = models.BooleanField(default=False)
+    bubbles_raised = models.IntegerField(default=0)
+    started_at = models.DateTimeField(default=utcnow)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    @property
+    def seconds(self) -> float | None:
+        if self.finished_at is None:
+            return None
+        return (self.finished_at - self.started_at).total_seconds()
 
 
-class Event(SQLModel, table=True):
+class Event(models.Model):
     """Every event sent to clients, kept for history and replay.py."""
 
-    id: int | None = Field(default=None, primary_key=True)
-    island_id: str | None = Field(default=None, index=True)
-    type: str = Field(index=True)
-    payload: dict = Field(default_factory=dict, sa_column=Column(JSON))
-    created_at: datetime = Field(default_factory=utcnow)
-
-
-# --- Database setup ---------------------------------------------------------
-
-
-def make_engine(url: str):
-    if url == "sqlite://":  # in-memory database, used by tests
-        return create_engine(url, connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    return create_engine(url, connect_args={"check_same_thread": False})
-
-
-db_engine = make_engine(settings.database_url)
-
-
-def init_db(engine=db_engine) -> None:
-    """Create any missing tables."""
-    SQLModel.metadata.create_all(engine)
+    island_id = models.CharField(max_length=64, null=True, blank=True, db_index=True)
+    type = models.CharField(max_length=50, db_index=True)
+    payload = models.JSONField(default=dict)
+    created_at = models.DateTimeField(default=utcnow)
 
 
 # --- Converting rows to protocol dicts (see docs/protocol.md) ---------------
@@ -176,28 +171,29 @@ def task_to_dict(t: Task) -> dict:
     }
 
 
-def island_snapshot(session: Session, island_id: str, open_bubbles: list[dict]) -> dict:
-    """Full island state for the `snapshot` event."""
-    island = session.get(Island, island_id)
-    if island is None:
-        raise KeyError(island_id)
-
-    def rows(model):
-        return session.exec(select(model).where(model.island_id == island_id)).all()
-
+async def island_snapshot(island_id: str, open_bubbles: list[dict]) -> dict:
+    """Full island state for the `snapshot` event. Raises Island.DoesNotExist."""
+    island = await Island.objects.aget(pk=island_id)
     return {
         "id": island.id,
         "name": island.name,
         "repo": island.repo,
+        "path": island.repo_path,
         "branch": island.branch,
         "plan": island.plan,
         "rules": island.rules,
         "buildings": [
             {"id": b.id, "type": b.type, "name": b.name, "x": b.x, "y": b.y, "resident": b.resident_id}
-            for b in rows(Building)
+            async for b in Building.objects.filter(island_id=island_id).order_by("id")
         ],
-        "roads": [{"from": r.from_id, "to": r.to_id, "condition": r.condition} for r in rows(Road)],
-        "residents": [resident_to_dict(r) for r in rows(Resident)],
+        "roads": [
+            {"from": r.from_building_id, "to": r.to_building_id, "condition": r.condition}
+            async for r in Road.objects.filter(island_id=island_id).order_by("id")
+        ],
+        "residents": [resident_to_dict(r) async for r in Resident.objects.filter(island_id=island_id).order_by("id")],
         "bubbles": open_bubbles,
-        "tasks": [task_to_dict(t) for t in rows(Task) if t.status in ("queued", "in_progress")],
+        "tasks": [
+            task_to_dict(t)
+            async for t in Task.objects.filter(island_id=island_id, status__in=["queued", "in_progress"]).order_by("created_at")
+        ],
     }
