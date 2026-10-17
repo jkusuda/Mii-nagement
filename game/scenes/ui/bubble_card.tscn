@@ -1,0 +1,100 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scenes/ui/bubble_card.gd" id="1_card"]
+[ext_resource type="Script" path="res://scenes/ui/answer_button.gd" id="2_answer"]
+[ext_resource type="Texture2D" path="res://assets/icons/chevron-right.svg" id="3_chevron"]
+
+[node name="BubbleCard" type="PanelContainer"]
+theme_type_variation = &"CardPanel"
+script = ExtResource("1_card")
+
+[node name="Rows" type="VBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Header" type="HBoxContainer" parent="Rows"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Avatar" type="PanelContainer" parent="Rows/Header"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(42, 42)
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"AvatarCircle"
+
+[node name="Initial" type="Label" parent="Rows/Header/Avatar"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"CardName"
+text = "M"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="NameBox" type="VBoxContainer" parent="Rows/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+theme_override_constants/separation = -1
+
+[node name="Name" type="Label" parent="Rows/Header/NameBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"CardName"
+text = "Mo"
+
+[node name="Role" type="Label" parent="Rows/Header/NameBox"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"LabelMuted"
+text = "Tester · Puzzled"
+
+[node name="Tag" type="PanelContainer" parent="Rows/Header"]
+layout_mode = 2
+size_flags_vertical = 0
+theme_type_variation = &"TagPill"
+
+[node name="Row" type="HBoxContainer" parent="Rows/Header/Tag"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="TagIcon" type="TextureRect" parent="Rows/Header/Tag/Row"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(13, 13)
+layout_mode = 2
+size_flags_vertical = 4
+expand_mode = 1
+stretch_mode = 5
+
+[node name="TagLabel" type="Label" parent="Rows/Header/Tag/Row"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"TagText"
+text = "Confused"
+
+[node name="Quote" type="Label" parent="Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"QuoteText"
+text = "“Two auth tests fail only on Tuesdays.”"
+autowrap_mode = 3
+
+[node name="FooterRow" type="HBoxContainer" parent="Rows"]
+layout_mode = 2
+
+[node name="Footer" type="Label" parent="Rows/FooterRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 8
+theme_type_variation = &"LabelMuted"
+text = "Lab · 2m ago"
+
+[node name="AnswerButton" type="Button" parent="Rows/FooterRow"]
+custom_minimum_size = Vector2(92, 30)
+layout_mode = 2
+theme_type_variation = &"AnswerButton"
+text = "Answer"
+icon = ExtResource("3_chevron")
+icon_alignment = 2
+script = ExtResource("2_answer")

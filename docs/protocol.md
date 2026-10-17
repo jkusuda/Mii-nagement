@@ -1,0 +1,233 @@
+# Mii-nagement WebSocket Protocol
+
+This file is the **single source of truth** for messages between the backend
+(`backend/`) and the Godot client (`game/`). If you change a message, change it
+here first, then update both halves.
+
+- Endpoint: `ws://localhost:8000/ws`
+- Every message is one JSON object with a `"type"` field.
+- The server sends a `snapshot` as soon as a client connects, then a live stream
+  of events.
+- Every server event is also stored in SQLite (the `Event` table), so a session can
+  be replayed later.
+
+## Rules for both sides
+
+1. **Ignore what you don't understand.** Unknown `type`s and unknown fields must
+   be skipped, not treated as errors. This lets one half get ahead of the other.
+2. **The server may add `"ts"`** (ISO-8601 UTC time) to any event. Clients can
+   ignore it.
+3. **IDs are strings.** Agents, buildings, bubbles, and tasks all use string IDs.
+4. **The game never decides anything.** It shows events and sends your input.
+   All workflow and agent logic lives in the backend.
+
+---
+
+## Server → client
+
+### `snapshot`
+The full island state, sent once when a client connects (and again on reconnect).
+The client should rebuild its view from scratch when it gets one.
+
+```json
+{
+  "type": "snapshot",
+  "island": {
+    "id": "sunny",
+    "name": "Sunny Isle",
+    "repo": null,
+    "buildings": [
+      {"id": "mailbox", "type": "mailbox", "name": "Mailbox", "x": 4, "y": 15, "resident": "jun"}
+    ],
+    "roads": [
+      {"from": "lab", "to": "courthouse", "condition": "pass"}
+    ],
+    "residents": [
+      {
+        "id": "jun", "name": "Jun", "job": "planner",
+        "brain": "gemini", "model": null, "color": "#F4A261",
+        "catchphrase": "Let's map it out!",
+        "state": "idle", "building": "mailbox", "mood": "happy"
+      }
+    ],
+    "bubbles": [
+      {"id": "b_3f2a", "agent": "carlos", "kind": "confused", "text": "Which test file?"}
+    ],
+    "tasks": [
+      {"id": "t_12", "title": "Fix login typo", "status": "in_progress", "building": "lab", "agent": "carlos", "pr_url": null}
+    ]
+  }
+}
+```
+
+- `buildings[].x / y`: the building's lot on a grid. The 3D client currently
+  places buildings itself (`island_3d.tscn`); x/y are for build mode later.
+- `buildings[].resident`: the resident who works there.
+- `residents[].brain`: which coding agent runs the resident: `mock`,
+  `claude-code`, `codex`, or `gemini`. `model` is an optional model override
+  (`null` = the agent's default). Use it for a small brain badge.
+- `roads[].condition`: `always`, `pass`, or `fail` (see the workflow section below).
+- `bubbles`: bubbles still waiting for an answer.
+- `tasks[].status`: `queued`, `in_progress`, `done`, or `failed`.
+
+### `agent_state`
+A resident's activity changed.
+```json
+{"type": "agent_state", "agent": "carlos", "state": "working", "building": "workshop"}
+```
+`state`: `idle | walking | working | sleeping`.
+While `walking`, `building` is where they're **headed**.
+
+### `move`
+A resident is walking from one building to another. The client works out the
+path along the island's roads and animates it.
+```json
+{"type": "move", "agent": "carlos", "from": "workshop", "to": "lab"}
+```
+The server doesn't wait for the animation. If the next event for that resident
+(for example `agent_state: working`) arrives before the walk finishes, the client
+can let the walk finish first or snap the resident to the destination.
+
+### `bubble`
+A resident needs you. Shown as an emoji above their head; click it to answer.
+```json
+{"type": "bubble", "agent": "carlos", "kind": "confused", "id": "b_3f2a", "text": "Which test file should I update?"}
+```
+`kind`: `confused | struggling | permission | ready | tired`.
+
+`options` (optional): when present, show these as buttons and send the chosen
+one back as the `response`. Agents' permission requests use it:
+```json
+{"type": "bubble", "agent": "carlos", "kind": "permission", "id": "b_9c1d", "text": "May I run `npm install`?", "options": ["Allow once", "Always allow", "Reject"]}
+```
+
+| kind         | meaning                                  | suggested emoji |
+|--------------|------------------------------------------|-----------------|
+| `confused`   | needs clarification                      | ❓              |
+| `struggling` | stuck after retries                      | 💦              |
+| `permission` | wants approval for a risky action        | ✋              |
+| `ready`      | finished something you should look at    | ✅              |
+| `tired`      | hit a budget or limit, needs rest        | 💤              |
+
+### `bubble_resolved`
+A bubble was answered (by any client) or timed out. Remove it.
+```json
+{"type": "bubble_resolved", "id": "b_3f2a"}
+```
+
+### `handoff`
+A task package passed from one resident to another.
+```json
+{"type": "handoff", "from": "carlos", "to": "sydney", "task": "t_12", "outcome": "success"}
+```
+`outcome`: `success | fail`. This is the result of the step the giver just
+finished. For example, a failed review hands the package back to the coder with
+`fail`.
+
+### `mood`
+A resident's mood changed.
+```json
+{"type": "mood", "agent": "sydney", "mood": "proud"}
+```
+`mood`: `happy | focused | confused | frustrated | tired | proud`.
+
+| mood         | suggested emoji |
+|--------------|-----------------|
+| `happy`      | 😊 |
+| `focused`    | 🧐 |
+| `confused`   | 😵 |
+| `frustrated` | 😤 |
+| `tired`      | 😪 |
+| `proud`      | 😎 |
+
+### `activity`
+What a resident is doing right now, streamed from their agent. Good for thought
+bubbles or a status line under their name.
+```json
+{"type": "activity", "agent": "carlos", "text": "Reading auth.py"}
+```
+
+### `task`
+A task package's status changed. Lets the client show who is carrying a package.
+`pr_url` is set once the post office opens a pull request.
+```json
+{"type": "task", "id": "t_12", "title": "Fix login typo", "status": "in_progress", "building": "lab", "agent": "carlos", "pr_url": null}
+```
+
+### `error`
+The server couldn't handle something the client sent.
+```json
+{"type": "error", "message": "unknown bubble id: b_nope"}
+```
+
+---
+
+## Client → server
+
+### `answer_bubble`
+You answered a bubble. The server sends the answer to the waiting resident, then
+sends `bubble_resolved` to every client.
+```json
+{"type": "answer_bubble", "id": "b_3f2a", "response": "Use tests/test_login.py"}
+```
+If the bubble ID is unknown or already resolved, the server replies with `error`.
+
+---
+
+## How a task flows (typical event order)
+
+The island's buildings and roads form a graph. A task "package" starts at the
+`mailbox` and follows roads until it reaches a building with no outgoing road.
+
+For each building the package visits:
+
+1. `handoff`: only if a different resident than the last step takes the package.
+2. `move` + `agent_state: walking`: only if that resident isn't already there.
+3. `agent_state: working`
+4. While working: any number of `activity` events, and optional `bubble`s (each
+   waits for `answer_bubble` or a timeout, then `bubble_resolved`). A step that
+   runs past the step timeout is stopped and counts as `fail`.
+5. `mood`
+6. The step finishes with an outcome (`pass` or `fail`), and the engine picks the
+   next road:
+   - a road whose `condition` matches the outcome wins;
+   - otherwise an `always` road;
+   - no matching road means the task is finished (`task: done`, or `failed` if the
+     last outcome was `fail`).
+
+When a resident has nothing to do they go `idle`, and eventually `sleeping`.
+
+## Seed island IDs
+
+The Godot client finds buildings and residents by these IDs, so they must match
+`backend/mii/seed.py`.
+
+| Building id   | type          | resident | lot (x, y) |
+|---------------|---------------|----------|------------|
+| `mailbox`     | `mailbox`     | `jun`    | (4, 15)    |
+| `workshop`    | `workshop`    | `carlos` | (12, 7)    |
+| `lab`         | `lab`         | `carlos` | (20, 15)   |
+| `courthouse`  | `courthouse`  | `sydney` | (28, 7)    |
+| `post_office` | `post_office` | `jun`    | (35, 15)   |
+
+Roads:
+
+| from         | to            | condition |
+|--------------|---------------|-----------|
+| `mailbox`    | `workshop`    | `always`  |
+| `workshop`   | `lab`         | `always`  |
+| `lab`        | `courthouse`  | `pass`    |
+| `lab`        | `workshop`    | `fail`    |
+| `courthouse` | `post_office` | `pass`    |
+| `courthouse` | `workshop`    | `fail`    |
+
+| Resident id | name    | job      | color     | brain         |
+|-------------|---------|----------|-----------|---------------|
+| `jun`       | Jun     | planner  | `#F4A261` | `gemini`      |
+| `carlos`    | Carlos  | coder    | `#2A9D8F` | `claude-code` |
+| `sydney`    | Sydney  | reviewer | `#9B5DE5` | `codex`       |
+
+With `MOCK_AGENTS=1` (the default), every resident runs on the mock brain anyway.
+
+In the 3D client, each building id matches a node under `Buildings/` in
+`game/scenes/island_3d.tscn` (`mailbox` → `Mailbox`, `post_office` → `PostOffice`).

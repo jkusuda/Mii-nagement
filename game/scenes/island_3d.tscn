@@ -1,0 +1,118 @@
+[gd_scene load_steps=20 format=3]
+
+[ext_resource type="PackedScene" path="res://assets/models/base_island.glb" id="1_island"]
+[ext_resource type="PackedScene" path="res://assets/models/mailbox.glb" id="2_mailbox"]
+[ext_resource type="PackedScene" path="res://assets/models/workshop.glb" id="3_workshop"]
+[ext_resource type="PackedScene" path="res://assets/models/lab.glb" id="4_lab"]
+[ext_resource type="PackedScene" path="res://assets/models/courthouse.glb" id="5_courthouse"]
+[ext_resource type="PackedScene" path="res://assets/models/post_office.glb" id="6_post_office"]
+[ext_resource type="Shader" path="res://shaders/water.gdshader" id="7_water"]
+[ext_resource type="Script" path="res://scenes/camera_rig.gd" id="8_rig"]
+
+[sub_resource type="ProceduralSkyMaterial" id="sky_material"]
+sky_top_color = Color(0.45, 0.72, 0.95, 1)
+sky_horizon_color = Color(0.82, 0.92, 0.98, 1)
+ground_horizon_color = Color(0.82, 0.92, 0.98, 1)
+ground_bottom_color = Color(0.55, 0.75, 0.8, 1)
+
+[sub_resource type="Sky" id="sky"]
+sky_material = SubResource("sky_material")
+
+[sub_resource type="Environment" id="environment"]
+background_mode = 1
+background_color = Color(0.13, 0.7, 0.8, 1)
+sky = SubResource("sky")
+ambient_light_source = 2
+ambient_light_color = Color(0.76, 0.87, 1, 1)
+ambient_light_energy = 0.55
+tonemap_mode = 2
+tonemap_white = 6.0
+ssao_enabled = true
+ssao_radius = 1.5
+ssao_intensity = 1.6
+glow_enabled = true
+glow_intensity = 0.35
+glow_bloom = 0.05
+adjustment_enabled = true
+adjustment_brightness = 1.04
+adjustment_contrast = 1.08
+adjustment_saturation = 1.1
+
+[sub_resource type="PlaneMesh" id="water_mesh"]
+size = Vector2(200, 200)
+
+[sub_resource type="FastNoiseLite" id="ripple_noise"]
+frequency = 0.03
+
+[sub_resource type="NoiseTexture2D" id="ripple_normal"]
+seamless = true
+as_normal_map = true
+bump_strength = 4.0
+noise = SubResource("ripple_noise")
+
+[sub_resource type="FastNoiseLite" id="foam_noise_source"]
+frequency = 0.02
+
+[sub_resource type="NoiseTexture2D" id="foam_noise"]
+seamless = true
+noise = SubResource("foam_noise_source")
+
+[sub_resource type="ShaderMaterial" id="water_material"]
+shader = ExtResource("7_water")
+shader_parameter/ripple_normal = SubResource("ripple_normal")
+shader_parameter/foam_noise = SubResource("foam_noise")
+
+[node name="Island3D" type="Node3D"]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("environment")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-55, -35, 0)
+light_color = Color(1, 0.97, 0.9, 1)
+light_energy = 1.9
+light_angular_distance = 3.0
+shadow_enabled = true
+shadow_opacity = 0.9
+shadow_blur = 1.5
+
+[node name="CameraRig" type="Node3D" parent="."]
+position = Vector3(0, 0, 1.5)
+script = ExtResource("8_rig")
+
+[node name="Camera3D" type="Camera3D" parent="CameraRig"]
+position = Vector3(0, 34.6, 34.6)
+rotation_degrees = Vector3(-45, 0, 0)
+fov = 30.0
+far = 500.0
+
+[node name="Water" type="MeshInstance3D" parent="."]
+position = Vector3(0, -1.4, 0)
+mesh = SubResource("water_mesh")
+surface_material_override/0 = SubResource("water_material")
+
+[node name="BaseIsland" parent="." instance=ExtResource("1_island")]
+position = Vector3(0, 0.8, 0)
+scale = Vector3(20, 20, 20)
+
+[node name="Buildings" type="Node3D" parent="."]
+
+[node name="Mailbox" parent="Buildings" instance=ExtResource("2_mailbox")]
+position = Vector3(-11.4, 2.3, -7)
+scale = Vector3(2.7, 2.7, 2.7)
+
+[node name="Workshop" parent="Buildings" instance=ExtResource("3_workshop")]
+position = Vector3(-0.8, 1.74, -7)
+scale = Vector3(2.7, 2.7, 2.7)
+
+[node name="Lab" parent="Buildings" instance=ExtResource("4_lab")]
+position = Vector3(10.2, 1.82, -6.6)
+scale = Vector3(2.7, 2.7, 2.7)
+
+[node name="PostOffice" parent="Buildings" instance=ExtResource("6_post_office")]
+position = Vector3(-11, 1.81, 9.2)
+scale = Vector3(2.7, 2.7, 2.7)
+
+[node name="Courthouse" parent="Buildings" instance=ExtResource("5_courthouse")]
+position = Vector3(9.8, 1.51, 8.8)
+scale = Vector3(2.7, 2.7, 2.7)
