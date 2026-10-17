@@ -219,6 +219,24 @@ async def test_the_master_key_answers_every_bubble_by_itself(island):
     assert workflow.bubbles.open == {}
 
 
+async def test_a_residents_own_master_key_answers_their_bubbles(island):
+    from mii.models import DEFAULT_KEYS, Building, Resident
+
+    coder = (await Building.objects.aget(pk="workshop")).resident_id
+    await Resident.objects.filter(pk=coder).aupdate(keys={**DEFAULT_KEYS, "master": "yes"})
+    runner = AskingRunner()
+    workflow, client = make_workflow(runner, bubble_timeout=30)  # the setting is off
+    task = await asyncio.wait_for(workflow.run_task((await workflow.submit("sunny", "No questions")).id), 5)
+
+    assert task.status == "done"
+    assert runner.answers == [
+        "Just this once",
+        "Approve & merge",
+        "No need to ask: use your best judgement and carry on.",
+    ]
+    assert all(e["answered"] for e in client.of_type("bubble_resolved")) and workflow.bubbles.open == {}
+
+
 # --- Real-mode handlers (a throwaway git repo stands in for the island's repository) ----
 
 

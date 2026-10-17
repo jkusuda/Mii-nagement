@@ -165,7 +165,11 @@ async def models_list(request: HttpRequest) -> JsonResponse:
 async def brain_models(request: HttpRequest, brain: str) -> JsonResponse:
     """The models a brain offers here, for the model pickers. ACP brains are asked directly
     (a short-lived session, no prompt; cached 10 minutes, `?refresh=1` asks again);
-    `openrouter` is its catalogue. {"models": [{id, name, ...}], "current": the default}."""
+    `openrouter` is its catalogue. {"models": [{id, name, ...}], "current": the default}.
+    With login on, only for logged-in callers: it starts the agent CLIs on this machine."""
+    sub = await _caller(request, required=True)
+    if isinstance(sub, JsonResponse):
+        return sub
     if brain == "openrouter":
         response = await models_list(request)
         if response.status_code == 200:
@@ -208,8 +212,12 @@ async def islands_view(request: HttpRequest) -> JsonResponse:
     return JsonResponse(await _snapshot(island.id))
 
 
+# The two GitHub lookups use this machine's `gh` login: with login on, logged-in callers only.
 @require_GET
 async def github_repos(request: HttpRequest) -> JsonResponse:
+    sub = await _caller(request, required=True)
+    if isinstance(sub, JsonResponse):
+        return sub
     try:
         return JsonResponse({"repos": await asyncio.to_thread(github.list_repos, request.GET.get("q", ""))})
     except github.GitHubError as e:
@@ -218,6 +226,9 @@ async def github_repos(request: HttpRequest) -> JsonResponse:
 
 @require_GET
 async def github_branches(request: HttpRequest) -> JsonResponse:
+    sub = await _caller(request, required=True)
+    if isinstance(sub, JsonResponse):
+        return sub
     repo = request.GET.get("repo", "")
     if not islands.REPO.match(repo):
         return _error("repo must look like owner/name", 400)

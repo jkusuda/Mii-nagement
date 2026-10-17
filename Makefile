@@ -14,6 +14,7 @@
 #   make test      backend tests + Godot script check
 #   make godot-check   load the game headless and fail on any script error
 #   make reset     wipe the database (stop the server first)
+#   make web       export the game for browsers into game/builds/web (deploy/README.md)
 #
 # Needs: uv (https://docs.astral.sh/uv) and Godot 4. Godot is found on PATH or in
 # /Applications; anywhere else, pass it: `make GODOT=/path/to/godot check`.
@@ -30,12 +31,12 @@ UVICORN_LOOP := $(if $(filter Windows_NT,$(OS)),--loop asyncio:ProactorEventLoop
 # Find Godot: $GODOT, then `godot` on PATH, then the macOS app bundle.
 GODOT ?= $(shell command -v godot 2>/dev/null || ([ -x /Applications/Godot.app/Contents/MacOS/Godot ] && echo /Applications/Godot.app/Contents/MacOS/Godot))
 
-.PHONY: all help up dev setup server sim watch game check lint fmt test godot-check reset check-tools
+.PHONY: all help up dev setup server sim watch game check lint fmt test godot-check reset check-tools web
 
 all: up
 
 help:
-	@sed -n '2,20p' Makefile | sed 's/^#//'
+	@sed -n '2,21p' Makefile | sed 's/^#//'
 
 check-tools:
 	@command -v $(UV) >/dev/null || { echo "uv is missing. macOS: brew install uv   Linux: curl -LsSf https://astral.sh/uv/install.sh | sh   Windows: winget install astral-sh.uv"; exit 1; }
@@ -98,3 +99,9 @@ godot-check:
 
 reset:
 	cd $(BACKEND) && $(UV) run python manage.py seed --reset
+
+# Needs Godot's web export templates (Editor > Manage Export Templates).
+web:
+	@[ -n "$(GODOT)" ] || { echo "Godot not found (set GODOT=/path/to/godot)"; exit 1; }
+	@mkdir -p game/builds/web
+	"$(GODOT)" --headless --path game --export-release Web builds/web/index.html

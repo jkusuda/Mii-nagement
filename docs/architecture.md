@@ -360,6 +360,11 @@ lives in `spectator/`; this is not a game message, so protocol.md doesn't list i
   private (owner + `members`). Only the owner may abandon an island while login is on.
 - The public demo (`PUBLIC_DEMO=1`) locks `PUT /settings`, refuses `folder` /
   `existing_repo` on `POST /islands`, and refuses abandoning public islands.
+- With login on, the lookups that use the server's own `gh` and agent CLIs
+  (`/github/*`, `/brains/{brain}/models`) need a token too. The game logs in from
+  Settings (Auth0 device code) and sends the token on every call (`Net.token`).
+- The web deployment (`deploy/README.md`) runs with `PUBLIC_DEMO=1`, and `push.sh`
+  refuses real agents there without Auth0.
 
 ## Tables
 

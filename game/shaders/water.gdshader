@@ -40,13 +40,29 @@ uniform sampler2D foam_noise;                   // seamless noise, breaks up foa
 varying vec3 world_position;
 
 
+// Island i's field at uv. WebGL (the web export) only reads a sampler array at a
+// constant index, so a switch instead of island_fields[i].
+float field_at(int i, vec2 uv) {
+	switch (i) {
+		case 0: return texture(island_fields[0], uv).r;
+		case 1: return texture(island_fields[1], uv).r;
+		case 2: return texture(island_fields[2], uv).r;
+		case 3: return texture(island_fields[3], uv).r;
+		case 4: return texture(island_fields[4], uv).r;
+		case 5: return texture(island_fields[5], uv).r;
+		case 6: return texture(island_fields[6], uv).r;
+		default: return texture(island_fields[7], uv).r;
+	}
+}
+
+
 // Distance from p to island i's shore (where its beach meets the sea).
 // Outside the island's field, keep counting from the field's edge.
 float shore_distance(int i, vec2 p) {
 	vec4 rect = island_rects[i];
 	vec2 uv = (p - rect.xy) / rect.zw;
 	vec2 inside_uv = clamp(uv, vec2(0.002), vec2(0.998));
-	float coast = texture(island_fields[i], inside_uv).r;  // + on land, in world units
+	float coast = field_at(i, inside_uv);  // + on land, in world units
 	float beyond = length((uv - inside_uv) * rect.zw);
 	return -coast - beach_width + beyond;
 }

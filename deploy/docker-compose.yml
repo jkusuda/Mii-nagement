@@ -1,0 +1,29 @@
+# The web deployment: `docker compose --env-file server.env up -d --build` (deploy/README.md).
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: deploy/backend.Dockerfile
+    env_file: server.env
+    volumes:
+      - data:/data
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2.10.2
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      MII_DOMAIN: ${MII_DOMAIN:?set MII_DOMAIN in server.env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../game/builds/web:/srv/game:ro
+      - caddy:/data
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  data:
+  caddy:

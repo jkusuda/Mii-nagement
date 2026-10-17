@@ -1,0 +1,15 @@
+# One HTTPS site: the backend's API and WebSocket, and the game's web export for the rest.
+# Caddy gets the certificate from Let's Encrypt by itself.
+{$MII_DOMAIN} {
+	encode zstd gzip
+
+	@backend path /ws /health /meta /settings /brains /brains/* /gifts /models /islands /islands/* /github/* /replay/* /auth/*
+	handle @backend {
+		reverse_proxy backend:8000
+	}
+
+	handle {
+		root * /srv/game
+		file_server
+	}
+}

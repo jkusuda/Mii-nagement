@@ -16,7 +16,7 @@ from conftest import db_test
 from cryptography.hazmat.primitives.asymmetric import rsa
 from django.test import AsyncClient
 
-from mii import auth, consumers, islands
+from mii import auth, consumers, islands, views
 from mii.config import config
 from mii.models import Island
 
@@ -148,6 +148,17 @@ async def test_settings_need_a_login(fake_runtime, login_on):
     assert (await AsyncClient().get("/auth/config")).json() == {"enabled": True}
     me = await AsyncClient().get("/auth/me", headers=bearer())
     assert me.status_code == 200 and me.json()["sub"] == "auth0|alice"
+
+
+@db_test
+async def test_server_side_lookups_need_a_login(fake_runtime, login_on, monkeypatch):
+    # They use this machine's gh login and agent CLIs, so a visitor can't call them.
+    monkeypatch.setattr(views.github, "list_repos", lambda q: [{"repo": "me/app"}])
+    client = AsyncClient()
+    for path in ("/github/repos", "/github/branches?repo=me/app", "/brains/mock/models"):
+        assert (await client.get(path)).status_code == 401, path
+    assert (await client.get("/github/repos", headers=bearer())).json() == {"repos": [{"repo": "me/app"}]}
+    assert (await client.get("/brains/mock/models", headers=bearer())).status_code == 404  # mock has none
 
 
 # --- WebSocket ---------------------------------------------------------------------------

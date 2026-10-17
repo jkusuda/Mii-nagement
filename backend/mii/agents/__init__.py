@@ -145,10 +145,14 @@ def permission_for(job: "AgentJob", kind: str, title: str = "") -> str:
 
     The resident's house key for the tool kind decides, except that the island's
     house rules can turn a "yes" into an "ask": `shell` for any command, and
-    `install_packages` for commands that look like a package install. With the master key
-    nothing is asked: "ask" becomes "yes" (a "no" key still refuses).
+    `install_packages` for commands that look like a package install. With the `master_key`
+    setting nothing is asked: "ask" becomes "yes" (a "no" key still refuses). A resident's
+    own master key (`keys["master"] == "yes"`) goes further: every door opens, whatever the
+    other keys, the house rules or the tool kind say.
     """
     keys = getattr(job.resident, "keys", None) or {}
+    if keys.get("master") == "yes":
+        return "yes"
     answer = keys.get(kind, "ask")
     if answer == "yes" and kind == "execute":
         install = job.rules.get("install_packages") and INSTALL_PATTERN.search(title)
