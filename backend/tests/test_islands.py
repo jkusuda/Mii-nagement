@@ -49,6 +49,8 @@ async def test_found_classic_island_with_buildings_roads_and_a_repo(island, repo
     assert (path / "README.md").read_text().startswith("# Fern Harbor")
     log = subprocess.run(["git", "-C", str(path), "log", "--oneline"], capture_output=True, text=True).stdout
     assert "New island" in log
+    origin = subprocess.run(["git", "-C", str(path), "remote", "get-url", "origin"], capture_output=True, text=True).stdout
+    assert origin.strip() == "https://github.com/your-org/fern-api.git"
 
     snap = await island_snapshot(new.id, [])
     assert sorted(b["type"] for b in snap["buildings"]) == ["courthouse", "lab", "mailbox", "post_office", "workshop"]

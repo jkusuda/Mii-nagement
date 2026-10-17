@@ -35,7 +35,20 @@ A Tomodachi Life-style manager for teams of coding agents doing real software wo
 Every message is defined in [docs/protocol.md](docs/protocol.md). How the
 backend works: [docs/architecture.md](docs/architecture.md).
 
-## Setup (once)
+## The lazy way
+
+With [uv](https://docs.astral.sh/uv) and Godot 4 installed:
+
+```bash
+make
+```
+
+That installs everything, creates `.env`, starts the backend and the simulator,
+and opens the game. Ctrl+C stops all three. Other targets: `make server`,
+`make sim`, `make watch`, `make game`, `make test`, `make reset`. If Godot isn't
+found, pass it: `make GODOT=/path/to/godot`.
+
+## Setup (once, by hand)
 
 You need macOS, [Homebrew](https://brew.sh), and
 [Godot 4](https://godotengine.org/download) (4.3 or newer; built with 4.7) in
@@ -167,6 +180,8 @@ docs/      protocol.md (WebSocket events), architecture.md (backend design),
 TODO.md    roadmap (MVP vs stretch)
 CLAUDE.md  context for Claude Code sessions
 ```
+
+`Makefile` runs the commands above for you.
 
 Find every open TODO:
 ```bash

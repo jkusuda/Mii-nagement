@@ -94,6 +94,8 @@ def create_island(data: dict) -> Island:
         else:
             folder = data.get("folder")
             path = init_repo(Path(str(folder)).expanduser().resolve() if folder else default_folder(), island_id, name)
+        if repo:
+            link_remote(path, repo)  # so the post office can push branches and open PRs
         island = Island.objects.create(
             id=island_id, name=name, repo=repo, repo_path=str(path), branch=branch, plan=plan,
             rules={rule: bool(rules.get(rule, False)) for rule in RULES},
@@ -123,6 +125,13 @@ def init_repo(folder: Path, island_id: str, name: str) -> Path:
     _git(path, "add", "README.md")
     _git(path, "-c", "user.name=Mii-nagement", "-c", "user.email=mii@localhost", "commit", "-q", "-m", "New island")
     return path
+
+
+def link_remote(path: Path, repo: str) -> None:
+    """Point the repo's `origin` at github.com/<owner/name> (only if it has no origin yet)."""
+    has_origin = subprocess.run(["git", "-C", str(path), "remote", "get-url", "origin"], capture_output=True).returncode == 0
+    if not has_origin:
+        _git(path, "remote", "add", "origin", f"https://github.com/{repo}.git")
 
 
 def ensure_repo(island: Island) -> Island:
