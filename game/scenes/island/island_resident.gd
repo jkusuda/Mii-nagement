@@ -43,6 +43,7 @@ var _emote_tween: Tween
 var _door_tween: Tween
 var _mood_tag: Label3D
 var _speech: SpeechBubble
+var _steps := AudioStreamPlayer3D.new()  # footsteps on sand while walking
 
 @onready var mii: Mii = %Mii
 @onready var name_tag: Label3D = %NameTag
@@ -62,6 +63,13 @@ func _ready() -> void:
 	_speech = SpeechBubble.new()
 	_speech.position = Vector3(0, 3.75, 0)
 	add_child(_speech)
+	# Godot concept: an AudioStreamPlayer3D sounds louder the closer it is to the
+	# camera. unit_size is the distance at which it plays at volume_db.
+	_steps.stream = Audio.footsteps
+	_steps.bus = &"Sounds"
+	_steps.volume_db = -12.0
+	_steps.unit_size = 40.0
+	add_child(_steps)
 
 
 ## A billboard label in the island's font with a white outline, like NameTag.
@@ -117,6 +125,7 @@ func walk(points: Array[Vector3], hurry := false) -> void:
 	is_walking = true
 	_dest = points[-1]
 	mii.play("run" if run else "walk")
+	_footsteps(true, run)
 
 	# Godot concept: a Tween animates properties over time. Chained tweeners run
 	# one after another, so each leg starts when the last one ends.
@@ -135,6 +144,7 @@ func walk(points: Array[Vector3], hurry := false) -> void:
 		func():
 			is_walking = false
 			mii.play("idle")  # stop the legs as soon as the feet stop
+			_footsteps(false)
 			arrived.emit()
 	)
 
@@ -319,6 +329,7 @@ func stop_life() -> void:
 	if is_walking:
 		is_walking = false
 		mii.play("idle")
+		_footsteps(false)
 		arrived.emit.call_deferred()
 
 
@@ -328,9 +339,21 @@ func place(at: Vector3) -> void:
 		_walk_tween.kill()
 	is_walking = false
 	mii.play("idle")
+	_footsteps(false)
 	if inside:
 		_come_out()
 	global_position = at
+
+
+## Footsteps on (quicker when running) or off. Each resident starts somewhere
+## else in the recording, so two walkers don't step in time.
+func _footsteps(on: bool, run := false) -> void:
+	if not on or Audio.silent:
+		_steps.stop()
+		return
+	_steps.pitch_scale = 1.3 if run else 1.0
+	if not _steps.playing:
+		_steps.play(randf() * _steps.stream.get_length())
 
 
 func _process(delta: float) -> void:

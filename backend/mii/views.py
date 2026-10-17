@@ -15,7 +15,7 @@ from django.http import HttpRequest, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
-from mii import auth, events, github, islands, layout, metrics, prefs, residents, talk, tasks, vocab, weather
+from mii import auth, events, github, islands, layout, metrics, prefs, residents, talk, tasks, usage, vocab, weather
 from mii.agents.acp import GIFTS, BrainError, available_brains, available_gifts, list_brain_models
 from mii.agents.openrouter import list_models
 from mii.auth import island_guard
@@ -142,6 +142,12 @@ async def brains(request: HttpRequest) -> JsonResponse:
 @require_GET
 async def brains_detail(request: HttpRequest) -> JsonResponse:
     return JsonResponse(await asyncio.to_thread(_brains))
+
+
+@require_GET
+async def usage_view(request: HttpRequest) -> JsonResponse:
+    """Today's use of each brain by this computer's residents (usage.py)."""
+    return JsonResponse(await usage.today())
 
 
 @require_GET

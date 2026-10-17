@@ -22,6 +22,7 @@ Net="*res://net.gd"
 Islands="*res://islands.gd"
 Clock="*res://clock.gd"
 Portraits="*res://portraits.gd"
+Audio="*res://audio.gd"
 
 [display]
 

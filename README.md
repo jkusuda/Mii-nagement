@@ -142,8 +142,9 @@ After changing a table in `models.py`: `uv run python manage.py makemigrations m
 
 The game opens on the **Archipelago** (every island in one sea, plus everything
 "Waiting on you"). From there:
-- **Settings** (bottom nav): mock mode on/off, test command, islands folder, API
-  keys (saved to your OS keychain), and which brains this computer can run.
+- **Settings** (bottom nav): islands folder (with a folder picker), test command,
+  packages at once, the master key, API keys (saved to your OS keychain), and which
+  brains this computer can run. Mock mode follows `make` / `make dev`.
 - **New island**: name, GitHub repo, branch, town plan, residents, house rules.
 - Click an island to visit it. **Send a package** (top right) drops a task in the
   Mailbox; residents walk it along the roads. Answer their bubbles in the sidebar.

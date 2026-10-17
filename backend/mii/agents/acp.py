@@ -51,7 +51,7 @@ from acp.schema import (
     WriteTextFileResponse,
 )
 
-from mii import prefs
+from mii import prefs, usage
 from mii.agents import (
     VERDICT_PATTERN,
     AgentJob,
@@ -309,7 +309,9 @@ class MiiClient(Client):
     """Our side of the ACP connection for one step: streams progress, answers permission
     requests through bubbles, and serves file reads/writes inside the worktree only."""
 
-    def __init__(self, job: AgentJob, workdir: Path):
+    def __init__(self, job: AgentJob, workdir: Path, brain: str = ""):
+        self.brain = brain  # for the usage pills (usage.py)
+        self.cost_seen = 0.0  # the session's running cost we've already counted
         self.start(job, workdir)
 
     def start(self, job: AgentJob, workdir: Path) -> None:
@@ -338,8 +340,18 @@ class MiiClient(Client):
             await self._tool_line(update)
             if update.title:
                 await self._report(update.title)
-        elif isinstance(update, UsageUpdate) and update.size > 0 and self.job.notebook:
-            await self.job.notebook(update.used / update.size)  # the resident's notebook fills up
+        elif isinstance(update, UsageUpdate):
+            if update.size > 0 and self.job.notebook:
+                await self.job.notebook(update.used / update.size)  # the resident's notebook fills up
+            await self._count_cost(update)
+
+    async def _count_cost(self, update: UsageUpdate) -> None:
+        """The agent's running session cost went up: add the difference to today's usage."""
+        cost = update.cost
+        if not self.brain or cost is None or cost.currency != "USD" or cost.amount <= self.cost_seen:
+            return
+        await usage.record(self.brain, cost=cost.amount - self.cost_seen)
+        self.cost_seen = cost.amount
 
     async def _tool_line(self, update: ToolCallStart | ToolCallProgress) -> None:
         """A tool call for the thinking dropdown: one line, sent again (same `call`) when
@@ -733,7 +745,7 @@ class AcpRunner:
         if key in self.live or require_worktree(job):
             return
         try:
-            self.live[key] = await self._start(job, MiiClient(job, job.workdir))
+            self.live[key] = await self._start(job, MiiClient(job, job.workdir, self.brain))
         except Exception as e:  # not logged in, no npx...: run() tries again and says why
             log.info("%s: warming up for %s failed: %s", self.brain, job.resident.id, e)
 
@@ -747,7 +759,7 @@ class AcpRunner:
             await agent.close()
             agent = None
         resumed = agent is not None
-        client = agent.client if agent else MiiClient(job, job.workdir)
+        client = agent.client if agent else MiiClient(job, job.workdir, self.brain)
         client.start(job, job.workdir)
         keep = False
         try:
@@ -839,6 +851,7 @@ class AcpRunner:
         for asked in range(MAX_QUESTIONS + 1):
             client.text.clear()  # each turn's reply on its own: the last one carries the verdict
             response = await conn.prompt(session_id=session_id, prompt=[TextContentBlock(type="text", text=prompt)])
+            await usage.record(self.brain, turns=1, tokens=response.usage.total_tokens if response.usage else 0)
             if response.stop_reason != "end_turn":
                 return StepResult("fail", f"{self.brain} stopped early ({response.stop_reason})."), False
             question = None if chat else find_question("".join(client.text))

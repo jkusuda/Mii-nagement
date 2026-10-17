@@ -10,6 +10,7 @@ urlpatterns = [
     path("brains/detail", views.brains_detail),
     path("brains/<str:brain>/models", views.brain_models),
     path("gifts", views.gifts),
+    path("usage", views.usage_view),
     path("models", views.models_list),
     path("islands", views.islands_view),
     path("github/repos", views.github_repos),
