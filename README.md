@@ -49,14 +49,16 @@ With [uv](https://docs.astral.sh/uv) and Godot 4 installed:
 make
 ```
 
-That installs everything, starts the backend and the simulator, and opens the
-game. No configuration file is needed. Ctrl+C stops all three. Other targets: `make server`,
-`make sim`, `make watch`, `make game`, `make test`, `make reset`. If Godot isn't
-found, pass it: `make GODOT=/path/to/godot`.
+That installs everything, starts the backend, and opens the game. No
+configuration file is needed. Ctrl+C stops both. This is the real-agents setup:
+no simulator (its fake tasks would become real agent work) and no `--reload`
+(editing the code would restart the server mid-task). Mock mode is still on by
+default; turn it off in the game's settings to let residents use real brains.
 
-With real agents (mock mode off), use `make real` instead: the backend and the
-game, without the simulator (its fake tasks would become real agent work) and
-without `--reload` (editing the code would restart the server mid-task).
+For development, `make dev` runs the backend with `--reload` plus the simulator,
+which keeps posting fake tasks so the island is always busy in mock mode.
+Other targets: `make server`, `make sim`, `make watch`, `make game`, `make test`,
+`make reset`. If Godot isn't found, pass it: `make GODOT=/path/to/godot`.
 
 ## Setup (once, by hand)
 

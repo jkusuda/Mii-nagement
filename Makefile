@@ -1,9 +1,9 @@
 # Mii-nagement: one command to run everything.
 #
-#   make           same as `make up`: backend + simulator + the game, Ctrl+C stops all three
+#   make           same as `make up`: backend (no reload, no simulator) + the game, for real agents
 #   make setup     install deps (first time; also run by `make up`). No .env needed.
-#   make up        backend + simulator + game
-#   make real      backend (no reload, no simulator) + game: for real agents (MOCK_AGENTS=0)
+#   make up        backend + game (real agents: toggle mock mode off in the game's settings)
+#   make dev       backend (--reload) + simulator (fake tasks) + game: mock-mode development
 #   make server    just the backend (http://localhost:8000)
 #   make sim       just the simulator (fake tasks; needs the backend)
 #   make watch     print the live event stream (needs the backend)
@@ -28,7 +28,11 @@ PORT ?= 8000
 # Find Godot: $GODOT, then `godot` on PATH, then the macOS app bundle.
 GODOT ?= $(shell command -v godot 2>/dev/null || ([ -x /Applications/Godot.app/Contents/MacOS/Godot ] && echo /Applications/Godot.app/Contents/MacOS/Godot))
 
+<<<<<<< Updated upstream
 .PHONY: all help up real setup server sim watch game check lint fmt test godot-check reset check-tools
+=======
+.PHONY: all up dev setup server sim watch game test reset check-tools
+>>>>>>> Stashed changes
 
 all: up
 
@@ -57,8 +61,9 @@ game:
 	@[ -n "$(GODOT)" ] || { echo "Godot not found (set GODOT=/path/to/godot)"; exit 1; }
 	"$(GODOT)" --path game
 
-# Backend + simulator in the background, the game in front. Ctrl+C (or closing the game) stops everything.
-up: setup
+# Mock-mode development: backend (--reload) + simulator in the background, the game in front.
+# Ctrl+C (or closing the game) stops everything.
+dev: setup
 	@set -e; \
 	cd $(BACKEND) && $(UV) run python -m uvicorn mii.asgi:application --port $(PORT) & SERVER=$$!; \
 	trap 'kill $$SERVER $$SIM 2>/dev/null; wait $$SERVER $$SIM 2>/dev/null; echo; echo "stopped"' EXIT INT TERM; \
@@ -68,13 +73,13 @@ up: setup
 	(cd $(BACKEND) && $(UV) run python manage.py seed --loop --url http://localhost:$(PORT)) & SIM=$$!; \
 	if [ -n "$(GODOT)" ]; then "$(GODOT)" --path game; else echo "Godot not found: backend + simulator running, Ctrl+C to stop"; wait $$SERVER; fi
 
-# Real agents: no simulator (its fake tasks would become real agent work) and no
-# --reload (editing the code would restart the server and stop a running task).
-real: setup
+# Real agents (the default `make`): no simulator (its fake tasks would become real agent
+# work) and no --reload (editing the code would restart the server and stop a running task).
+up: setup
 	@if lsof -nP -iTCP:$(PORT) -sTCP:LISTEN >/dev/null 2>&1; then \
 		echo "Port $(PORT) is already in use (an older backend?). Stop it first:"; \
 		lsof -nP -iTCP:$(PORT) -sTCP:LISTEN | tail -n +2 | awk '{print "  kill " $$2 "    # " $$1}' | sort -u; \
-		echo "or use another port: make real PORT=8001"; \
+		echo "or use another port: make PORT=8001"; \
 		exit 1; \
 	fi
 	@set -e; \
