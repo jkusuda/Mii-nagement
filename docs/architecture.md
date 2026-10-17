@@ -115,6 +115,7 @@ two management commands.
 | `Islands` | `islands.gd` | every island (`GET /islands` + their snapshots) and their 3D thumbnails, for the home screen |
 | `Clock` | `clock.gd` | time of day (+ the dev slider), "Day N", a fallback weather roll |
 | `Portraits` | `portraits.gd` | Mii headshots, rendered once per look (`UI.avatar(resident, px)` makes the round one every list uses) |
+| `Audio` | `audio.gd` | Music per place (`Audio.play_place`, day / night on the island), the sea, sound effects (`Audio.sfx`): a click on every button, chimes on Net events; the Settings jukebox. Files in `assets/audio/{music,sfx,ambience}` |
 
 **Scenes**: `scenes/game.tscn` (`game.gd`, class `Game`) is the main scene: top bar, the
 3D island inside a SubViewport (`scenes/island/island_3d.tscn`), the bottom nav, the

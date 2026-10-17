@@ -12,6 +12,7 @@ from pathlib import Path
 
 import httpx
 
+from mii import usage
 from mii.agents import AgentJob, StepResult, build_prompt, parse_verdict, permission_for
 from mii.personality import build_system_prompt
 from mii.sandbox import SandboxError, inside, is_inside, require_worktree, run_shell
@@ -157,9 +158,14 @@ class OpenRouterRunner:
         if response.status_code >= 400:
             return StepResult("fail", f"OpenRouter error {response.status_code}: {_api_error(response)}")
         try:
-            message = response.json()["choices"][0]["message"]
+            data = response.json()
+            message = data["choices"][0]["message"]
         except (KeyError, IndexError, ValueError):
             return StepResult("fail", "OpenRouter sent a reply without a message.")
+        spent = data.get("usage") or {}  # OpenRouter reports tokens and, usually, the cost in credits (USD)
+        await usage.record(
+            "openrouter", turns=1, tokens=int(spent.get("total_tokens") or 0), cost=float(spent.get("cost") or 0)
+        )
         return {k: v for k, v in message.items() if k in ("role", "content", "tool_calls")}
 
     # --- tools ---------------------------------------------------------------------

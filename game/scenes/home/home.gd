@@ -49,13 +49,13 @@ func _show() -> void:
 	_show_waiting(islands)
 
 
+## The connection pill only shows when the backend drops: "Reconnecting… backend offline".
 func _show_connection() -> void:
-	var online := Net.is_online
-	%StatusLabel.text = "Connected" if online else "Reconnecting…"
-	var count := Islands.islands.size()
-	%SyncedLabel.text = ("%d island%s synced" % [count, "" if count == 1 else "s"]) if online else "backend offline"
+	%ConnectedPill.visible = not Net.is_online
+	%StatusLabel.text = "Reconnecting…"
+	%SyncedLabel.text = "backend offline"
 	var dot: StyleBoxFlat = get_theme_stylebox("panel", "StatusDot").duplicate()
-	dot.bg_color = Color("39C16F") if online else Color("F2994A")
+	dot.bg_color = Color("F2994A")
 	%StatusDot.add_theme_stylebox_override("panel", dot)
 
 

@@ -37,6 +37,8 @@ var _life: IslandLife
 
 
 func _ready() -> void:
+	# The island is drawn in a SubViewport; let its camera be the ear for 3D sounds (footsteps).
+	get_viewport().audio_listener_enable_3d = true
 	Net.snapshot_received.connect(func(_island): _rebuild.call_deferred())  # after the island is rebuilt
 	Net.agent_moved.connect(_on_moved)
 	Net.island_changed.connect(_sync)

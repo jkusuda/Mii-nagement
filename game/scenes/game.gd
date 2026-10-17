@@ -178,6 +178,7 @@ func _ready() -> void:
 	add_child(building_panel)
 	building_panel.closed.connect(rig.unfocus)
 	building_panel.answer_requested.connect(%Sidebar.open_reply)
+	%Sidebar.building_requested.connect(open_building)
 	Net.snapshot_received.connect(func(_island): building_panel.close())  # another island
 	# Over the building panel, which stays open underneath: closing the chat goes back to it.
 	add_child(talk_popup)
@@ -216,6 +217,16 @@ func show_screen(which: String) -> void:
 	%Residents.theme_type_variation = &"NavButtonActive" if which in ["residents", "creator"] else &"NavButton"
 	%Insights.theme_type_variation = &"NavButtonActive" if which == "insights" else &"NavButton"
 	%News.theme_type_variation = &"NavButtonActive" if which == "news" else &"NavButton"
+	Audio.play_place(_music_place())
+
+
+## Which song plays here (Audio): the archipelago's, the creator's, build mode's, or the island's.
+func _music_place() -> String:
+	if screen in ["home", "island_creator"]:
+		return "home"
+	if screen == "creator":
+		return "creator"
+	return "build" if build_mode.is_open else "island"
 
 
 ## The creator's "Move in" / "Save". Online, the backend creates the resident and
@@ -325,6 +336,7 @@ func _show_island() -> void:
 			if ResidentData.inside(r, str(building.get("id", ""))):  # working inside, not idling nearby
 				here += 1
 		_labels[type].show_count(here, str(building.get("name", "")))
+		_labels[type].show_working(here > 0)
 
 
 ## "5 residents" on the island view, and "4 happy · 1 tired" in the sidebar.
@@ -364,6 +376,7 @@ func _open_island_creator() -> void:
 
 ## A new island exists: go there, and move its residents in when it's ready.
 func _on_island_founded(island: Dictionary, residents: Array) -> void:
+	Audio.sfx("island_created")
 	_move_in_island = str(island["id"])
 	_move_in = residents
 	Islands.refresh()
@@ -400,12 +413,14 @@ func _open_creator(resident: Dictionary = {}) -> void:
 	show_screen("creator")
 
 
+## The connection pill only shows when the backend drops: "Reconnecting… backend offline".
 func _show_connection(online: bool) -> void:
-	%StatusLabel.text = "Connected" if online else "Reconnecting…"
-	%SyncedLabel.text = "synced just now" if online else "backend offline"
+	%ConnectedPill.visible = not online
+	%StatusLabel.text = "Reconnecting…"
+	%SyncedLabel.text = "backend offline"
 	%SendPackage.disabled = not online
 	var dot: StyleBoxFlat = get_theme_stylebox("panel", "StatusDot").duplicate()
-	dot.bg_color = Color("39C16F") if online else Color("F2994A")
+	dot.bg_color = Color("F2994A")
 	%StatusDot.add_theme_stylebox_override("panel", dot)
 
 
@@ -439,6 +454,7 @@ func _open_build_mode() -> void:
 
 ## While building, the building name pills hide, for a cleaner view.
 func _on_build_mode_toggled(building: bool) -> void:
+	Audio.play_place(_music_place())
 	if building:
 		building_panel.close()
 		talk_popup.close()

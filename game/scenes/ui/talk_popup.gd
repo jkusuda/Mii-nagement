@@ -107,6 +107,7 @@ func open(new_resident: String, new_building: String) -> void:
 	var r := Net.find_resident(new_resident)
 	if r.is_empty():
 		return
+	Audio.sfx("popup_open")
 	_end_conversation()  # a talk still open with someone else
 	resident_id = new_resident
 	building_id = new_building
