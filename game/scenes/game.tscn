@@ -23,6 +23,7 @@
 [ext_resource type="PackedScene" path="res://scenes/news/news_screen.tscn" id="25_news"]
 [ext_resource type="PackedScene" path="res://scenes/home/home.tscn" id="26_home"]
 [ext_resource type="PackedScene" path="res://scenes/home/island_creator.tscn" id="27_island_creator"]
+[ext_resource type="Script" path="res://scenes/sea/sea_view.gd" id="40_sea"]
 
 [node name="Game" type="Control" unique_id=146576168]
 layout_mode = 3
@@ -34,7 +35,7 @@ grow_vertical = 2
 theme = ExtResource("1_theme")
 script = ExtResource("2_game")
 
-[node name="Background" type="ColorRect" parent="." unique_id=1492357499]
+[node name="Background" type="SubViewportContainer" parent="." unique_id=1492357499]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -42,7 +43,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
-color = Color(0.412, 0.831, 0.922, 1)
+script = ExtResource("40_sea")
 
 [node name="Margin" type="MarginContainer" parent="." unique_id=1687314651]
 unique_name_in_owner = true
@@ -176,7 +177,8 @@ theme_type_variation = &"PillNavy"
 layout_mode = 2
 theme_override_constants/separation = 7
 
-[node name="Sun" type="TextureRect" parent="Margin/Columns/Left/TopBar/DayPill/Row" unique_id=158964117]
+[node name="DayIcon" type="TextureRect" parent="Margin/Columns/Left/TopBar/DayPill/Row" unique_id=158964117]
+unique_name_in_owner = true
 modulate = Color(0.992, 0.788, 0.008, 1)
 custom_minimum_size = Vector2(18, 18)
 layout_mode = 2
@@ -187,6 +189,7 @@ expand_mode = 1
 stretch_mode = 5
 
 [node name="Day" type="Label" parent="Margin/Columns/Left/TopBar/DayPill/Row" unique_id=2131234852]
+unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"WhiteStrong"
 text = "Day 12 · 10:42"
@@ -195,23 +198,6 @@ text = "Day 12 · 10:42"
 layout_mode = 2
 size_flags_horizontal = 3
 mouse_filter = 2
-
-[node name="Logo" type="VBoxContainer" parent="Margin/Columns/Left/TopBar" unique_id=261435801]
-layout_mode = 2
-size_flags_vertical = 4
-theme_override_constants/separation = -2
-
-[node name="Title" type="Label" parent="Margin/Columns/Left/TopBar/Logo" unique_id=314927931]
-layout_mode = 2
-theme_type_variation = &"LogoTitle"
-text = "Mii-nagement"
-horizontal_alignment = 2
-
-[node name="Tagline" type="Label" parent="Margin/Columns/Left/TopBar/Logo" unique_id=79865314]
-layout_mode = 2
-theme_type_variation = &"LogoTagline"
-text = "Little lives. Real work."
-horizontal_alignment = 2
 
 [node name="IslandFrame" type="Control" parent="Margin/Columns/Left" unique_id=402004166]
 unique_name_in_owner = true
@@ -317,7 +303,8 @@ layout_mode = 2
 mouse_filter = 2
 theme_override_constants/separation = 7
 
-[node name="Sun" type="TextureRect" parent="Margin/Columns/Left/IslandFrame/WeatherPill/Row" unique_id=120342872]
+[node name="WeatherIcon" type="TextureRect" parent="Margin/Columns/Left/IslandFrame/WeatherPill/Row" unique_id=120342872]
+unique_name_in_owner = true
 modulate = Color(0.949, 0.702, 0.239, 1)
 custom_minimum_size = Vector2(17, 17)
 layout_mode = 2
@@ -328,9 +315,10 @@ expand_mode = 1
 stretch_mode = 5
 
 [node name="Weather" type="Label" parent="Margin/Columns/Left/IslandFrame/WeatherPill/Row" unique_id=629339716]
+unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"LabelStrong"
-text = "24° · Sunny"
+text = "Sunny"
 
 [node name="HintPill" type="PanelContainer" parent="Margin/Columns/Left/IslandFrame" unique_id=1784169824]
 layout_mode = 1

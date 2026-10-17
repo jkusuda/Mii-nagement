@@ -9,6 +9,8 @@ extends SubViewportContainer
 ## all fit. Each island shows only the building types it's given.
 ## screen_point() says where a 3D point is on screen, for name plates.
 ## Clicking an island emits island_clicked.
+## With no islands it's just open sea: game.tscn uses one as the screen
+## background, so the whole window shares the water and day/night lighting.
 
 signal island_clicked(island_id: String)
 
@@ -48,6 +50,9 @@ func _init() -> void:
 
 func _ready() -> void:
 	_camera.make_current()
+	if _islands.is_empty():
+		_set_water()  # open sea until show_islands() says otherwise
+		_frame_camera()
 	# Deferred: the SubViewport takes this control's new size a moment later.
 	resized.connect(func(): _frame_camera.call_deferred())
 
@@ -130,7 +135,10 @@ func _set_water() -> void:
 
 ## Point the camera (tilted 45° like the island view) so every cell fits.
 func _frame_camera() -> void:
-	if _centers.is_empty() or size.x <= 0 or size.y <= 0:
+	if _centers.is_empty():
+		_camera.position = Vector3(0, 40, 40)  # open sea: any view of the water will do
+		return
+	if size.x <= 0 or size.y <= 0:
 		return
 	var low := Vector2(INF, INF)
 	var high := Vector2(-INF, -INF)

@@ -19,6 +19,7 @@ config/icon="res://icon.svg"
 
 Net="*res://net.gd"
 Islands="*res://islands.gd"
+Clock="*res://clock.gd"
 
 [display]
 

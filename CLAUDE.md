@@ -45,15 +45,19 @@ backend/tests/    pytest
 game/
   net.gd          autoload singleton `Net`: WebSocket -> signals, send_answer(), visit_island()
   islands.gd      autoload `Islands`: every island (GET /islands + snapshots) + 3D thumbnails
+  clock.gd        autoload `Clock`: real time of day (+ dev override), Day N from created_at, daily weather
   scenes/game.tscn     MAIN SCENE: top bar, framed 3D island, nav, Bubbles sidebar. Driven by
-                       Net.island (kept live by net.gd); day/weather are still placeholders.
+                       Net.island (kept live by net.gd); day/time/weather from Clock.
   scenes/island_3d.tscn  3D world (models, sun, water); rendered inside game.tscn's SubViewport
+  scenes/day_night.gd    `DayNight`: the time-of-day table; moves the sun, recolors light and water in
+                         every copy of island_3d.tscn (island view, home sea, the window background)
   scenes/camera_rig.gd   zoom (wheel/trackpad/buttons) + drag-to-pan
   scenes/residents/    Residents tab (residents_screen, resident_card), resident_creator,
                        resident_data (jobs/brains/keys/gifts lists + mock residents)
   scenes/home/         Archipelago home screen (3D sea, plates, Waiting on you), island_plate,
                        island_dropdown (switcher in the top bar), island_creator (found an island)
-  scenes/sea/          sea_view: a 3D sea with any number of islands (water shader, sun, camera fit)
+  scenes/sea/          sea_view: a 3D sea with any number of islands (water shader, sun, camera fit);
+                       with none it's open sea, used as game.tscn's full-window Background
   scenes/news/         News tab: news_stories turns Net events (+ GET /islands/{id}/events, planned)
                        into stories; unread count drives the nav badge; daily digest setting
   scenes/insights/     Insights tab: GET /islands/{id}/insights (shape in architecture.md) + live

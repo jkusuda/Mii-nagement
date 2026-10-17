@@ -9,6 +9,7 @@
 [ext_resource type="Shader" uid="uid://xqv25s7dloit" path="res://shaders/water.gdshader" id="7_water"]
 [ext_resource type="Script" uid="uid://bm0u4itifj4k6" path="res://scenes/camera_rig.gd" id="8_rig"]
 [ext_resource type="Script" path="res://scenes/island/island_residents.gd" id="9_residents"]
+[ext_resource type="Script" path="res://scenes/day_night.gd" id="10_day_night"]
 
 [sub_resource type="ProceduralSkyMaterial" id="sky_material"]
 sky_top_color = Color(0.45, 0.72, 0.95, 1)
@@ -89,6 +90,9 @@ light_angular_distance = 3.0
 shadow_enabled = true
 shadow_opacity = 0.9
 shadow_blur = 1.5
+
+[node name="DayNight" type="Node" parent="."]
+script = ExtResource("10_day_night")
 
 [node name="CameraRig" type="Node3D" parent="." unique_id=1041847225]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1.5)

@@ -29,6 +29,8 @@ func _ready() -> void:
 	%NewIsland.pressed.connect(new_island_requested.emit)
 	%NewIslandNav.pressed.connect(new_island_requested.emit)
 	Islands.changed.connect(func(): if is_visible_in_tree(): _show())
+	Clock.ticked.connect(_show_time)
+	_show_time()
 	Net.connected.connect(_show_connection)
 	Net.disconnected.connect(_show_connection)
 	visibility_changed.connect(func():
@@ -179,3 +181,12 @@ func _label(text: String, size: int, strong: bool) -> Label:
 	label.theme_type_variation = &"LabelStrong" if strong else &"LabelMuted"
 	label.add_theme_font_size_override("font_size", size)
 	return label
+
+
+## The day pill: the real time (or the dev slider's), with a sun or moon.
+## No "Day N" here: that's per island, in the island view's top bar.
+func _show_time() -> void:
+	var night := Clock.is_night()
+	%Day.text = Clock.time_text()
+	%DayIcon.texture = preload("res://assets/icons/moon.svg") if night else preload("res://assets/icons/sun.svg")
+	%DayIcon.modulate = Color("8E9BF0") if night else Color("FDC902")

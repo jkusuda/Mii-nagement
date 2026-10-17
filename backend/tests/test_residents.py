@@ -105,4 +105,6 @@ async def test_bus_sends_events_only_to_that_islands_clients(db):
 
 def test_list_islands(db, monkeypatch):
     monkeypatch.setattr(server, "db_engine", db)
-    assert server.list_islands() == {"islands": [{"id": "sunny", "name": "Sunny Isle", "repo": None}]}
+    [island] = server.list_islands()["islands"]
+    assert {k: island[k] for k in ("id", "name", "repo")} == {"id": "sunny", "name": "Sunny Isle", "repo": None}
+    assert island["created_at"].endswith("+00:00")

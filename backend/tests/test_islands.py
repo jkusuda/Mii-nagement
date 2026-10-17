@@ -27,6 +27,7 @@ def test_found_classic_island_with_buildings_and_roads(db):
         assert sorted(b["type"] for b in snap["buildings"]) == ["courthouse", "lab", "mailbox", "post_office", "workshop"]
         assert all(b["id"].startswith("fern_harbor_") for b in snap["buildings"])
         assert len(snap["roads"]) == 6 and snap["residents"] == []
+        assert snap["created_at"].endswith("+00:00")  # UTC, so the game can count days
         # Same name again gets its own id.
         assert islands.create_island(session, {"name": "Fern Harbor"}).id == "fern_harbor_2"
 

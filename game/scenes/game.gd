@@ -13,10 +13,23 @@ extends Control
 ## the screen". That's what lets the 3D world sit in a rounded frame next to
 ## normal 2D UI instead of filling the whole window.
 ##
+## The day pill and weather pill follow the Clock autoload (real time, the
+## island's founding day); 3D lighting follows it too (scenes/day_night.gd).
+##
 ## TODO(mvp): Build mode, island creation.
-## TODO(mvp): real day/time and weather from the backend.
 
 const BuildingLabelScene := preload("res://scenes/ui/building_label.tscn")
+
+const SUN_ICON := preload("res://assets/icons/sun.svg")
+const MOON_ICON := preload("res://assets/icons/moon.svg")
+## Weather kind (Clock.WEATHER) -> [day icon, night icon, color, night name].
+const WEATHER_LOOKS := {
+	"sunny": [SUN_ICON, MOON_ICON, Color("F2B33D"), "Clear"],
+	"partly_cloudy": [preload("res://assets/icons/cloud-sun.svg"), preload("res://assets/icons/cloud-moon.svg"), Color("F2B33D"), ""],
+	"cloudy": [preload("res://assets/icons/cloud.svg"), preload("res://assets/icons/cloud.svg"), Color("8C9EB5"), ""],
+	"rainy": [preload("res://assets/icons/cloud-rain.svg"), preload("res://assets/icons/cloud-rain.svg"), Color("4E9BE6"), ""],
+}
+const NIGHT_COLOR := Color("8E9BF0")
 
 ## Building type (backend), default label, icon, color. The node in
 ## island_3d.tscn is the type in PascalCase ("post_office" -> PostOffice).
@@ -113,6 +126,11 @@ func _ready() -> void:
 	_show_island()
 	show_screen("home")
 
+	Clock.ticked.connect(_show_time)
+	_show_time()
+	if OS.is_debug_build():
+		_add_dev_time_slider()
+
 
 ## Show one screen and hide the others. The top bar and nav always stay; the
 ## Bubbles sidebar hides for the creator, which needs the whole width.
@@ -183,6 +201,7 @@ func _show_island() -> void:
 	if data.is_empty():
 		return  # no snapshot yet: keep the placeholders
 	%IslandName.text = str(data.get("name", ""))
+	_show_time()
 	%Repo.text = str(data["repo"]) if data.get("repo") else "no repo linked"
 	residents_screen.show_snapshot(data)
 	_show_resident_summary(data.get("residents", []))
@@ -261,3 +280,62 @@ func _show_connection(online: bool) -> void:
 	var dot: StyleBoxFlat = get_theme_stylebox("panel", "StatusDot").duplicate()
 	dot.bg_color = Color("39C16F") if online else Color("F2994A")
 	%StatusDot.add_theme_stylebox_override("panel", dot)
+
+
+## The top bar's "Day 12 · 10:42" and the island view's weather pill.
+func _show_time() -> void:
+	var night := Clock.is_night()
+	var time := Clock.time_text()
+	if Net.island.is_empty():
+		%Day.text = time
+	else:
+		%Day.text = "Day %d · %s" % [Clock.day_number(str(Net.island.get("created_at", ""))), time]
+	%DayIcon.texture = MOON_ICON if night else SUN_ICON
+	%DayIcon.modulate = NIGHT_COLOR if night else Color("FDC902")
+
+	var kind := Clock.weather(str(Net.island.get("id", "")))
+	var look: Array = WEATHER_LOOKS[kind]
+	%WeatherIcon.texture = look[1] if night else look[0]
+	%WeatherIcon.modulate = NIGHT_COLOR if night and kind in ["sunny", "partly_cloudy"] else look[2]
+	%Weather.text = look[3] if night and look[3] != "" else Clock.WEATHER_NAMES[kind]
+
+
+## Development only (debug builds): a small slider above the zoom pill to
+## scrub the time of day. "Live" goes back to the real clock.
+## Godot concept: nodes can be built in code, not just in .tscn files. This
+## one is throwaway, so it lives here instead of in game.tscn.
+func _add_dev_time_slider() -> void:
+	var pill := PanelContainer.new()
+	pill.theme_type_variation = &"PillWhite"
+	%IslandFrame.add_child(pill)
+	# Pin it to the bottom-right corner, above the zoom pill, growing up and left.
+	pill.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	pill.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	pill.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	pill.offset_right = -14
+	pill.offset_bottom = -58
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	pill.add_child(row)
+	var label := Label.new()
+	label.theme_type_variation = &"LabelMuted"
+	label.text = "Dev time"
+	row.add_child(label)
+	var slider := HSlider.new()
+	slider.custom_minimum_size = Vector2(110, 0)
+	slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	slider.min_value = 0.0
+	slider.max_value = 23.99
+	slider.step = 0.05
+	slider.value = Clock.hour()
+	row.add_child(slider)
+	var live := Button.new()
+	live.theme_type_variation = &"FlatIconButton"
+	live.text = "Live"
+	row.add_child(live)
+
+	slider.value_changed.connect(func(value: float): Clock.dev_hour = value)
+	live.pressed.connect(func():
+		Clock.dev_hour = -1.0
+		slider.set_value_no_signal(Clock.hour()))

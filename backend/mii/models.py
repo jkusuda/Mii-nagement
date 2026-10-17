@@ -20,6 +20,13 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def iso_utc(dt: datetime) -> str:
+    """ISO-8601 in UTC. SQLite hands datetimes back without a timezone; they are UTC."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).isoformat()
+
+
 # --- Tables -----------------------------------------------------------------
 
 # House keys: ACP tool kind group -> "yes" | "ask" | "no" (docs/protocol.md).
@@ -35,6 +42,7 @@ class Island(SQLModel, table=True):
     # House rules from the island creator: True = ask me before doing this.
     # Stored only for now (merge_pr, install_packages, shell).
     rules: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=utcnow)  # "Day 1" in the game
 
 
 class Resident(SQLModel, table=True):
@@ -192,6 +200,7 @@ def island_snapshot(session: Session, island_id: str, open_bubbles: list[dict]) 
         "branch": island.branch,
         "plan": island.plan,
         "rules": island.rules,
+        "created_at": iso_utc(island.created_at),
         "buildings": [
             {"id": b.id, "type": b.type, "name": b.name, "x": b.x, "y": b.y, "resident": b.resident_id}
             for b in rows(Building)

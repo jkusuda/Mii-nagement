@@ -93,7 +93,7 @@ backend/mii/
 | `WS /ws` | snapshot + live events; the game sends `answer_bubble`, `create_resident`, `update_resident` |
 | `GET /health` | is the server up, which mode |
 | `GET /brains` | which agent CLIs are installed |
-| `GET /islands` | every island: id, name, repo (the Archipelago screen) |
+| `GET /islands` | every island: id, name, repo, created_at (the Archipelago screen) |
 | `POST /islands` | found an island: `{"name", "repo", "branch", "plan": "classic" \| "quick_fixes", "rules"}` → its snapshot |
 | `GET /github/repos?q=` | the user's repos, through their logged-in `gh` (island creator) |
 | `GET /github/branches?repo=` | a repo's branches, through `gh` |

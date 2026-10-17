@@ -30,7 +30,7 @@ from mii.agents.acp import available_brains
 from mii.config import settings
 from mii.engine import WorkflowEngine
 from mii.insights import island_insights
-from mii.models import Island, db_engine, island_snapshot, task_to_dict
+from mii.models import Island, db_engine, island_snapshot, iso_utc, task_to_dict
 from mii.replay import replay_task
 from mii.sandbox import Sandbox
 
@@ -91,7 +91,8 @@ def brains() -> dict:
 def list_islands() -> dict:
     with Session(db_engine) as session:
         islands = session.exec(select(Island).order_by(Island.name)).all()
-        return {"islands": [{"id": i.id, "name": i.name, "repo": i.repo} for i in islands]}
+        return {"islands": [{"id": i.id, "name": i.name, "repo": i.repo, "created_at": iso_utc(i.created_at)}
+                            for i in islands]}
 
 
 @app.post("/islands")

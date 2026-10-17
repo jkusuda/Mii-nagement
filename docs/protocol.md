@@ -40,6 +40,7 @@ The client should rebuild its view from scratch when it gets one.
     "branch": "main",
     "plan": "classic",
     "rules": {"merge_pr": true, "install_packages": true, "shell": false},
+    "created_at": "2026-10-04T09:12:00+00:00",
     "buildings": [
       {"id": "mailbox", "type": "mailbox", "name": "Mailbox", "x": 4, "y": 15, "resident": "jun"}
     ],
@@ -70,6 +71,8 @@ The client should rebuild its view from scratch when it gets one.
 - `branch`: what residents branch off from. `plan`: the town plan the island
   was founded with. `rules`: house rules from the island creator (`true` = ask
   me before doing this); stored only for now.
+- `created_at`: when the island was founded (ISO-8601 UTC). The game counts
+  days from it ("Day 1" is the founding day, in the player's local time).
 - `buildings[].x / y`: the building's lot on a grid. The 3D client currently
   places buildings itself (`island_3d.tscn`); x/y are for build mode later.
 - `buildings[].resident`: the resident who works there.
