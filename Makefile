@@ -57,34 +57,17 @@ game:
 	@[ -n "$(GODOT)" ] || { echo "Godot not found (set GODOT=/path/to/godot)"; exit 1; }
 	"$(GODOT)" --path game
 
-# Mock-mode development: backend (--reload) + simulator in the background, the game in front.
-# Ctrl+C (or closing the game) stops everything.
-dev: setup
-	@set -e; \
-	cd $(BACKEND) && $(UV) run python -m uvicorn mii.asgi:application --port $(PORT) & SERVER=$$!; \
-	trap 'kill $$SERVER $$SIM 2>/dev/null; wait $$SERVER $$SIM 2>/dev/null; echo; echo "stopped"' EXIT INT TERM; \
-	for i in $$(seq 1 60); do curl -s localhost:$(PORT)/health >/dev/null && break; sleep 0.5; done; \
-	curl -s localhost:$(PORT)/health >/dev/null || { echo "backend did not start"; exit 1; }; \
-	echo "backend ready at http://localhost:$(PORT)"; \
-	(cd $(BACKEND) && $(UV) run python manage.py seed --loop --url http://localhost:$(PORT)) & SIM=$$!; \
-	if [ -n "$(GODOT)" ]; then "$(GODOT)" --path game; else echo "Godot not found: backend + simulator running, Ctrl+C to stop"; wait $$SERVER; fi
+# Both run tools/run.sh: backend (+ simulator) in the background, the game in front.
+# Ctrl+C, closing the game, or the backend dying stops everything; nothing stays on the port.
 
 # Real agents (the default `make`): no simulator (its fake tasks would become real agent
 # work) and no --reload (editing the code would restart the server and stop a running task).
 up: setup
-	@if lsof -nP -iTCP:$(PORT) -sTCP:LISTEN >/dev/null 2>&1; then \
-		echo "Port $(PORT) is already in use (an older backend?). Stop it first:"; \
-		lsof -nP -iTCP:$(PORT) -sTCP:LISTEN | tail -n +2 | awk '{print "  kill " $$2 "    # " $$1}' | sort -u; \
-		echo "or use another port: make PORT=8001"; \
-		exit 1; \
-	fi
-	@set -e; \
-	cd $(BACKEND) && $(UV) run python -m uvicorn mii.asgi:application --port $(PORT) & SERVER=$$!; \
-	trap 'kill $$SERVER 2>/dev/null; wait $$SERVER 2>/dev/null; echo; echo "stopped"' EXIT INT TERM; \
-	for i in $$(seq 1 60); do curl -s localhost:$(PORT)/health >/dev/null && break; sleep 0.5; done; \
-	curl -s localhost:$(PORT)/health >/dev/null || { echo "backend did not start (is another one on port $(PORT)?)"; exit 1; }; \
-	echo "backend ready at http://localhost:$(PORT)"; \
-	if [ -n "$(GODOT)" ]; then MII_SERVER=localhost:$(PORT) "$(GODOT)" --path game; else echo "Godot not found: backend running, Ctrl+C to stop"; wait $$SERVER; fi
+	@PORT=$(PORT) GODOT="$(GODOT)" UV="$(UV)" tools/run.sh
+
+# Mock-mode development: backend (--reload) + the simulator posting fake tasks.
+dev: setup
+	@PORT=$(PORT) GODOT="$(GODOT)" UV="$(UV)" tools/run.sh --sim
 
 # --- Checks -----------------------------------------------------------------------
 
