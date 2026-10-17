@@ -28,11 +28,7 @@ PORT ?= 8000
 # Find Godot: $GODOT, then `godot` on PATH, then the macOS app bundle.
 GODOT ?= $(shell command -v godot 2>/dev/null || ([ -x /Applications/Godot.app/Contents/MacOS/Godot ] && echo /Applications/Godot.app/Contents/MacOS/Godot))
 
-<<<<<<< Updated upstream
-.PHONY: all help up real setup server sim watch game check lint fmt test godot-check reset check-tools
-=======
-.PHONY: all up dev setup server sim watch game test reset check-tools
->>>>>>> Stashed changes
+.PHONY: all help up dev setup server sim watch game check lint fmt test godot-check reset check-tools
 
 all: up
 
