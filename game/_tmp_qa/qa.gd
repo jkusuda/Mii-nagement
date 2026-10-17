@@ -30,6 +30,7 @@ func _ready() -> void:
 
 # --- helpers ------------------------------------------------------------------
 
+
 func wait(t: float) -> void:
 	await get_tree().create_timer(t).timeout
 
@@ -84,6 +85,7 @@ func wait_for(cond: Callable, timeout: float) -> bool:
 
 
 # --- steps --------------------------------------------------------------------
+
 
 func step_home() -> void:
 	print("== Home")
@@ -158,7 +160,8 @@ func step_island_view() -> void:
 	await wait_for(func(): return Net.island.get("id") == "sunny", 8.0)
 	await wait(1.5)
 	check("on sunny", Net.island.get("id") == "sunny")
-	var walkers: Dictionary = game.find_child("Residents", true, false)._walkers if game.find_child("Residents", true, false) and "_walkers" in game.find_child("Residents", true, false) else {}
+	var residents_node = game.find_child("Residents", true, false)
+	var walkers: Dictionary = residents_node._walkers if residents_node and "_walkers" in residents_node else {}
 	note("residents in snapshot: %d" % Net.island.get("residents", []).size())
 	shot("island_view")
 	game.rig.zoom_by(CameraRig.ZOOM_STEP * 3)
@@ -236,11 +239,14 @@ func step_task_flow() -> void:
 			tb = x
 	if tb:
 		Net.send_cancel_task(str(tb["id"]))
-		var gone := await wait_for(func():
-			for x in Net.island.get("tasks", []):
-				if x.get("id") == tb["id"]:
-					return x.get("status") == "cancelled"
-			return false, 8.0)
+		var gone := await wait_for(
+			func():
+				for x in Net.island.get("tasks", []):
+					if x.get("id") == tb["id"]:
+						return x.get("status") == "cancelled"
+				return false,
+			8.0
+		)
 		check("take back (cancel) a running task", gone)
 	else:
 		check("second task created", false)
