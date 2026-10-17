@@ -8,25 +8,28 @@ extends Node3D
 ## - bubble             -> an icon over their head until it's answered
 ##
 ## Where a resident stands: each building has a *stop* on the sand path, the
-## point nearest to it. The camera looks from the south, so a building in the
-## bottom row would hide anyone standing on the path behind it: those stops
-## slide along the path until they're clear of the building. Residents at the
-## same building line up along the path, heading toward the island's middle.
+## tile just outside its door. The camera looks from the south, so a door that
+## faces away hides anyone standing there: those stops slide along the path
+## until they're clear of the building. Residents at the same building line up
+## along the path from the stop.
+##
+## The paths come from the island's layout (Island.layout, IslandBuilder); when
+## it changes (build mode), everyone is placed again.
 
 const ResidentScene := preload("res://scenes/island/island_resident.tscn")
-const SLOT_SPACING := 1.4  # gap between residents lined up at one building
-const CLEARANCE := 1.2     # how far past a building's edge a hidden stop slides
+const SEARCH_TILES := 12  # how far along the path a hidden stop may slide
 
 var _walkers := {}  # resident id -> IslandResident
 var _stops := {}    # building id -> Vector3, worked out once per building (per island)
 
-@onready var buildings: Node3D = get_node("../Buildings")
+@onready var island: IslandBuilder = get_node("../Island")
 
 
 func _ready() -> void:
-	Net.snapshot_received.connect(func(_island): _rebuild())
+	Net.snapshot_received.connect(func(_island): _rebuild.call_deferred())  # after the island is rebuilt
 	Net.agent_moved.connect(_on_moved)
 	Net.island_changed.connect(_sync)
+	island.built.connect(_rebuild)
 
 
 ## Throw everything away and place everyone exactly where the snapshot says.
@@ -100,7 +103,7 @@ func _on_moved(agent: String, from_building: String, to_building: String) -> voi
 	for building in _road_route(from_building, to_building):
 		stops.append(_stop(building))
 	for i in range(1, stops.size()):
-		points.append_array(IslandPaths.route(stops[i - 1], stops[i]))
+		points.append_array(IslandPaths.route(island.layout, stops[i - 1], stops[i]))
 	_walk(walker, points)
 
 
@@ -143,34 +146,50 @@ func _road_route(from: String, to: String) -> Array:
 func _stop(building_id: String) -> Vector3:
 	if _stops.has(building_id):
 		return _stops[building_id]
-	var node := _building_node(building_id)
-	if node == null:
-		return IslandPaths.nearest(Vector3(0, 0, IslandPaths.LOOP_MAX.y))  # homeless: the bottom path
-	var stop := IslandPaths.nearest(node.global_position)
-	var box := _footprint(node)
-	# Behind the building, as the camera sees it? Slide toward the middle until clear.
-	var hidden := stop.z < box.end.z and stop.x > box.position.x and stop.x < box.end.x
-	if hidden:
-		stop.x = box.end.x + CLEARANCE if stop.x < 0.0 else box.position.x - CLEARANCE
-		stop = IslandPaths.nearest(stop)
+	var b := island.layout.building(str(Net.find_building(building_id).get("type", "")))
+	if b.is_empty():
+		return IslandPaths.nearest(island.layout, Vector3(0, 0, 8))  # homeless: somewhere near the front
+	var stop := _line(b)[0]
 	_stops[building_id] = stop
 	return stop
 
 
-## Where the i-th resident at a building stands: along the path from the stop,
-## toward the island's middle (x = 0).
+## Path tiles from the building's door outward (nearest first), skipping the
+## ones the building hides from the camera.
+func _line(b: Dictionary) -> Array[Vector3]:
+	var layout := island.layout
+	var start := IslandLayout.door_tile(b)
+	if not layout.path_tiles.has(start):
+		start = layout.nearest_path_tile(IslandLayout.tile_center(start))
+	var order: Array[Vector2i] = [start]
+	var seen := {start: true}
+	var i := 0
+	while i < order.size() and order.size() < SEARCH_TILES:
+		var t := order[i]
+		for n in [t + Vector2i.RIGHT, t + Vector2i.LEFT, t + Vector2i.DOWN, t + Vector2i.UP]:
+			if layout.path_tiles.has(n) and not seen.has(n):
+				seen[n] = true
+				order.append(n)
+		i += 1
+	var lot := Rect2(Vector2(b["x"], b["y"]), Vector2(IslandLayout.LOT, IslandLayout.LOT))
+	var out: Array[Vector3] = []
+	for t in order:
+		# Hidden = right behind the lot as the camera (looking north) sees it.
+		var hidden := t.y < lot.position.y and t.x >= lot.position.x - 0.5 and t.x < lot.end.x + 0.5
+		if not hidden:
+			out.append(IslandPaths.nearest(layout, IslandLayout.tile_center(t)))
+	if out.is_empty():
+		out.append(IslandPaths.nearest(layout, IslandLayout.tile_center(start)))
+	return out
+
+
+## Where the i-th resident at a building stands: the next path tiles along from the stop.
 func _slot(building_id: String, i: int, _n: int) -> Vector3:
-	var stop := _stop(building_id)
-	var toward_middle := Vector3(-signf(stop.x) if absf(stop.x) > 0.5 else 1.0, 0, 0)
-	return stop + toward_middle * SLOT_SPACING * i
-
-
-## A building's bounding box in world space (only x and z matter here).
-func _footprint(node: Node3D) -> AABB:
-	var box := AABB(node.global_position, Vector3.ZERO)
-	for mesh: MeshInstance3D in node.find_children("*", "MeshInstance3D"):
-		box = box.merge(mesh.global_transform * mesh.get_aabb())
-	return box
+	var b := island.layout.building(str(Net.find_building(building_id).get("type", "")))
+	if b.is_empty() or i == 0:
+		return _stop(building_id)
+	var line := _line(b)
+	return line[mini(i, line.size() - 1)]
 
 
 func _building_position(building_id: String) -> Vector3:
@@ -184,4 +203,4 @@ func _building_node(building_id: String) -> Node3D:
 	var type := str(Net.find_building(building_id).get("type", ""))
 	if type == "":
 		return null
-	return buildings.get_node_or_null(type.to_pascal_case())
+	return island.building_node(type)

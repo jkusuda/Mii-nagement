@@ -15,6 +15,12 @@ extends Node
 ##
 ## Godot concept: _process(delta) runs every frame. Recoloring a few lights each
 ## frame is cheap, and it keeps the dev slider smooth.
+##
+## How dark it is (0 = day, 1 = night) is also published for everything that
+## lights up at night: DayNight.night for scripts (building porch lights, path
+## lamps) and the global shader parameter `night` for shaders (glowing windows,
+## lamp heads). Godot concept: a *global* shader parameter (Project Settings >
+## Shader Globals) is one value every shader can read.
 
 const NIGHT := {
 	"sun": Color(0.7, 0.78, 1.0), "sun_energy": 0.5,
@@ -70,7 +76,10 @@ const SWING := deg_to_rad(70.0)
 
 @onready var sun: DirectionalLight3D = $"../Sun"
 @onready var env: Environment = $"../WorldEnvironment".environment
-@onready var water: MeshInstance3D = $"../Water"
+@onready var water: MeshInstance3D = get_node_or_null("../Water")  # thumbnails have none
+
+## How dark it is right now: 0 = day, 1 = night (see the top of this file).
+static var night := 0.0
 
 var _noon_elevation := 0.0
 var _noon_azimuth := 0.0
@@ -106,14 +115,21 @@ func _process(_delta: float) -> void:
 	sun.rotation.y = _noon_azimuth + lerpf(SWING, -SWING, arc)
 
 	var look := at(h)
-	sun.light_color = look["sun"]
+	# The island's season tints the light a little (golden autumn, crisp winter).
+	var island := get_node_or_null("../Island") as IslandBuilder
+	var tint: Color = Seasons.look(island.layout.season)["light"] if island and island.layout else Color.WHITE
+	sun.light_color = look["sun"] * tint
 	sun.light_energy = look["sun_energy"]
-	env.ambient_light_color = look["ambient"]
+	env.ambient_light_color = look["ambient"] * tint
 	env.ambient_light_energy = look["ambient_energy"]
 	env.background_color = look["background"]
+	# Windows and lamps glow a little more at night.
+	env.glow_intensity = lerpf(0.35, 0.9, look["night"])
+	night = look["night"]
+	RenderingServer.global_shader_parameter_set("night", night)
 	# The home screen's sea swaps in its own copy of the water material
 	# (material_override), so color whichever one is showing.
-	var material := water.get_active_material(0) as ShaderMaterial
+	var material := water.get_active_material(0) as ShaderMaterial if water else null
 	if material:
 		material.set_shader_parameter("deep_color", look["deep"])
 		material.set_shader_parameter("shallow_color", look["shallow"])

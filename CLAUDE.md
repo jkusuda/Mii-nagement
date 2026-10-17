@@ -61,15 +61,16 @@ game/
   clock.gd        autoload `Clock`: real time of day (+ dev override), Day N from created_at, daily weather
   scenes/game.tscn     MAIN SCENE: top bar, framed 3D island, nav, Bubbles sidebar. Driven by
                        Net.island (kept live by net.gd); day/time/weather from Clock.
-  scenes/island_3d.tscn  3D world (models, sun, water); rendered inside game.tscn's SubViewport
+  scenes/island_3d.tscn  3D world (sun, water, camera, the Island builder, residents); rendered
+                         inside game.tscn's SubViewport
   scenes/day_night.gd    `DayNight`: the time-of-day table; moves the sun, recolors light and water in
                          every copy of island_3d.tscn (island view, home sea, the window background)
   scenes/camera_rig.gd   zoom (wheel/trackpad/buttons) + drag-to-pan
-  scenes/apple_tree.tscn, bush.tscn  plants (origin at their base), instanced under Trees/Bushes in
-                       island_3d.tscn; both use swaying_plant.gd. Bushes cover the patches left where
-                       the trees baked into base_island.glb were removed: keep those spots covered
-                       (even under buildings, which are hidden on islands that lack them). New
-                       island decorations also go in SeaView.ISLAND_PARTS (scenes/sea/sea_view.gd)
+  scenes/apple_tree.tscn, bush.tscn  plants (origin at their base), both use swaying_plant.gd
+  scenes/seasons.gd      `Seasons`: per-season looks (grass, foliage, snow, weather particles, light tint)
+  scenes/buildings/      one wrapper scene per building type (model on its 3x3 lot, door facing +Z,
+                         porch light at night; building.gd)
+  scenes/build/          build_mode.gd: Build mode (move buildings, land, plants, steps, pond, season)
   scenes/residents/    Residents tab (residents_screen, resident_card), resident_creator,
                        resident_data (jobs/brains/keys/gifts lists + mock residents)
   scenes/home/         Archipelago home screen (3D sea, plates, Waiting on you), island_plate,
@@ -81,22 +82,31 @@ game/
   scenes/insights/     Insights tab: GET /islands/{id}/insights (shape in architecture.md) + live
                        waiting packages and moods from Net.island
   scenes/mii/          mii (the 3D Mii: tint + idle/walk/run), mii_preview (creator's 3D stage)
-  scenes/island/       residents on the 3D island: island_residents (follows Net events, routes
-                       along roads), island_resident (one walker + tags), island_paths (sand path)
+  scenes/island/       the island, built from data (snapshot `layout` + buildings):
+                       island_layout (tiles, shapes, rules, paths between doors, auto plants),
+                       island_terrain (ground mesh + "field" texture), island_builder (the Island
+                       node: ground, pond, buildings, plants, lamps); residents: island_residents
+                       (follows Net events), island_resident (one walker + tags), island_paths (walking)
   scenes/ui/           building_label (follows a 3D building, resident count), bubbles_sidebar,
                        bubble_card (with reply box), answer_button, dashed_button
   ui/theme.tres        every color, font weight, and pill/button style (theme type variations)
   shaders/water.gdshader stylized water
-  shaders/pond.gdshader  additive shimmer + ripple rings over the pond painted into the island model
-  assets/models/materials/  building + island materials (used via each .glb.import). Mipmaps are
-                       OFF on purpose: the AI texture atlases pack islands edge to edge, so mipmaps
-                       bleed neighbouring texels along UV seams (white streaks on roofs/dock, blue
-                       streaks on grass)
+  shaders/terrain.gdshader  grass, beach, paths, pond banks, snow (reads the island's field texture)
+  shaders/pond.gdshader  the pond's water (shimmer, ripples, ice in winter)
+  shaders/season_overlay.gdshader  material_overlay on plants/buildings: autumn colors, blossoms,
+                       snow, lit windows at night
+  shaders/lamp.gdshader  path lamp heads (glow with the global `night` shader parameter)
+  assets/models/materials/  building materials (used via each .glb.import). Mipmaps are OFF on
+                       purpose: the AI texture atlases pack islands edge to edge, so mipmaps bleed
+                       neighbouring texels along UV seams (white streaks on roofs)
   assets/icons/        Lucide icons (ISC license), recolored white so modulate can tint them
   assets/font/         DreamLife (single weight; heavier weights are FontVariation embolden)
   assets/ui/           nav button illustrations
-  assets/models/  .glb models (island + 5 buildings + mii.glb, the blank Mii; see docs/mii-customization.md). AI-generated, normalized to ~1.9 units and
-                  centered on their middle, so the scene scales them and lifts them onto the grass
+  assets/models/  .glb models (5 buildings, apple_tree, bush, mii.glb (the blank Mii; see
+                  docs/mii-customization.md)). AI-generated, normalized to ~1.9 units and centered
+                  on their middle, so the scenes scale them and lift them onto the grass.
+                  base_island.glb is the old hand-made island, no longer used (the ground is
+                  generated now); kept for comparison, safe to delete
                   (*.gd.uid files are generated by Godot 4.4+; keep them next to their scripts)
 docs/godot-tour.md  beginner tour of the Godot project
 docs/mii-customization.md  the Mii model, how creator fields reach ACP, customization plan
@@ -128,8 +138,13 @@ On the Windows machine, Godot 4.7.2 lives in Downloads (use the `_console.exe` f
 
 ```bash
 "C:\Users\lucas\Downloads\Godot_v4.7.2-stable_win64.exe\Godot_v4.7.2-stable_win64_console.exe" --headless --path game --quit
-"C:\Users\lucas\Downloads\Godot_v4.7.2-stable_win64.exe\Godot_v4.7.2-stable_win64.exe" --editor --path game res://scenes/island_3d.tscn  # edit island layout
+"C:\Users\lucas\Downloads\Godot_v4.7.2-stable_win64.exe\Godot_v4.7.2-stable_win64.exe" --editor --path game  # open the editor
 ```
+
+Windows tooling lives in `~/.local/bin` (on the user PATH): `uv`, `gh`, GNU `make`, and a
+`godot` shell script that launches the Downloads console build, so `make` works from Git
+Bash. A TLS-intercepting proxy/antivirus is on this machine: `UV_SYSTEM_CERTS=1` (user
+env var) and `git config --global http.sslBackend schannel` make uv and git trust it.
 
 ## Conventions
 
@@ -166,6 +181,9 @@ On the Windows machine, Godot 4.7.2 lives in Downloads (use the `_console.exe` f
   async ORM (`aget`/`asave`/`async for`), and `asyncio.to_thread` for subprocesses.
 - Keep `.tscn` files simple. Put logic in `.gd` files and build nodes in code
   where that's clearer.
+- Islands are data (`Island.layout` + building lots, docs/protocol.md "Island
+  layout"); the game builds the 3D island from it (`scenes/island/`). Keep the
+  shape presets and rules in `IslandLayout` (GDScript) and `islands.py` in step.
 - Residents walk along the roads in `scenes/island/` (`island_residents.gd` picks
   the route, `island_paths.gd` follows the sand path). The owner asked for it to
   be written; it's still a good file to read when learning Godot.

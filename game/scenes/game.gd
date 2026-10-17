@@ -31,8 +31,8 @@ const WEATHER_LOOKS := {
 }
 const NIGHT_COLOR := Color("8E9BF0")
 
-## Building type (backend), default label, icon, color. The node in
-## island_3d.tscn is the type in PascalCase ("post_office" -> PostOffice).
+## Building type (backend), default label, icon, color. The 3D node is
+## Island/Buildings/<type in PascalCase> ("post_office" -> PostOffice).
 const BUILDINGS := [
 	["mailbox", "Mailbox", preload("res://assets/icons/mail.svg"), Color("F5708F")],
 	["workshop", "Workshop", preload("res://assets/icons/code.svg"), Color("E39537")],
@@ -42,6 +42,7 @@ const BUILDINGS := [
 ]
 
 @onready var island: Node3D = %Island3D
+@onready var island_builder: IslandBuilder = %Island3D.get_node("Island")
 @onready var rig: CameraRig = %Island3D.get_node("CameraRig")
 @onready var labels_root: Control = %Labels
 @onready var residents_screen: ResidentsScreen = %ResidentsScreen
@@ -51,6 +52,7 @@ const BUILDINGS := [
 @onready var home: Home = %Home
 @onready var island_creator: IslandCreator = %IslandCreator
 var dropdown := IslandDropdown.new()
+var build_mode := BuildMode.new()
 
 ## Which screen is showing: "home" (the archipelago), "island_creator",
 ## "island", "residents", "creator", "insights", or "news".
@@ -65,13 +67,15 @@ var _draft_index := -1
 var _move_in_island := ""
 var _move_in: Array = []
 var _labels := {}  # building type -> BuildingLabel
+var _layout_key := ""
+var _dev_pill: Control  # the debug-only time slider (hidden while building)  # what the 3D island was last built from
 
 
 func _ready() -> void:
 	for info in BUILDINGS:
 		var label: BuildingLabel = BuildingLabelScene.instantiate()
 		labels_root.add_child(label)
-		label.setup(island.get_node("Buildings/" + info[0].to_pascal_case()), rig.camera, info[1], info[2], info[3], 0)
+		label.setup(island_builder.building_node(info[0]), rig.camera, info[1], info[2], info[3], 0)
 		_labels[info[0]] = label
 
 	%ZoomIn.pressed.connect(func(): rig.zoom_by(CameraRig.ZOOM_STEP))
@@ -84,7 +88,7 @@ func _ready() -> void:
 	_show_connection(Net.is_online)
 
 	# Screens. They all live in game.tscn; show_screen() hides all but one.
-	%IslandNav.pressed.connect(show_screen.bind("island"))
+	%IslandNav.pressed.connect(_open_build_mode)  # the Build button
 	%Residents.pressed.connect(func(): show_screen("island" if screen == "residents" else "residents"))
 	%Insights.pressed.connect(func(): show_screen("island" if screen == "insights" else "insights"))
 	insights.see_residents.connect(show_screen.bind("residents"))
@@ -128,6 +132,7 @@ func _ready() -> void:
 
 	Clock.ticked.connect(_show_time)
 	_show_time()
+	_add_build_mode()
 	if OS.is_debug_build():
 		_add_dev_time_slider()
 
@@ -135,6 +140,8 @@ func _ready() -> void:
 ## Show one screen and hide the others. The top bar and nav always stay; the
 ## Bubbles sidebar hides for the creator, which needs the whole width.
 func show_screen(which: String) -> void:
+	if which != "island":
+		build_mode.cancel()  # leaving the island throws away unsaved edits
 	screen = which
 	home.visible = which == "home"
 	island_creator.visible = which == "island_creator"
@@ -146,7 +153,7 @@ func show_screen(which: String) -> void:
 	news.visible = which == "news"
 	%Sidebar.visible = which != "creator"
 	# Highlight the nav button of the open screen (the creator belongs to Residents).
-	%IslandNav.theme_type_variation = &"NavButtonActive" if which == "island" else &"NavButton"
+	_style_build_button()
 	%Residents.theme_type_variation = &"NavButtonActive" if which in ["residents", "creator"] else &"NavButton"
 	%Insights.theme_type_variation = &"NavButtonActive" if which == "insights" else &"NavButton"
 	%News.theme_type_variation = &"NavButtonActive" if which == "news" else &"NavButton"
@@ -206,15 +213,22 @@ func _show_island() -> void:
 	residents_screen.show_snapshot(data)
 	_show_resident_summary(data.get("residents", []))
 
-	# Show only the buildings this island has, each with how many residents are
-	# there right now, 0 included (walking residents count once they arrive).
+	# Rebuild the 3D island when its layout or buildings changed (build mode, or
+	# another island). Other events (moods, tasks...) leave it alone.
+	var key := JSON.stringify([data.get("id"), data.get("layout"), data.get("buildings", []).map(
+		func(b): return [b["type"], b.get("x"), b.get("y"), b.get("facing")])])
+	if key != _layout_key:
+		_layout_key = key
+		island_builder.build(IslandLayout.from_snapshot(data))
+
+	# Each label shows how many residents are at its building right now, 0
+	# included (walking residents count once they arrive). Labels hide by
+	# themselves with buildings the island doesn't have.
 	var by_type := {}
 	for b in data.get("buildings", []):
 		by_type[str(b["type"])] = b
 	for type in _labels:
 		var building: Dictionary = by_type.get(type, {})
-		island.get_node("Buildings/" + type.to_pascal_case()).visible = not building.is_empty()
-		_labels[type].visible = not building.is_empty()
 		var here := 0
 		for r in data.get("residents", []):
 			if r.get("building") == building.get("id") and r.get("state") != "walking":
@@ -300,12 +314,43 @@ func _show_time() -> void:
 	%Weather.text = look[3] if night and look[3] != "" else Clock.WEATHER_NAMES[kind]
 
 
+## Build mode (scenes/build/build_mode.gd): its node goes in the 3D world, after
+## the camera rig so it sees clicks first; the Build button opens it.
+func _add_build_mode() -> void:
+	island.add_child(build_mode)
+	build_mode.setup(island_builder, rig, %IslandFrame)
+	build_mode.opened.connect(_on_build_mode_toggled.bind(true))
+	build_mode.closed.connect(_on_build_mode_toggled.bind(false))
+
+
+## The Build button (bottom nav): go to the island and start building there.
+func _open_build_mode() -> void:
+	if screen != "island":
+		show_screen("island")
+	build_mode.open()
+
+
+## While building, the toolbar takes the bottom of the frame (so the hint pill
+## hides) and the building name pills hide, for a cleaner view.
+func _on_build_mode_toggled(building: bool) -> void:
+	%IslandFrame.get_node("HintPill").visible = not building
+	%Labels.visible = not building
+	if _dev_pill:
+		_dev_pill.visible = not building
+	_style_build_button()
+
+
+func _style_build_button() -> void:
+	%IslandNav.theme_type_variation = &"NavButtonActive" if build_mode.is_open else &"NavButton"
+
+
 ## Development only (debug builds): a small slider above the zoom pill to
 ## scrub the time of day. "Live" goes back to the real clock.
 ## Godot concept: nodes can be built in code, not just in .tscn files. This
 ## one is throwaway, so it lives here instead of in game.tscn.
 func _add_dev_time_slider() -> void:
 	var pill := PanelContainer.new()
+	_dev_pill = pill
 	pill.theme_type_variation = &"PillWhite"
 	%IslandFrame.add_child(pill)
 	# Pin it to the bottom-right corner, above the zoom pill, growing up and left.

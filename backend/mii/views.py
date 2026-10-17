@@ -5,10 +5,12 @@
     GET  /brains/detail                per brain: installed, logged_in, api_key, hint
     GET  /models                       the OpenRouter model catalogue (needs OPENROUTER_API_KEY)
     GET  /islands                      every island + the default folder for new repositories
-    POST /islands                      found an island {"name", "repo", "branch", "plan", "rules", "folder", "existing_repo"}
+    POST /islands                      found an island {"name", "repo", "branch", "shape", "steps" | "plan", "season",
+                                       "rules", "folder", "existing_repo"}
     GET  /github/repos?q=              the user's repos (via gh), for the island creator
     GET  /github/branches?repo=        a repo's branches (via gh)
     GET  /islands/{id}                 the island snapshot
+    PUT  /islands/{id}/layout          build mode's save {"layout": {...}, "buildings": [{"type", "x", "y", "facing"}]}
     POST /islands/{id}/tasks           {"title": "...", "description": "..."} or {"issue": 42}
     GET  /islands/{id}/insights        stats for the Insights screen
     GET  /settings                     settings + which API keys are set (never the keys themselves)
@@ -117,6 +119,31 @@ async def get_island(request: HttpRequest, island_id: str) -> JsonResponse:
         snapshot = await island_snapshot(island_id, get_runtime().bubbles.for_island(island_id))
     except Island.DoesNotExist:
         return _error(f"no island {island_id!r}", 404)
+    return JsonResponse(snapshot)
+
+
+@csrf_exempt
+async def put_layout(request: HttpRequest, island_id: str) -> JsonResponse:
+    """Build mode's save. Answers with the new snapshot and sends it to everyone watching."""
+    if request.method != "PUT":
+        return _error("PUT", 405)
+    try:
+        body = json.loads(request.body or b"{}")
+    except json.JSONDecodeError:
+        return _error("body is not valid JSON", 400)
+    if not isinstance(body, dict):
+        return _error("body must be a JSON object", 400)
+    try:
+        await asyncio.to_thread(islands.set_layout, island_id, body)
+    except Island.DoesNotExist:
+        return _error(f"no island {island_id!r}", 404)
+    except islands.LayoutBusy as e:
+        return _error(str(e), 409)
+    except islands.IslandError as e:
+        return _error(str(e), 400)
+    runtime = get_runtime()
+    snapshot = await island_snapshot(island_id, runtime.bubbles.for_island(island_id))
+    await runtime.bus.broadcast({"type": "snapshot", "island": snapshot}, island_id)
     return JsonResponse(snapshot)
 
 

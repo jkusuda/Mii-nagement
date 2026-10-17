@@ -3,13 +3,13 @@ extends Control
 ## Found a new island, in two steps:
 ##   1. Name & repo: a name, a GitHub repo (listed by the backend through the
 ##      `gh` CLI, or typed as owner/name), and the branch residents start from.
-##      A live 3D preview shows the island in the sea.
-##   2. Town & residents: the town plan (which buildings and roads), the
-##      residents you make for it, and house rules.
+##      Also the island's shape and season. A live 3D preview shows the island.
+##   2. Town & residents: which buildings (workflow steps) the island has
+##      (the town plans are quick picks), the residents you make for it, and
+##      house rules.
 ## "Found" sends POST /islands, then game.gd visits the new island and moves
 ## the residents in (create_resident, one by one, once its snapshot arrives).
-##
-## Island look (seasons) is shown but not built yet.
+## Everything about the layout can change later in build mode.
 
 signal closed
 signal founded(island: Dictionary, residents: Array)
@@ -19,7 +19,8 @@ signal resident_requested(resident: Dictionary, index: int)
 
 const NAMES := ["Fern Harbor", "Maple Hollow", "Driftwood Isle", "Sunny Shoals", "Pebble Cove",
 	"Coral Key", "Willow Reach", "Mossy Point", "Tidepool Isle", "Lantern Bay"]
-## plan id -> [title, description, building types]. Must match TOWN_PLANS in backend/mii/islands.py.
+## plan id -> [title, description, building types]: quick picks of steps.
+## Must match PLANS in backend/mii/islands.py.
 const PLANS := {
 	"classic": ["Classic town", "Mailbox · Workshop · Lab · Courthouse · Post Office",
 		["mailbox", "workshop", "lab", "courthouse", "post_office"]],
@@ -29,7 +30,8 @@ const PLANS := {
 ## [rule, label, ask by default]. Must match RULES in backend/mii/islands.py.
 const RULES := [["merge_pr", "Merging a PR", true], ["install_packages", "Installing packages", true],
 	["shell", "Running shell commands", false]]
-const LOOKS := [["Spring", "9BD77A"], ["Autumn", "E0A85C"], ["Tropic", "7FD3B5"], ["Snowy", "DDE6F2"]]
+## [season, swatch color]: the island's season (changeable later in build mode).
+const LOOKS := [["spring", "F4A6C8"], ["summer", "9BD77A"], ["autumn", "E0A85C"], ["winter", "DDE6F2"]]
 const TOGGLE_ON := preload("res://assets/ui/toggle_on.svg")
 const TOGGLE_OFF := preload("res://assets/ui/toggle_off.svg")
 const CHECK := preload("res://assets/icons/check.svg")
@@ -40,7 +42,11 @@ var _step := 1
 var _repos: Array = []    # [{"repo", "private", "updated_at"}] from the backend
 var _repo := ""           # chosen "owner/name" ("" = none)
 var _branch := "main"
-var _plan := "classic"
+var _plan := "classic"     # the plan card that matches _steps ("" = a custom mix)
+var _steps: Array = IslandLayout.STEP_ORDER.duplicate()
+var _shape := "classic"
+var _season := "summer"
+var _step_toggles := {}       # building type -> Button
 var _rules := {}
 var _residents: Array = []  # drafts from the resident creator
 var _busy := false
@@ -65,8 +71,10 @@ func _ready() -> void:
 	%NameEdit.text_changed.connect(func(_t): _refresh())
 	%SearchEdit.text_changed.connect(func(_t): _show_repos())
 	%BranchEdit.text_changed.connect(func(text: String): _branch = text.strip_edges())
+	_build_shapes()
 	_build_looks()
 	_build_plans()
+	_build_step_toggles()
 	_build_rules()
 
 
@@ -76,6 +84,9 @@ func open() -> void:
 	_repo = ""
 	_branch = "main"
 	_plan = "classic"
+	_steps = IslandLayout.STEP_ORDER.duplicate()
+	_shape = "classic"
+	_season = "summer"
 	_residents = []
 	_busy = false
 	%NameEdit.text = ""
@@ -84,6 +95,7 @@ func open() -> void:
 		_rules[r[0]] = r[2]
 	_build_rules()
 	_style_plans()
+	_style_choices()
 	_show_branches([])
 	_go_to(1)
 	%GhStatus.text = "Asking GitHub…"
@@ -122,8 +134,10 @@ func _go_to(step: int) -> void:
 func _refresh() -> void:
 	var named: bool = %NameEdit.text.strip_edges() != ""
 	%PlateName.text = island_name().capitalize() if not named else %NameEdit.text.strip_edges()
-	%Preview.show_islands([{"id": "new", "types": PLANS[_plan][2]}])
-	%PreviewText.text = "Preview · %s" % PLANS[_plan][0].to_lower()
+	var layout := IslandLayout.from_shape(_shape, _steps, "new")
+	layout.season = _season
+	%Preview.show_islands([{"id": "new", "layout": layout}])
+	%PreviewText.text = "Preview · %s · %s" % [IslandLayout.SHAPES[_shape]["title"].to_lower(), _season]
 	%Next.disabled = not named or _busy
 	if _step == 1:
 		%Next.text = "Next: town plan"
@@ -287,6 +301,8 @@ func _build_plans() -> void:
 		card.toggled.connect(func(on: bool):
 			if on:
 				_plan = id
+				_steps = PLANS[id][2].duplicate()
+				_style_choices()
 				_refresh())
 		var rows := VBoxContainer.new()
 		rows.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -421,21 +437,12 @@ func _build_rules() -> void:
 		%Rules.add_child(box)
 
 
-## Island look: shown, but only Spring for now.
+## The island's season: a tile per season with a color swatch.
 func _build_looks() -> void:
+	var group := ButtonGroup.new()
 	for look in LOOKS:
-		var tile := Button.new()
-		tile.theme_type_variation = &"GiftTile"
-		tile.toggle_mode = true
-		tile.focus_mode = Control.FOCUS_NONE
-		tile.custom_minimum_size = Vector2(82, 70)
-		tile.button_pressed = look[0] == "Spring"
-		tile.disabled = look[0] != "Spring"
-		tile.tooltip_text = "Island looks are coming soon"
-		var rows := VBoxContainer.new()
-		rows.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		rows.alignment = BoxContainer.ALIGNMENT_CENTER
-		rows.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var tile := _choice_tile(look[0].capitalize(), group, func(): _season = look[0])
+		tile.set_meta("season", look[0])
 		var swatch := Panel.new()
 		swatch.custom_minimum_size = Vector2(40, 18)
 		swatch.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
@@ -444,15 +451,128 @@ func _build_looks() -> void:
 		style.bg_color = Color(look[1])
 		style.set_corner_radius_all(9)
 		swatch.add_theme_stylebox_override("panel", style)
-		var name_label := _label(look[0], 12, true)
-		name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		if tile.disabled:
-			swatch.modulate = Color(1, 1, 1, 0.5)
-			name_label.modulate = Color(1, 1, 1, 0.5)
-		rows.add_child(swatch)
-		rows.add_child(name_label)
-		tile.add_child(rows)
+		tile.get_child(0).add_child(swatch)
+		tile.get_child(0).move_child(swatch, 0)
 		%Looks.add_child(tile)
+	%Looks.get_parent().get_node("LookLabel").text = "Season"
+
+
+## The island's shape: a tile per shape (IslandLayout.SHAPES), with a little map.
+## The row goes just above the season row.
+func _build_shapes() -> void:
+	var left: Control = %Looks.get_parent()
+	var label := Label.new()
+	label.theme_type_variation = &"FieldLabel"
+	label.text = "Island shape"
+	var row := HBoxContainer.new()
+	row.name = "Shapes"
+	row.add_theme_constant_override("separation", 8)
+	var at := left.get_node("LookLabel").get_index()
+	left.add_child(label)
+	left.move_child(label, at)
+	left.add_child(row)
+	left.move_child(row, at + 1)
+	var group := ButtonGroup.new()
+	for id in IslandLayout.SHAPES:
+		var tile := _choice_tile(IslandLayout.SHAPES[id]["title"], group, func(): _shape = id)
+		tile.set_meta("shape", id)
+		var map := TextureRect.new()
+		map.texture = _shape_map(id)
+		map.custom_minimum_size = Vector2(46, 32)
+		map.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		map.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		map.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		tile.get_child(0).add_child(map)
+		tile.get_child(0).move_child(map, 0)
+		row.add_child(tile)
+
+
+## A tiny picture of a shape: green land on clear sea, one pixel per tile.
+func _shape_map(id: String) -> ImageTexture:
+	var land: Array = IslandLayout.SHAPES[id]["land"]
+	var image := Image.create(IslandLayout.GRID_W, IslandLayout.GRID_H, false, Image.FORMAT_RGBA8)
+	for r in IslandLayout.GRID_H:
+		for c in IslandLayout.GRID_W:
+			image.set_pixel(c, r, Color("8CCB5E") if land[r][c] == "#" else Color(0, 0, 0, 0))
+	return ImageTexture.create_from_image(image)
+
+
+## A toggle tile (shape or season) with its name; `on_pick` runs when it's chosen.
+func _choice_tile(title: String, group: ButtonGroup, on_pick: Callable) -> Button:
+	var tile := Button.new()
+	tile.theme_type_variation = &"GiftTile"
+	tile.toggle_mode = true
+	tile.button_group = group
+	tile.focus_mode = Control.FOCUS_NONE
+	tile.custom_minimum_size = Vector2(76, 70)
+	tile.toggled.connect(func(on: bool):
+		if on:
+			on_pick.call()
+			_refresh())
+	var rows := VBoxContainer.new()
+	rows.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	rows.alignment = BoxContainer.ALIGNMENT_CENTER
+	rows.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var name_label := _label(title, 12, true)
+	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	rows.add_child(name_label)
+	tile.add_child(rows)
+	return tile
+
+
+## One toggle per workflow step, under the plan cards. Mailbox, Workshop, and
+## Post Office are always needed, so they stay on.
+func _build_step_toggles() -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	var step2: Control = %Plans.get_parent()
+	step2.add_child(row)
+	step2.move_child(row, %Plans.get_index() + 1)
+	row.add_child(_label("Buildings:", 13, true))
+	for type in IslandLayout.STEP_ORDER:
+		var button := Button.new()
+		button.text = IslandLayout.STEP_NAMES[type]
+		button.toggle_mode = true
+		button.focus_mode = Control.FOCUS_NONE
+		# Required steps stay on (clicking them does nothing); they keep the
+		# normal "on" look instead of the faded disabled one.
+		if type in IslandLayout.REQUIRED_STEPS:
+			button.tooltip_text = "Every island needs this one."
+		else:
+			button.tooltip_text = "A check step: work that fails goes back to the Workshop."
+		button.toggled.connect(func(on: bool): _toggle_step(type, on))
+		_step_toggles[type] = button
+		row.add_child(button)
+
+
+func _toggle_step(type: String, on: bool) -> void:
+	if type in IslandLayout.REQUIRED_STEPS:
+		_style_choices()  # stays on
+		return
+	if on and type not in _steps:
+		_steps.append(type)
+	elif not on:
+		_steps.erase(type)
+	_steps = IslandLayout.STEP_ORDER.filter(func(t): return t in _steps)
+	_plan = ""
+	for id in PLANS:
+		if PLANS[id][2] == _steps:
+			_plan = id
+	_style_plans()
+	_style_choices()
+	_refresh()
+
+
+## Show the current shape, season, and steps on their tiles and toggles.
+func _style_choices() -> void:
+	for tile in %Looks.get_children():
+		tile.set_pressed_no_signal(tile.get_meta("season") == _season)
+	for tile in %Looks.get_parent().get_node("Shapes").get_children():
+		tile.set_pressed_no_signal(tile.get_meta("shape") == _shape)
+	for type in _step_toggles:
+		var button: Button = _step_toggles[type]
+		button.set_pressed_no_signal(type in _steps)
+		button.theme_type_variation = &"TabActive" if type in _steps else &"TabInactive"
 
 
 # --- Founding -------------------------------------------------------------------
@@ -463,7 +583,8 @@ func _found() -> void:
 	_busy = true
 	_refresh()
 	var body := {"name": %NameEdit.text.strip_edges(), "repo": _repo if _repo else null,
-		"branch": _branch if _branch else "main", "plan": _plan, "rules": _rules}
+		"branch": _branch if _branch else "main", "shape": _shape, "steps": _steps, "season": _season,
+		"rules": _rules}
 	var error := _found_http.request(Net.http_url("/islands"), ["Content-Type: application/json"],
 		HTTPClient.METHOD_POST, JSON.stringify(body))
 	if error != OK:
@@ -479,7 +600,7 @@ func _on_founded(result: int, code: int, _headers, body: PackedByteArray) -> voi
 		founded.emit(data, _residents.duplicate(true))
 		return
 	_refresh()
-	var why: String = str(data.get("detail", "")) if typeof(data) == TYPE_DICTIONARY else "the backend is offline"
+	var why: String = str(data.get("error", data.get("detail", ""))) if typeof(data) == TYPE_DICTIONARY else "the backend is offline"
 	_set_note("Hmm, that didn't work: %s" % why, true)
 
 

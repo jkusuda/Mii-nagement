@@ -57,7 +57,8 @@ backend/mii/
   runtime.py       one sandbox / event bus / bubbles / engine per process
   models.py        tables + snapshot builder
   migrations/      Django migrations (checked in)
-  islands.py       found an island (POST /islands): town plan + a git repo per island, default_folder(), ensure_repo()
+  islands.py       found an island (POST /islands): shape + steps + a git repo per island; island layouts
+                   (SHAPES, build_roads, validate_layout, set_layout for build mode), default_folder(), ensure_repo()
   personality.py   job + sliders -> the prompt preamble
   events.py        event bus (save + broadcast) + bubbles
   engine.py        island graph + building handlers + task loop
@@ -81,7 +82,7 @@ backend/mii/
 
 | Table | What it holds |
 |---|---|
-| `Island` | id, name, GitHub repo, `repo_path` (its local git repository), branch, town plan, house rules |
+| `Island` | id, name, GitHub repo, `repo_path` (its local git repository), branch, town plan, house rules, `layout` (land tiles, pond, plants, season) |
 | `Resident` | name, job, 4 personality sliders, `brain`, optional `model`, catchphrase, color, house `keys`, `gifts`, live state / building / mood |
 | `Building` | type, name, lot position, resident |
 | `Road` | from, to, condition |
@@ -140,7 +141,8 @@ After changing a model: `uv run python manage.py makemigrations mii`, then
 | `GET /brains/detail` | per brain: `ok`, `installed`, `logged_in` (best effort), `api_key`, `hint` |
 | `GET /models` | the OpenRouter catalogue (needs `OPENROUTER_API_KEY`) |
 | `GET /islands` | every island (id, name, repo, created_at, ...: the Archipelago screen), plus `default_folder` for new repositories |
-| `POST /islands` | found an island: `{"name", "repo"?, "branch"?, "plan": "classic" \| "quick_fixes", "rules"?, "folder"?, "existing_repo"?}` → its snapshot. Creates the git repo (or adopts `existing_repo`) and lays out the town plan |
+| `POST /islands` | found an island: `{"name", "repo"?, "branch"?, "shape"?, "steps"? \| "plan"?: "classic" \| "quick_fixes", "season"?, "rules"?, "folder"?, "existing_repo"?}` → its snapshot. Creates the git repo (or adopts `existing_repo`) and lays out the shape's lots and the roads for the steps |
+| `PUT /islands/{id}/layout` | build mode's save: `{"layout", "buildings": [{type, x, y, facing}]}` → the new snapshot (also broadcast). 400 / 409 (steps changing during a task); see protocol.md "Island layout" |
 | `GET /github/repos?q=` | the user's repos, through their logged-in `gh` (island creator) |
 | `GET /github/branches?repo=` | a repo's branches, through `gh` |
 | `GET /islands/{id}` | the island snapshot |

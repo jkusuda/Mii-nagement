@@ -84,11 +84,14 @@ Island3D (Node3D)
 ├── CameraRig           camera_rig.gd: zoom + drag
 │   └── Camera3D        tilted 45°, 30° field of view
 ├── Water               a big plane using shaders/water.gdshader
-├── BaseIsland          the island model, scaled ×20
-└── Buildings           5 building models, scaled ×2.7 and lifted onto the grass
+├── Island              island_builder.gd: builds the island from data (see 8b)
+└── Residents           island_residents.gd: the walking Miis
 ```
-Click any node and change it in the Inspector: move a building, rotate the Sun,
-tilt the camera. Click **Preview** at the top of the 3D view to look through the camera.
+Click any node and change it in the Inspector: rotate the Sun, tilt the camera.
+Click **Preview** at the top of the 3D view to look through the camera. The
+island itself is built when the game runs (from the backend's layout), so to
+change *where things are*, use **Build** in the game. To change *how a building
+looks or sits on its lot*, open its scene in `scenes/buildings/`.
 
 ### 5. `scenes/camera_rig.gd`: zoom and drag
 - The camera is a child of the rig. Zoom moves the camera closer; drag slides
@@ -124,7 +127,28 @@ tilt the camera. Click **Preview** at the top of the 3D view to look through the
 - `island_resident.gd` walks through those points with a **Tween** (a node that
   animates a property over time) and shows the state: hop = working, "z Z" =
   asleep, an icon in a bubble = needs you.
-- `island_paths.gd` is the sand path as a rectangle, measured from the model.
+- `island_paths.gd` turns the path tiles into points to walk through (it only
+  keeps the corners).
+
+### 8b. `scenes/island/`: the island built from data
+Every island has a **layout** (from the backend): a 20 × 14 grid of land tiles,
+a pond, plants, a season, and each building's lot and facing.
+- `island_layout.gd` is that data plus the rules: is this tile land, does this
+  building fit, and the **paths**, worked out by a small path-finding search that
+  joins the buildings' doors (turning costs extra, so paths come out as neat
+  L-shapes). When the owner hasn't placed plants, it scatters trees and bushes
+  itself, with a fixed random seed so the same island always looks the same.
+- `island_terrain.gd` makes the ground: a little "field" image (distance to the
+  coast, where the paths are) scaled up smoothly, which rounds the square tiles
+  into a soft coastline, then an **ArrayMesh** (a mesh built in code) whose
+  height follows the field: grass, a rounded edge, the beach, the sea floor.
+- `island_builder.gd` puts it all in the scene: the ground (colored by
+  `shaders/terrain.gdshader`), the pond, the five building scenes, plants, and
+  lamp posts. `scenes/seasons.gd` then gives it the season's look.
+- `scenes/build/build_mode.gd` is the **Build** button: it edits a copy of the
+  layout, rebuilds the island after every change, and sends it to the backend on
+  Save. It finds the tile under the mouse by **ray casting**: a ray from the
+  camera through the mouse, down to the ground.
 
 ### 9. `scenes/insights/`: the Insights tab
 - `insights_screen.gd` asks the backend for `/islands/{id}/insights` with an

@@ -91,20 +91,19 @@ static func status(island: Dictionary) -> Dictionary:
 	return {"text": "All quiet", "color": Color("2E8B57"), "kind": "quiet"}
 
 
-## A picture of the island's 3D model, with only the buildings it has.
+## A picture of the island's 3D model (its shape, buildings, plants, season).
 ## The texture stays the same object; it re-renders when the island changes.
 func thumbnail(id: String) -> Texture2D:
 	if not _thumbs.has(id):
 		_thumbs[id] = _make_thumbnail()
 	var viewport: SubViewport = _thumbs[id]
-	var built := {}
-	for b in find(id).get("buildings", []):
-		built[str(b["type"]).to_pascal_case()] = true  # 3D nodes are named by building type
-	var key := ",".join(built.keys())
-	if not viewport.has_meta("built") or viewport.get_meta("built") != key:  # only re-render when the buildings change
+	var island := find(id)
+	var layout := IslandLayout.from_snapshot(island)
+	var key := JSON.stringify([layout.to_request(), id])
+	if not viewport.has_meta("built") or viewport.get_meta("built") != key:  # only re-render when the island changes
 		viewport.set_meta("built", key)
-		for node in viewport.get_child(0).get_node("Buildings").get_children():
-			node.visible = built.has(str(node.name))
+		var builder: IslandBuilder = viewport.get_child(0).get_node("Island")
+		builder.build(layout)
 		viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 	return viewport.get_texture()
 
@@ -159,6 +158,7 @@ func _make_thumbnail() -> SubViewport:
 	var world: Node3D = IslandScene.instantiate()
 	for part in ["Residents", "Water", "CameraRig"]:  # just the island and its buildings
 		world.get_node(part).free()
+	world.get_node("Island").detail = "far"
 	var sky: WorldEnvironment = world.get_node("WorldEnvironment")
 	var env: Environment = sky.environment.duplicate()
 	env.background_mode = Environment.BG_COLOR

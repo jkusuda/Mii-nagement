@@ -14,6 +14,7 @@ import random
 import httpx
 from django.db import transaction
 
+from mii.islands import SHAPES, STEP_NAMES, STEP_ORDER, default_layout
 from mii.models import Building, Event, Island, Resident, Road, Step, Task
 
 ISLAND_ID = "sunny"
@@ -43,17 +44,13 @@ def residents() -> list[Resident]:
 
 
 def buildings() -> list[Building]:
-    #       id / type        name           x   y   resident
-    rows = [
-        ("mailbox",     "Mailbox",      4, 15, "jun"),
-        ("workshop",    "Workshop",    12,  7, "carlos"),
-        ("lab",         "Lab",         20, 15, "carlos"),
-        ("courthouse",  "Courthouse",  28,  7, "sydney"),
-        ("post_office", "Post Office", 35, 15, "jun"),
-    ]
+    """The classic island's lots (islands.SHAPES), one resident each."""
+    lots = SHAPES["classic"]["lots"]
+    who = {"mailbox": "jun", "workshop": "carlos", "lab": "carlos", "courthouse": "sydney", "post_office": "jun"}
     return [
-        Building(id=bid, island_id="sunny", type=bid, name=name, x=x, y=y, resident_id=who)
-        for bid, name, x, y, who in rows
+        Building(id=t, island_id="sunny", type=t, name=STEP_NAMES[t], x=lots[t][0], y=lots[t][1], facing=lots[t][2],
+                 resident_id=who[t])
+        for t in STEP_ORDER
     ]
 
 
@@ -76,7 +73,7 @@ def seed(reset: bool = False) -> str:
             for model in (Event, Step, Task, Road, Building, Resident, Island):
                 model.objects.all().delete()
         if not Island.objects.filter(pk=ISLAND_ID).exists():
-            Island.objects.create(id=ISLAND_ID, name="Sunny Isle", repo=None)
+            Island.objects.create(id=ISLAND_ID, name="Sunny Isle", repo=None, layout=default_layout("classic"))
             # Residents point at buildings and buildings at residents: SQLite checks
             # foreign keys when the transaction commits, so the order doesn't matter.
             Resident.objects.bulk_create(residents())

@@ -12,6 +12,7 @@ urlpatterns = [
     path("github/repos", views.github_repos),
     path("github/branches", views.github_branches),
     path("islands/<str:island_id>", views.get_island),
+    path("islands/<str:island_id>/layout", views.put_layout),
     path("islands/<str:island_id>/tasks", views.create_task),
     path("islands/<str:island_id>/insights", views.get_insights),
     path("replay/<str:task_id>", views.replay),

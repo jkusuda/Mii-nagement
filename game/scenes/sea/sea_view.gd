@@ -6,7 +6,8 @@ extends SubViewportContainer
 ## a preview of the new island.
 ##
 ## show_islands() lays the islands out in a grid and points the camera so they
-## all fit. Each island shows only the building types it's given.
+## all fit. Each island is built from its own IslandLayout (shape, buildings,
+## plants, season), with an IslandBuilder in "far" detail.
 ## screen_point() says where a 3D point is on screen, for name plates.
 ## Clicking an island emits island_clicked.
 ## With no islands it's just open sea: game.tscn uses one as the screen
@@ -16,16 +17,16 @@ signal island_clicked(island_id: String)
 
 const IslandScene := preload("res://scenes/island_3d.tscn")
 const SPACING := Vector2(50, 38)           # distance between island centers (x, z)
-const ISLAND_HALF := Vector2(18.6, 12.4)   # the island's size, as in water.gdshader
+const ISLAND_HALF := Vector2(18.6, 12.4)   # roughly how far an island reaches from its center
 const MAX_ISLANDS := 8                      # the water shader knows up to 8 shores
 ## The nodes in island_3d.tscn that make up one island (everything else is
-## the shared stage: sun, sky, water). Add new island decorations here.
-const ISLAND_PARTS := ["BaseIsland", "Pond", "Trees", "Bushes", "Buildings"]
+## the shared stage: sun, sky, water).
+const ISLAND_PARTS := ["Island"]
 
 var _viewport := SubViewport.new()
 var _stage: Node3D                # island_3d.tscn, minus its own island, residents and camera
 var _camera := Camera3D.new()
-var _islands := {}                # id -> Node3D (base island + buildings)
+var _islands := {}                # id -> IslandBuilder
 var _centers := {}                # id or "slot:N" -> Vector3
 var _layout_key := ""
 
@@ -60,10 +61,10 @@ func _ready() -> void:
 	resized.connect(func(): _frame_camera.call_deferred())
 
 
-## Show these islands: each entry is {"id": String, "types": [building types]}.
+## Show these islands: each entry is {"id": String, "layout": IslandLayout}.
 ## With `new_slot`, one more empty grid cell is kept (for a "New island" sign).
 func show_islands(entries: Array, new_slot := false) -> void:
-	var key := JSON.stringify([entries, new_slot])
+	var key := JSON.stringify([entries.map(func(e): return [e["id"], e["layout"].to_request(), e["layout"].seed_text]), new_slot])
 	if key == _layout_key:
 		return
 	_layout_key = key
@@ -81,7 +82,7 @@ func show_islands(entries: Array, new_slot := false) -> void:
 		var center := Vector3((col - (columns - 1) / 2.0) * SPACING.x, 0, (row - (rows - 1) / 2.0) * SPACING.y)
 		if i < entries.size():
 			var id := str(entries[i]["id"])
-			_islands[id] = _make_island(entries[i].get("types", []), center)
+			_islands[id] = _make_island(entries[i]["layout"], center)
 			_centers[id] = center
 		else:
 			_centers["slot:new"] = center
@@ -102,21 +103,14 @@ func has_island(id: String) -> bool:
 	return _islands.has(id)
 
 
-## One island: the base model, pond and plants, plus only the buildings it has.
-func _make_island(types: Array, center: Vector3) -> Node3D:
-	var island := Node3D.new()
+## One island, built from its layout.
+func _make_island(layout: IslandLayout, center: Vector3) -> IslandBuilder:
+	var island := IslandBuilder.new()
+	island.detail = "far"
+	island.layout = layout  # so _ready() doesn't build the classic island first
 	island.position = center
-	var source := IslandScene.instantiate()
-	for part in ISLAND_PARTS:
-		var node: Node3D = source.get_node(part)
-		source.remove_child(node)
-		node.owner = null  # it belonged to the scene we took it from
-		island.add_child(node)
-	source.free()
-	var wanted := types.map(func(t): return str(t).to_pascal_case())
-	for building in island.get_node("Buildings").get_children():
-		building.visible = str(building.name) in wanted
 	_stage.add_child(island)
+	island.build(layout)
 	return island
 
 
@@ -127,12 +121,15 @@ func _set_water() -> void:
 		water.set_meta("base_material", water.get_active_material(0))
 		water.scale = Vector3(3, 1, 3)  # a wider sea for wider archipelagos
 	var material: ShaderMaterial = water.get_meta("base_material").duplicate()
-	var centers := PackedVector2Array()
+	var fields := []
+	var rects := PackedVector4Array()
 	for id in _islands:
-		centers.append(Vector2(_centers[id].x, _centers[id].z))
-	# -1 tells the shader "no islands" (0 would mean one island in the middle).
-	material.set_shader_parameter("island_count", centers.size() if centers.size() > 0 else -1)
-	material.set_shader_parameter("island_centers", centers)
+		var island: IslandBuilder = _islands[id]
+		fields.append(island.ground["field"])
+		rects.append(island.shore_rect(_centers[id]))
+	material.set_shader_parameter("island_count", fields.size())
+	material.set_shader_parameter("island_fields", fields)
+	material.set_shader_parameter("island_rects", rects)
 	water.material_override = material
 
 

@@ -36,11 +36,13 @@ class Island(models.Model):
     repo = models.CharField(max_length=200, null=True, blank=True)  # GitHub "owner/name"
     repo_path = models.CharField(max_length=1000, null=True, blank=True)  # the local git repo (see islands.py)
     branch = models.CharField(max_length=200, default="main")  # residents branch off from here
-    plan = models.CharField(max_length=50, default="classic")  # town plan it was founded with (islands.py TOWN_PLANS)
+    plan = models.CharField(max_length=50, default="classic")  # the town plan its steps match, or "custom" (islands.py PLANS)
     # House rules from the island creator: True = ask me before doing this.
     # Stored only for now (merge_pr, install_packages, shell).
     rules = models.JSONField(default=dict)
     created_at = models.DateTimeField(default=utcnow)  # "Day 1" in the game
+    # Land tiles, pond, plants, season: see "Island layout" in islands.py. {} = the classic island.
+    layout = models.JSONField(default=dict)
 
 
 class Resident(models.Model):
@@ -76,8 +78,9 @@ class Building(models.Model):
     island = models.ForeignKey(Island, on_delete=models.CASCADE, related_name="buildings")
     type = models.CharField(max_length=50)  # mailbox | workshop | lab | courthouse | post_office
     name = models.CharField(max_length=100)
-    x = models.IntegerField()  # lot position on the island grid
+    x = models.IntegerField()  # the top-left tile of its lot on the island grid (islands.py)
     y = models.IntegerField()
+    facing = models.IntegerField(default=0)  # where the door looks: 0 south, 1 east, 2 north, 3 west
     resident = models.ForeignKey(Resident, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
 
 
@@ -181,6 +184,8 @@ def task_to_dict(t: Task) -> dict:
 
 async def island_snapshot(island_id: str, open_bubbles: list[dict]) -> dict:
     """Full island state for the `snapshot` event. Raises Island.DoesNotExist."""
+    from mii.islands import default_layout  # here, not at the top: islands.py imports this module
+
     island = await Island.objects.aget(pk=island_id)
     return {
         "id": island.id,
@@ -191,8 +196,10 @@ async def island_snapshot(island_id: str, open_bubbles: list[dict]) -> dict:
         "plan": island.plan,
         "rules": island.rules,
         "created_at": island.created_at.isoformat(),
+        "layout": island.layout or default_layout(),
         "buildings": [
-            {"id": b.id, "type": b.type, "name": b.name, "x": b.x, "y": b.y, "resident": b.resident_id}
+            {"id": b.id, "type": b.type, "name": b.name, "x": b.x, "y": b.y, "facing": b.facing,
+             "resident": b.resident_id}
             async for b in Building.objects.filter(island_id=island_id).order_by("id")
         ],
         "roads": [

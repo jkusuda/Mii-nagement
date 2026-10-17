@@ -42,8 +42,15 @@ The client should rebuild its view from scratch when it gets one.
     "plan": "classic",
     "rules": {"merge_pr": true, "install_packages": true, "shell": false},
     "created_at": "2026-10-04T09:12:00+00:00",
+    "layout": {
+      "version": 1, "shape": "classic",
+      "land": ["....................", ".##################.", "...", "...................."],
+      "pond": {"x": 7, "y": 6, "w": 5, "h": 2},
+      "plants": null,
+      "season": "summer"
+    },
     "buildings": [
-      {"id": "mailbox", "type": "mailbox", "name": "Mailbox", "x": 4, "y": 15, "resident": "jun"}
+      {"id": "mailbox", "type": "mailbox", "name": "Mailbox", "x": 3, "y": 2, "facing": 0, "resident": "jun"}
     ],
     "roads": [
       {"from": "lab", "to": "courthouse", "condition": "pass"}
@@ -72,12 +79,14 @@ The client should rebuild its view from scratch when it gets one.
 - `repo`: the island's GitHub repo (`owner/name`) or `null`. `path`: the island's
   local git repository (every island is a repository; see `GET /islands` and
   `POST /islands` in architecture.md). `branch`: what residents branch off from.
-  `plan`: the town plan the island was founded with. `rules`: house rules from
+  `plan`: the town plan its steps match (`classic`, `quick_fixes`) or `custom`. `rules`: house rules from
   the island creator (`true` = ask me before doing this); stored only for now.
 - `created_at`: when the island was founded (ISO-8601 UTC). The game counts
   days from it ("Day 1" is the founding day, in the player's local time).
-- `buildings[].x / y`: the building's lot on a grid. The 3D client currently
-  places buildings itself (`island_3d.tscn`); x/y are for build mode later.
+- `layout`: how the island looks (see "Island layout" below).
+- `buildings[].x / y`: the top-left tile of the building's 3×3-tile lot.
+  `facing`: where its door looks: `0` south (toward the camera), `1` east,
+  `2` north, `3` west.
 - `buildings[].resident`: the resident who works there.
 - `residents[].brain`: which coding agent runs the resident: `mock`,
   `claude-code`, `codex`, `gemini`, or `openrouter`. `model` is an optional model
@@ -238,6 +247,49 @@ event to every client, or `error` if the id is unknown.
 
 ---
 
+## Island layout
+
+An island is a grid of 20 × 14 tiles. The game draws one tile as 2 × 2 world
+units, centered on the origin: tile `(c, r)` is centered at
+`x = (c - 9.5) * 2`, `z = (r - 6.5) * 2`.
+
+- `land`: 14 strings of 20 characters, `#` = land, `.` = sea. The grid's edge is
+  always sea (room for the beach), and the land is one piece.
+- `pond`: a rectangle of tiles on land, or `null`.
+- `plants`: `null` = the game arranges trees and bushes itself (and re-arranges
+  them when buildings move). A list = placed by hand in build mode:
+  `{"kind": "tree" | "bush", "x", "y" (tile units, may be fractional), "rot" (degrees), "scale"}`.
+- `season`: `spring`, `summer`, `autumn`, or `winter`, picked by the owner.
+- `shape`: the preset it started from (informational).
+
+Buildings stand on a 3 × 3-tile lot. Its door opens onto the tile just outside
+the middle of the side it faces. Rules the server checks (`validate_layout` in
+`backend/mii/islands.py`): every lot plus the ring of tiles around it is land;
+lots don't overlap each other or the pond; every door opens onto free land; and
+all doors can reach each other over free land. The **paths** are not stored: the
+game draws them between the doors over free land, so everyone sees the same ones.
+
+### Workflow steps
+
+Each building type is one workflow step. An island has `mailbox`, `workshop`,
+and `post_office`, plus any of `lab` and `courthouse`. Roads always follow the
+order mailbox → workshop → lab → courthouse → post_office over the steps the
+island has: a check step (`lab`, `courthouse`) goes on with `pass` and back to
+the `workshop` with `fail`; the others go on with `always`.
+
+### Build mode: `PUT /islands/{id}/layout`
+
+```json
+{"layout": {...}, "buildings": [{"type": "workshop", "x": 8, "y": 2, "facing": 0}]}
+```
+
+The server validates, saves, and answers with the new snapshot, which it also
+sends as a `snapshot` event to every client watching the island. Buildings keep
+their ids. Adding a step builds it (with a resident of the right job, if any) and
+rebuilds the roads; removing one sends its residents to another building of
+their job. Errors: `400` (`{"error": "..."}`, a rule above is broken), `404`,
+and `409` when the steps would change while a task is in progress.
+
 ## How a task flows (typical event order)
 
 The island's buildings and roads form a graph. A task "package" starts at the
@@ -266,13 +318,15 @@ When a resident has nothing to do they go `idle`, and eventually `sleeping`.
 The Godot client finds buildings and residents by these IDs, so they must match
 `backend/mii/seed.py`.
 
-| Building id   | type          | resident | lot (x, y) |
-|---------------|---------------|----------|------------|
-| `mailbox`     | `mailbox`     | `jun`    | (4, 15)    |
-| `workshop`    | `workshop`    | `carlos` | (12, 7)    |
-| `lab`         | `lab`         | `carlos` | (20, 15)   |
-| `courthouse`  | `courthouse`  | `sydney` | (28, 7)    |
-| `post_office` | `post_office` | `jun`    | (35, 15)   |
+The seed island uses the `classic` shape (`SHAPES` in `backend/mii/islands.py`).
+
+| Building id   | type          | resident | lot (x, y) | facing |
+|---------------|---------------|----------|------------|--------|
+| `mailbox`     | `mailbox`     | `jun`    | (3, 2)     | 0      |
+| `workshop`    | `workshop`    | `carlos` | (8, 2)     | 0      |
+| `lab`         | `lab`         | `carlos` | (13, 2)    | 0      |
+| `courthouse`  | `courthouse`  | `sydney` | (15, 8)    | 3      |
+| `post_office` | `post_office` | `jun`    | (2, 8)     | 1      |
 
 Roads:
 
@@ -293,8 +347,8 @@ Roads:
 
 With `MOCK_AGENTS=1` (the default), every resident runs on the mock brain anyway.
 
-In the 3D client, each building **type** matches a node under `Buildings/` in
-`game/scenes/island_3d.tscn` (`mailbox` → `Mailbox`, `post_office` → `PostOffice`).
-Building ids are unique across all islands, so other islands use ids like
-`maple_mailbox`; the client always goes by `type`. Buildings an island doesn't
-have are hidden.
+In the 3D client, the island is built from the snapshot's `layout` and
+`buildings` (`game/scenes/island/island_builder.gd`); each building **type** becomes
+a node under `Island/Buildings/` (`mailbox` → `Mailbox`, `post_office` →
+`PostOffice`). Building ids are unique across all islands, so other islands use
+ids like `maple_mailbox`; the client always goes by `type`.
