@@ -2,17 +2,22 @@
 
 The website and the backend on one server: a Vultr VM running two containers, the
 backend (`backend.Dockerfile`) and Caddy (`Caddyfile`), which serves the landing page
-(`landing/`, at `/`) and the web export of the game (at `/app/`), forwards the API and
-WebSocket to the backend, and gets the HTTPS certificate. The game finds the backend at
-the address it was loaded from (`net.gd`). The landing page points people to the
-desktop version first: the browser build is lighter and slower.
+(`landing/`, at `/`) and the desktop download (`/download/`), forwards the API and
+WebSocket to the backend, and gets the HTTPS certificate.
+
+The browser build (`make web`, served at `/app/`) is **off for now**: the landing page
+only offers the download. The lines that export, upload and serve it are commented out
+in `push.sh`, `Caddyfile` and `docker-compose.yml`; the game finds the backend at the
+address it was loaded from (`net.gd`), so it still works when brought back.
 
 ## One-time setup
 
 1. **Godot web export templates** (for `make web`): Godot > Editor > Manage Export
    Templates > Download, or unzip the `web_*` files of the release's `.tpz` into
    `~/Library/Application Support/Godot/export_templates/4.7.2.stable/`.
-2. **Auth0** (login; required when `MOCK_AGENTS=0`), in the Auth0 dashboard:
+2. **Auth0** (login; required when `MOCK_AGENTS=0`; skip it for a mock-mode server). The
+   game has no login screen, so with login on it only sees public islands. In the Auth0
+   dashboard:
    - Applications > APIs > Create API. Its *Identifier* (e.g. `https://mii-nagement/api`)
      is `AUTH0_AUDIENCE`. Signing algorithm RS256.
    - Applications > Create Application > *Native*. Its *Client ID* is `AUTH0_CLIENT_ID`,
@@ -29,10 +34,10 @@ desktop version first: the browser build is lighter and slower.
 
 ## Deploy (and redeploy after changes)
 
+    make app                         # optional, on a Mac: the .dmg behind "Download for Mac"
     deploy/push.sh root@<server ip>
 
-Then open `https://<MII_DOMAIN>/app/`, Log in (the button next to Settings). Only logged-in players can found
-islands; an island is visible to its owner and its members.
+Then open `https://<MII_DOMAIN>`. With the browser build back on, the game is at `/app/`.
 
 ## On the server
 

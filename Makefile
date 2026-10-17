@@ -15,6 +15,7 @@
 #   make godot-check   load the game headless and fail on any script error
 #   make reset     wipe the database (stop the server first)
 #   make web       export the game for browsers into game/builds/web (deploy/README.md)
+#   make app       the macOS app with its own backend, as a .dmg in game/builds/macos
 #
 # Needs: uv (https://docs.astral.sh/uv) and Godot 4. Godot is found on PATH or in
 # /Applications; anywhere else, pass it: `make GODOT=/path/to/godot check`.
@@ -31,12 +32,12 @@ UVICORN_LOOP := $(if $(filter Windows_NT,$(OS)),--loop asyncio:ProactorEventLoop
 # Find Godot: $GODOT, then `godot` on PATH, then the macOS app bundle.
 GODOT ?= $(shell command -v godot 2>/dev/null || ([ -x /Applications/Godot.app/Contents/MacOS/Godot ] && echo /Applications/Godot.app/Contents/MacOS/Godot))
 
-.PHONY: all help up dev setup server sim watch game check lint fmt test godot-check reset check-tools web
+.PHONY: all help up dev setup server sim watch game check lint fmt test godot-check reset check-tools web app
 
 all: up
 
 help:
-	@sed -n '2,21p' Makefile | sed 's/^#//'
+	@sed -n '2,22p' Makefile | sed 's/^#//'
 
 check-tools:
 	@command -v $(UV) >/dev/null || { echo "uv is missing. macOS: brew install uv   Linux: curl -LsSf https://astral.sh/uv/install.sh | sh   Windows: winget install astral-sh.uv"; exit 1; }
@@ -115,3 +116,8 @@ web:
 	@mkdir -p game/builds/web
 	"$(GODOT)" --headless --path .web-src --import >/dev/null 2>&1 || true
 	"$(GODOT)" --headless --path .web-src --export-release Web "$(CURDIR)/game/builds/web/index.html"
+
+# Needs Godot's macOS export template. tools/package_mac.sh says what goes in.
+app:
+	@[ -n "$(GODOT)" ] || { echo "Godot not found (set GODOT=/path/to/godot)"; exit 1; }
+	GODOT="$(GODOT)" tools/package_mac.sh

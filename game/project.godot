@@ -17,6 +17,7 @@ config/icon="res://icon.svg"
 
 [autoload]
 
+Launcher="*res://launcher.gd"
 Net="*res://net.gd"
 Islands="*res://islands.gd"
 Clock="*res://clock.gd"
