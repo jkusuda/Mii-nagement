@@ -1,6 +1,6 @@
 """GitHub in and out, through the user's logged-in `gh` CLI (no token setup needed).
 
-    repos:     gh repo list --limit 100 --json nameWithOwner,isPrivate,updatedAt   (island creator)
+    repos:     gh api user/repos?affiliation=owner,collaborator,organization_member  (island creator)
     branches:  gh api repos/<owner/name>/branches --jq '.[].name'                (island creator)
     issues:    gh issue list --repo <owner/name> --state open --json number,title,labels,updatedAt  (pick a task)
     issue in:  gh issue view <number> --repo <owner/name> --json title,body
@@ -65,13 +65,16 @@ def clone(repo: str, path: Path, timeout: float) -> None:
 
 
 def list_repos(query: str = "", limit: int = 100) -> list[dict]:
-    """Repos the logged-in user can see, newest first, filtered by `query`."""
-    repos = _json(_run([*GH, "repo", "list", "--limit", str(limit), "--json", "nameWithOwner,isPrivate,updatedAt"]))
+    """Repos the logged-in user owns, contributes to or reaches through an org, newest first, filtered by `query`."""
+    # `gh repo list` only shows the user's own repos; the API lets us add collaborator and org repos.
+    affiliation = "affiliation=owner,collaborator,organization_member"
+    endpoint = f"user/repos?{affiliation}&sort=updated&direction=desc&per_page={min(limit, 100)}"
+    repos = _json(_run([*GH, "api", endpoint]))
     query = query.lower().strip()
     return [
-        {"repo": r["nameWithOwner"], "private": r["isPrivate"], "updated_at": r["updatedAt"]}
+        {"repo": r["full_name"], "private": r["private"], "updated_at": r["updated_at"]}
         for r in repos
-        if query in r["nameWithOwner"].lower()
+        if query in r["full_name"].lower()
     ]
 
 

@@ -126,8 +126,8 @@ def test_ensure_repo_gives_the_seed_island_a_repo(island, repos_in_tmp):
 def test_list_repos_filters_and_reshapes(monkeypatch):
     out = json.dumps(
         [
-            {"nameWithOwner": "me/fern-api", "isPrivate": True, "updatedAt": "2026-10-16T00:00:00Z"},
-            {"nameWithOwner": "me/other", "isPrivate": False, "updatedAt": "2026-10-15T00:00:00Z"},
+            {"full_name": "me/fern-api", "private": True, "updated_at": "2026-10-16T00:00:00Z"},
+            {"full_name": "boss/other", "private": False, "updated_at": "2026-10-15T00:00:00Z"},
         ]
     )
     monkeypatch.setattr(subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0, out, ""))
