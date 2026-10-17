@@ -5,15 +5,16 @@ extends Node3D
 ##
 ## - snapshot           -> everyone appears at their building, in their state
 ## - move (from -> to)  -> walk there, the shortest way along the sand paths
-## - agent_state        -> working (walk in through the door and vanish inside),
-##                         idle, sleeping (z Z); leaving work = out of the door again
+## - agent_state        -> working or sleeping (walk in through the door and vanish
+##                         inside), idle; waking up or leaving work = out of the door again
 ## - bubble             -> an icon over their head until it's answered
 ##
 ## Where a resident stands: each building has a *stop* on the sand path, the
 ## tile just outside its door. The camera looks from the south, so a door that
 ## faces away hides anyone standing there: those stops slide along the path
 ## until they're clear of the building. Residents at the same building line up
-## along the path from the stop.
+## along the path from the stop. Nobody stands on top of anyone else: free_spot()
+## nudges a resident to the nearest clear bit of path.
 ##
 ## The paths come from the island's layout (IslandBuilder.layout); when
 ## it changes (build mode), everyone is placed again.
@@ -24,6 +25,9 @@ extends Node3D
 
 const ResidentScene := preload("res://scenes/island/island_resident.tscn")
 const SEARCH_TILES := 12  # how far along the path a hidden stop may slide
+const PERSONAL_SPACE := 0.9  # units between two residents standing about
+const NUDGE := 0.95  # step between the spots free_spot() tries (a tile is 2 units)
+const NUDGE_RINGS := 3  # how many steps out it looks before giving up
 
 var _walkers := {}  # resident id -> IslandResident
 var _stops := {}  # building id -> Vector3, worked out once per building (per island)
@@ -71,6 +75,27 @@ func line_up() -> void:
 ## Where a resident stands at their building (island_life: resting at home).
 func home_spot(resident: Dictionary) -> Vector3:
 	return _stop(str(resident.get("building", "")))
+
+
+## The spot nearest `wanted`, on a path tile, where `walker` won't stand on anyone:
+## at least PERSONAL_SPACE from where every other visible resident stands or is
+## headed. `wanted` itself when it is clear (or when nothing nearby is).
+func free_spot(walker: IslandResident, wanted: Vector3) -> Vector3:
+	var taken: Array[Vector3] = []
+	for other: IslandResident in _walkers.values():
+		if other != walker and not other.inside:
+			taken.append(other.spot())
+	var tries: Array[Vector3] = []
+	for i in range(-NUDGE_RINGS, NUDGE_RINGS + 1):
+		for j in range(-NUDGE_RINGS, NUDGE_RINGS + 1):
+			var p := wanted + Vector3(i * NUDGE, 0, j * NUDGE)
+			if island.layout.path_tiles.has(IslandLayout.world_to_tile(p)):
+				tries.append(p)
+	tries.sort_custom(func(a, b): return a.distance_squared_to(wanted) < b.distance_squared_to(wanted))
+	for p in tries:
+		if taken.all(func(t): return Vector2(t.x - p.x, t.z - p.z).length() >= PERSONAL_SPACE):
+			return p
+	return wanted
 
 
 ## A resident said something: a speech line over their head, and the listener turns.
@@ -135,13 +160,15 @@ func _line_up(snap: bool) -> void:
 		if walker.is_walking:
 			continue
 		var building := str(resident.get("building", ""))
-		if walker.inside and resident.get("state") != "working":
-			# Done working: out of the door and back along the path (arrived lines them up).
-			walker.walk(IslandPaths.route(island.layout, walker.global_position, _stop(building)))
+		if walker.inside and resident.get("state") not in ["working", "sleeping"]:
+			# Done working or awake: out of the door and back along the path (arrived lines them up).
+			var home := free_spot(walker, _stop(building))
+			walker.walk(IslandPaths.route(island.layout, walker.global_position, home))
 			continue
 		if resident.get("state") == "walking" and walker.global_position.distance_to(_stop(building)) > 1.5:
 			# Walking, but no `move` came (e.g. they had no building before): go there.
-			walker.walk(IslandPaths.route(island.layout, walker.global_position, _stop(building)))
+			var to := free_spot(walker, _stop(building))
+			walker.walk(IslandPaths.route(island.layout, walker.global_position, to), true)
 			continue
 		# (Arrived before the server's walk timer ran out: wait at the building.)
 		at_building.get_or_add(building, []).append(resident)
@@ -151,14 +178,14 @@ func _line_up(snap: bool) -> void:
 		group.sort_custom(func(a, b): return str(a["id"]) < str(b["id"]))
 		for i in group.size():
 			var walker: IslandResident = _walkers[str(group[i]["id"])]
-			var spot := _slot(building, i)
 			var state := str(group[i].get("state", "idle"))
 			var door := _door(building)
-			if state == "working" and door != Vector3.INF:
+			if state in ["working", "sleeping"] and door != Vector3.INF:
 				if snap:
-					walker.place(door)  # already at work: straight inside
-				walker.enter(_into(building, walker.global_position, door))
+					walker.place(door)  # already at work or asleep: straight inside
+				walker.enter(_into(building, walker.global_position, door), state)
 				continue
+			var spot := free_spot(walker, _slot(building, i))
 			if snap:
 				walker.place(spot)
 			var route := IslandPaths.route(island.layout, walker.global_position, spot)
@@ -172,7 +199,8 @@ func _on_moved(agent: String, _from_building: String, to_building: String) -> vo
 	if walker == null:
 		return
 	walker.stop_life()
-	walker.walk(IslandPaths.route(island.layout, walker.global_position, _stop(to_building)))
+	var to := free_spot(walker, _stop(to_building))
+	walker.walk(IslandPaths.route(island.layout, walker.global_position, to), true)
 
 
 ## The point on the sand path where a building's residents stand.

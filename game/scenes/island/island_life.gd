@@ -187,8 +187,10 @@ func _wait_while_held(walker: IslandResident) -> void:
 		await _pause(0.3)
 
 
-## Walk along the paths to a point. Returns false if the server interrupted us.
+## Walk (never run: there's no hurry) along the paths to a point, or the nearest
+## clear spot to it. Returns false if the server interrupted us.
 func _go(walker: IslandResident, to: Vector3) -> bool:
+	to = _residents.free_spot(walker, to)
 	var points: Array[Vector3] = IslandPaths.route(_residents.layout(), walker.global_position, to)
 	# Already there? walk() would emit `arrived` before we could await it, and we'd wait forever.
 	if points.is_empty() or walker.route_length(points) < 0.05:
@@ -274,7 +276,9 @@ func _visit(resident: Dictionary, walker: IslandResident) -> void:
 		await _pause(0.25)
 		waited += 0.25
 	if is_instance_valid(other) and _still(other) and not other.is_walking:
-		var beside := IslandPaths.nearest(_residents.layout(), other.global_position + Vector3(1.6, 0, 0.6))
+		# Just beside them, on the side we come from (_go keeps us off their toes).
+		var side := (walker.global_position - other.global_position) * Vector3(1, 0, 1)
+		var beside: Vector3 = other.global_position + side.normalized() * 1.2
 		if await _go(walker, beside) and _still(other):
 			walker.look_toward(other.global_position)
 			other.look_toward(walker.global_position)
