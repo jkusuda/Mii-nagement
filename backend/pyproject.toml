@@ -12,6 +12,9 @@ dependencies = [
     "websockets>=14",
     "agent-client-protocol>=0.12",
     "keyring>=25.7.0",
+    "psycopg[binary]>=3.2",
+    "pyjwt[crypto]>=2.9",
+    "google-genai>=1.0",
 ]
 
 [dependency-groups]

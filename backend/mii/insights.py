@@ -3,7 +3,9 @@ and the News tab's "This week" box (payload shape: docs/architecture.md).
 
 Served at GET /islands/{id}/insights?range=today|week|month. Everything comes
 from the Step table (one row per building visit), the Task table, and the
-stored bubble events. Days are the server's local calendar days.
+stored bubble events. Days are the server's local calendar days. On TimescaleDB,
+"packages per day" comes from the metrics_daily aggregate instead (metrics.py, UTC days:
+the hosted compose file sets TZ=UTC so both agree).
 """
 
 import asyncio
@@ -13,7 +15,7 @@ import shutil
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-from mii import github
+from mii import github, metrics
 from mii.judge import RuleJudge
 from mii.models import Building, Event, Resident, Step, Task, utcnow
 
@@ -54,7 +56,7 @@ async def island_insights(island_id: str, range_name: str = "week", judge=None) 
     payload = {
         "range": range_name,
         "island": island,
-        "per_day": per_day(tasks, start, days),
+        "per_day": await metrics.per_day(island_id, start, days) or per_day(tasks, start, days),
         "residents": by_resident(steps),
         "brains": by_brain(steps),
         "buildings": by_building(steps),
