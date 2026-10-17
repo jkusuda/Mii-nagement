@@ -87,6 +87,11 @@ def island(i: Island) -> dict:
     return {"type": "island", "island": island_to_dict(i)}
 
 
+def chat(from_agent: str, to_agent: str, task: str, text: str) -> dict:
+    """One resident said something to another: a request for help, the helper's reply, or a `SAY TO` note."""
+    return {"type": "chat", "from": from_agent, "to": to_agent, "task": task, "text": text}
+
+
 def weather(kind: str) -> dict:
     return {"type": "weather", "weather": kind}
 

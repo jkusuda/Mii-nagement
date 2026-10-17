@@ -41,9 +41,13 @@ class ScriptedRunner:
         self.delay = delay
         self.outcomes = outcomes
         self.visited: list[str] = []
+        self.workers: list[str] = []  # who ran each visit
+        self.jobs: list = []  # the AgentJob of each visit (prompt inputs: messages, notes, neighbours)
 
     async def run(self, job) -> StepResult:
         self.visited.append(job.building.id)
+        self.workers.append(job.resident.id)
+        self.jobs.append(job)
         await asyncio.sleep(self.delay)
         planned = self.outcomes.get(job.building.type, [])
         return StepResult(planned.pop(0) if planned else "pass", "scripted")

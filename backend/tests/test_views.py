@@ -6,6 +6,7 @@ from conftest import ScriptedRunner, db_test, make_workflow
 from django.test import AsyncClient
 
 from mii import residents, views
+from mii.judge import RuleJudge
 from mii.models import Island
 
 pytestmark = db_test
@@ -17,7 +18,8 @@ def fake_runtime(monkeypatch):
     async def reload():
         return {"reloaded": True}
 
-    runtime = SimpleNamespace(workflow=workflow, bubbles=workflow.bubbles, bus=workflow.bus, mock_agents=True, reload=reload)
+    runtime = SimpleNamespace(workflow=workflow, bubbles=workflow.bubbles, bus=workflow.bus, mock_agents=True, reload=reload,
+                              judge=RuleJudge())
     monkeypatch.setattr(views, "get_runtime", lambda: runtime)
     return runtime
 
@@ -25,6 +27,7 @@ def fake_runtime(monkeypatch):
 async def test_health(fake_runtime):
     response = await AsyncClient().get("/health")
     assert response.status_code == 200 and response.json()["ok"] is True
+    assert response.json()["judge"] == "rules"  # no TypeSafe key: the rule-based judge
 
 
 async def test_brains_lists_every_brain():

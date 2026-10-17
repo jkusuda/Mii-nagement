@@ -406,7 +406,7 @@ class AcpRunner:
         # The SDK passes only a minimal environment by default; the agent needs the user's
         # full one (PATH, HOME, keychain access). Vendor API keys saved in the app's keychain
         # are added; the OpenRouter key stays with us.
-        env = {k: v for k, v in os.environ.items() if k != "OPENROUTER_API_KEY"}
+        env = {k: v for k, v in os.environ.items() if k not in prefs.PRIVATE_ENV}  # our own keys stay with us
         env = prefs.secrets_env() | env | self.spec["env"]
         client = MiiClient(job, job.workdir)
         session_id: str | None = None

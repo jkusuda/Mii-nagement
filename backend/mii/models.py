@@ -77,6 +77,8 @@ class Resident(models.Model):
     activity = models.TextField(blank=True, default="")
     # Cosmetics from the resident creator (face, hair, hat...). Stored and echoed, never read by the backend.
     appearance = models.JSONField(default=dict)
+    # The diary: `REMEMBER:` lines from the resident's own replies, oldest first (engine.NOTES_CHARS cap).
+    notes = models.TextField(blank=True, default="")
 
 
 class Building(models.Model):
@@ -130,6 +132,8 @@ class Step(models.Model):
     summary = models.TextField(blank=True, default="")  # what the resident reported (the plan, the commit, the review...)
     timed_out = models.BooleanField(default=False)
     bubbles_raised = models.IntegerField(default=0)
+    flaky = models.BooleanField(default=False)  # the Lab's tests failed, then passed on their one re-run
+    helped = models.CharField(max_length=64, null=True, blank=True)  # a help visit: the resident this step helped
     started_at = models.DateTimeField(default=utcnow)
     finished_at = models.DateTimeField(null=True, blank=True)
 
@@ -258,6 +262,8 @@ def step_to_dict(s: Step) -> dict:
         "summary": s.summary,
         "timed_out": s.timed_out,
         "bubbles_raised": s.bubbles_raised,
+        "flaky": s.flaky,
+        "helped": s.helped,
         "started_at": s.started_at.isoformat(),
         "finished_at": s.finished_at.isoformat() if s.finished_at else None,
         "seconds": s.seconds,

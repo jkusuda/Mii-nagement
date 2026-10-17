@@ -10,7 +10,7 @@ from mii import events
 from mii.agents import StepResult
 from mii.agents.mock import MockRunner
 from mii.engine import IslandGraph, split_pr_text
-from mii.models import Event, Island, Step, Task
+from mii.models import Event, Island, Resident, Step, Task
 from mii.sandbox import Sandbox, SandboxError, is_inside
 
 pytestmark = db_test
@@ -341,3 +341,140 @@ def test_commit_all_and_diff_stat(sandbox):
     assert "new.txt" in sandbox.diff_stat("t_commit")
     sandbox.remove_worktree("t_commit")
     assert not path.exists()
+
+
+# --- Help visits, chat, diary ---------------------------------------------------------
+
+
+class LineRunner:
+    """Replies with fixed text per building type, parsed like a real agent's reply."""
+
+    def __init__(self, **replies: list[str]):
+        self.replies = replies
+        self.jobs: list = []
+
+    async def run(self, job) -> StepResult:
+        from mii.agents import parse_verdict
+
+        self.jobs.append(job)
+        planned = self.replies.get(job.building.type, [])
+        return parse_verdict(planned.pop(0) if planned else "fine\nVERDICT: PASS")
+
+
+async def test_a_neighbour_helps_when_the_lab_keeps_failing(island):
+    runner = ScriptedRunner(lab=["fail", "fail", "pass"])
+    workflow, client = make_workflow(runner)
+    task = await workflow.run_task((await workflow.submit("sunny", "Fix the thing")).id)
+
+    assert task.status == "done"
+    # Second Lab fail: Carlos is stuck (attempt 2), Jun (his only friend so far) comes over and passes it.
+    assert runner.visited == ["mailbox", "workshop", "lab", "workshop", "lab", "lab", "courthouse", "post_office"]
+    assert runner.workers[4:6] == ["carlos", "jun"]
+    chats = [(e["from"], e["to"]) for e in client.of_type("chat")]
+    assert chats == [("carlos", "jun"), ("jun", "carlos")]
+    assert "stuck at the Lab" in client.of_type("chat")[0]["text"]
+    steps = [s async for s in Step.objects.filter(task_id=task.id).order_by("id")]
+    assert steps[5].resident_id == "jun" and steps[5].helped == "carlos" and steps[5].building_type == "lab"
+    assert ("carlos", "jun") in [(e["a"], e["b"]) for e in client.of_type("friendship")]
+    jun_states = [(e["state"], e["building"]) for e in client.of_type("agent_state") if e["agent"] == "jun"]
+    assert ("working", "lab") in jun_states and jun_states[-3:] == [("walking", "post_office"), ("working", "post_office"), ("idle", "post_office")]
+    assert [(e["from"], e["to"]) for e in client.of_type("handoff")][-2:] == [("carlos", "sydney"), ("sydney", "jun")]
+    assert any("Jun helped Carlos" in job.history[-1] for job in runner.jobs if job.building.id == "courthouse")
+
+
+async def test_help_say_and_remember_lines(island):
+    runner = LineRunner(workshop=["Stuck.\nHELP: the auth tests hang\nSAY TO Sydney: heads up\nREMEMBER: tests are slow\nVERDICT: FAIL"])
+    workflow, client = make_workflow(runner)
+    task = await workflow.run_task((await workflow.submit("sunny", "Fix the thing")).id)
+
+    assert task.status == "done"
+    # An explicit HELP line gets a visit on the first attempt. No other coder: Jun, the best friend, comes.
+    visits = [(j.building.id, j.resident.id) for j in runner.jobs]
+    assert visits[:3] == [("mailbox", "jun"), ("workshop", "carlos"), ("workshop", "jun")]
+    helper_job = runner.jobs[2]
+    assert helper_job.instructions.startswith("Carlos asked for your help: the auth tests hang")
+    assert (await Resident.objects.aget(pk="carlos")).notes == "tests are slow"
+    sydney_job = next(j for j in runner.jobs if j.resident.id == "sydney")
+    assert sydney_job.messages == ["Carlos: heads up"] and "Carlos (coder)" in sydney_job.neighbours
+    chats = [(e["from"], e["to"], e["text"]) for e in client.of_type("chat")]
+    assert ("carlos", "sydney", "heads up") in chats and ("carlos", "jun", "the auth tests hang") in chats
+    summaries = [s.summary async for s in Step.objects.filter(task_id=task.id)]
+    assert all("HELP:" not in s and "SAY TO" not in s for s in summaries)
+
+
+async def test_diary_reaches_the_next_task_and_stays_short(island):
+    await Resident.objects.filter(pk="carlos").aupdate(notes="\n".join(f"old note {i}: " + "x" * 40 for i in range(80)))
+    runner = LineRunner(workshop=["ok\nREMEMBER: newest\nVERDICT: PASS"])
+    workflow, _ = make_workflow(runner)
+    await workflow.run_task((await workflow.submit("sunny", "One")).id)
+    notes = (await Resident.objects.aget(pk="carlos")).notes
+    assert notes.endswith("newest") and "old note 0" not in notes and len(notes) <= 1500
+    assert "old note 79" in runner.jobs[1].notes  # the diary was in the prompt
+
+
+async def test_help_is_capped_per_task(island):
+    workflow, _ = make_workflow(ScriptedRunner(lab=["fail"] * 100))
+    task = await workflow.run_task((await workflow.submit("sunny", "Impossible")).id)
+    assert task.status == "failed"
+    assert await Step.objects.filter(task_id=task.id, helped__isnull=False).acount() == 2
+
+
+async def test_cancel_during_a_help_visit_sets_the_helper_idle(island):
+    workflow, _ = make_workflow(ScriptedRunner(delay=0.3, lab=["fail", "fail", "fail"]))
+    task = await workflow.submit("sunny", "Slow one")
+    run = asyncio.create_task(workflow.run_task(task.id))
+    for _ in range(100):  # wait until Jun is working at the Lab (the help visit)
+        await asyncio.sleep(0.05)
+        jun = await Resident.objects.aget(pk="jun")
+        if jun.state == "working" and jun.building_id == "lab":
+            break
+    else:
+        pytest.fail("the help visit never started")
+    workflow._cancelling.add(task.id)
+    run.cancel()
+    await asyncio.wait([run])
+    assert (await Task.objects.aget(pk=task.id)).status == "cancelled"
+    assert {(await Resident.objects.aget(pk=r)).state for r in ("jun", "carlos")} == {"idle"}
+
+
+class FlakyJudge:
+    """A judge that calls every Lab failure flaky (the rules otherwise)."""
+
+    name = "rules"
+
+    def __getattr__(self, name):
+        from mii.judge import RuleJudge
+
+        return getattr(RuleJudge(), name)
+
+    async def flaky(self, output, stat):
+        return 1.0
+
+
+async def test_lab_reruns_a_flaky_test_once(island, sandboxes):
+    from mii.insights import island_insights
+
+    # Fails the first time it runs in a worktree, passes the second time.
+    workflow, client = make_workflow(ScriptedRunner(), sandboxes=sandboxes, judge=FlakyJudge(),
+                                     test_command="test -f .ran || { touch .ran; exit 1; }")
+    task = await workflow.run_task((await workflow.submit("sunny", "Flaky")).id)
+    assert task.status == "done"
+    lab = await Step.objects.aget(task_id=task.id, building_type="lab")
+    assert lab.outcome == "pass" and lab.flaky is True and "second run" in lab.summary
+    assert any("looks flaky" in e["text"] for e in client.of_type("activity"))
+    assert (await island_insights("sunny"))["island"]["flaky_tests"] == 1
+
+
+async def test_mock_runner_sometimes_asks_for_help_or_chats():
+    from conftest import make_job
+
+    asked, said, remembered = 0, 0, 0
+    for seed_value in range(40):
+        runner = MockRunner(work_seconds=(0, 0), bubble_chance=0.0, rng=random.Random(seed_value))
+        job = make_job(building_type="lab")
+        job.neighbours = ["Jun (planner)"]
+        result = await runner.run(job)
+        asked += result.help_request is not None
+        said += bool(result.says)
+        remembered += bool(result.remember)
+    assert asked and said and remembered

@@ -21,6 +21,11 @@ from mii.models import Building, Resident, Task
 class StepResult:
     outcome: str  # "pass" | "fail"
     summary: str = ""
+    explicit: bool = True  # False = the agent's reply had no VERDICT line, so the judge may decide
+    flaky: bool = False  # the Lab's tests failed, then passed on their one re-run
+    help_request: str | None = None  # a `HELP: ...` line: what the resident is stuck on
+    says: list[tuple[str, str]] = field(default_factory=list)  # `SAY TO <Name>: ...` lines: (name, message)
+    remember: list[str] = field(default_factory=list)  # `REMEMBER: ...` lines for the resident's diary
 
 
 # ask(kind, text, options, detail) shows a bubble and waits. `detail` is extra context the
@@ -50,6 +55,10 @@ class AgentJob:
     read_only: bool = False  # True at buildings where the resident must not change files
     rules: dict = field(default_factory=dict)  # the island's house rules (see permission_for)
     notebook: NotebookFn | None = None  # how full the agent's context window is (ACP usage updates)
+    struggled: bool = False  # a 💦 bubble was raised during this step (the judge reads it)
+    messages: list[str] = field(default_factory=list)  # "Jun: ..." notes neighbours left for this resident on this task
+    notes: str = ""  # the resident's diary (Resident.notes), what they chose to remember from earlier tasks
+    neighbours: list[str] = field(default_factory=list)  # "Jun (planner)", so SAY TO has names to use
 
 
 # House rules (Island.rules, True = ask me first) that tighten a resident's house keys.
@@ -76,26 +85,53 @@ def permission_for(job: "AgentJob", kind: str, title: str = "") -> str:
 
 
 VERDICT_PATTERN = re.compile(r"VERDICT:\s*(PASS|FAIL)", re.IGNORECASE)
+# Whole-line notes an agent can add to its reply (build_prompt tells it how).
+HELP_PATTERN = re.compile(r"^[ \t]*HELP:[ \t]*(.+?)[ \t]*$", re.MULTILINE | re.IGNORECASE)
+SAY_PATTERN = re.compile(r"^[ \t]*SAY TO ([^:\n]{1,40}?):[ \t]*(.+?)[ \t]*$", re.MULTILINE | re.IGNORECASE)
+REMEMBER_PATTERN = re.compile(r"^[ \t]*REMEMBER:[ \t]*(.+?)[ \t]*$", re.MULTILINE | re.IGNORECASE)
 
 
 def parse_verdict(text: str, summary_chars: int = 400) -> StepResult:
-    """Read the agent's final text: the last `VERDICT: FAIL` fails, anything else passes."""
+    """Read the agent's final text: the last `VERDICT: FAIL` fails, anything else passes.
+
+    Also picks out the `HELP:`, `SAY TO <Name>:` and `REMEMBER:` lines (and drops them
+    from the summary). `explicit` says whether there was a VERDICT line at all.
+    """
     verdicts = VERDICT_PATTERN.findall(text)
     outcome = "fail" if verdicts and verdicts[-1].upper() == "FAIL" else "pass"
-    summary = VERDICT_PATTERN.sub("", text).strip()
+    helps = HELP_PATTERN.findall(text)
+    says = [(name.strip(), message.strip()) for name, message in SAY_PATTERN.findall(text)]
+    remember = [line.strip() for line in REMEMBER_PATTERN.findall(text)]
+    summary = text
+    for pattern in (HELP_PATTERN, SAY_PATTERN, REMEMBER_PATTERN, VERDICT_PATTERN):
+        summary = pattern.sub("", summary)
+    summary = summary.strip()
     if len(summary) > summary_chars:
         summary = "…" + summary[-summary_chars:]
-    return StepResult(outcome, summary)
+    return StepResult(outcome, summary, explicit=bool(verdicts), help_request=helps[-1].strip() if helps else None,
+                      says=says, remember=remember)
 
 
 def build_prompt(job: AgentJob, system_prompt: str) -> str:
     """Personality + instructions + notes from earlier steps, as one text block."""
-    parts = [system_prompt, "", job.instructions]
+    parts = [system_prompt]
+    if job.notes:
+        parts += ["", "Things you remember from earlier tasks (your diary):"] + [f"- {line}" for line in job.notes.splitlines() if line.strip()]
+    parts += ["", job.instructions]
     if job.history:
         parts += ["", "Notes from earlier steps on this task:"] + [f"- {note}" for note in job.history]
+    if job.messages:
+        parts += ["", "Messages from your neighbours:"] + [f"- {line}" for line in job.messages]
     if job.read_only:
         parts += ["", "Do not create or change any files at this step."]
     parts += ["", "End your reply with one line: `VERDICT: PASS` or `VERDICT: FAIL`."]
+    neighbours = ", ".join(job.neighbours) if job.neighbours else "nobody else lives here yet"
+    parts += [
+        "You may also add single lines anywhere in your reply:",
+        "- `HELP: <what you are stuck on>` if you fail and a neighbour coming over would help.",
+        f"- `SAY TO <Name>: <message>` to leave a note a neighbour sees on their next step (your neighbours: {neighbours}).",
+        "- `REMEMBER: <something>` to write a short line in your diary for future tasks.",
+    ]
     return "\n".join(parts)
 
 

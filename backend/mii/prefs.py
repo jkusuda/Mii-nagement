@@ -36,15 +36,20 @@ SETTINGS = {
     "openrouter_model": ("OPENROUTER_MODEL", "anthropic/claude-sonnet-4.5", str),
     "keep_worktrees": ("KEEP_WORKTREES", False, bool),
     "database_url": ("DATABASE_URL", None, str),  # for the `database` gift (agents/acp.py GIFTS)
+    "godot_path": ("GODOT_PATH", None, str),  # for the `godot` gift: the Godot 4 executable
+    "judge": ("JUDGE", "auto", str),  # "auto": Jev when a TypeSafe key is set; "off": rules only (judge.py)
 }
 
 # secret -> environment variable (what the agent processes expect)
 SECRETS = {
     "openrouter_api_key": "OPENROUTER_API_KEY",
+    "typesafe_api_key": "TYPESAFE_API_KEY",  # the judge (judge.py); never handed to agents
     "anthropic_api_key": "ANTHROPIC_API_KEY",
     "openai_api_key": "OPENAI_API_KEY",
     "gemini_api_key": "GEMINI_API_KEY",
 }
+# Keys the backend uses itself. They never reach agent processes (secrets_env, agents/acp.py).
+PRIVATE_ENV = {"OPENROUTER_API_KEY", "TYPESAFE_API_KEY"}
 
 
 class PrefsError(ValueError):
@@ -161,10 +166,10 @@ def set_secret(name: str, value: str | None) -> None:
 
 
 def secrets_env() -> dict[str, str]:
-    """The stored vendor keys as environment variables for agent processes (OpenRouter's stays with us)."""
+    """The stored vendor keys as environment variables for agent processes (PRIVATE_ENV keys stay with us)."""
     env = {}
     for name, env_name in SECRETS.items():
-        if name == "openrouter_api_key":
+        if env_name in PRIVATE_ENV:
             continue
         value = secret(name)
         if value:

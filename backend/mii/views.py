@@ -56,7 +56,8 @@ async def _island_or_none(island_id: str) -> Island | None:
 
 @require_GET
 async def health(request: HttpRequest) -> JsonResponse:
-    return JsonResponse({"ok": True, "mock_agents": get_runtime().mock_agents})
+    runtime = get_runtime()
+    return JsonResponse({"ok": True, "mock_agents": runtime.mock_agents, "judge": runtime.judge.name})
 
 
 def _brains() -> dict[str, dict]:
@@ -331,7 +332,7 @@ async def get_insights(request: HttpRequest, island_id: str) -> JsonResponse:
     range_name = request.GET.get("range", "week")
     if range_name not in RANGES:
         return _error(f"range must be one of {list(RANGES)}", 400)
-    return JsonResponse(await island_insights(island_id, range_name))
+    return JsonResponse(await island_insights(island_id, range_name, get_runtime().judge))
 
 
 @require_GET

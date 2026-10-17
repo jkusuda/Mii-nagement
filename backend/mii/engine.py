@@ -16,15 +16,22 @@ from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
 
+from django.db.models import Q
+
 from mii import events, github, weather
 from mii.agents import AgentJob, StepResult
-from mii.models import Building, Friendship, Island, Resident, Road, Step, Task, utcnow
+from mii.judge import HelpRequest, RuleJudge
+from mii.models import Building, Event, Friendship, Island, Resident, Road, Step, Task, utcnow
 from mii.sandbox import Sandbox, SandboxError, Sandboxes
 
 log = logging.getLogger(__name__)
 
 MAX_STEPS = 20  # safety net against packages bouncing forever
 OUTPUT_LIMIT = 4000  # characters of command output we keep
+FLAKY_RERUN_AT = 0.7  # the judge's "this failure looks flaky" probability that earns the tests one more run
+MAX_HELPS = 2  # help visits per task (a stuck resident gets a neighbour's hand this many times)
+NOTES_CHARS = 1500  # a resident's diary (Resident.notes) keeps about this much; the oldest lines go first
+CHAT_CHARS = 200  # how much of a helper's report is said out loud (the `chat` back)
 
 # Mood a resident shows while a bubble of this kind is waiting.
 BUBBLE_MOODS = {"confused": "confused", "struggling": "frustrated", "permission": "focused", "ready": "proud", "tired": "tired"}
@@ -129,6 +136,15 @@ class Lab(BuildingHandler):
         tail = "\n".join(output.splitlines()[-20:])
         if code == 0:
             return StepResult("pass", f"Tests passed.\n{tail}".strip())
+        # A failure that looks flaky (timeouts, ports, ordering...) gets one more run before it
+        # bounces the package back to the Workshop. The judge decides; the rules never re-run.
+        stat = await asyncio.to_thread(job.sandbox.diff_stat, job.task.id) if job.sandbox else ""
+        if await engine.judge.flaky(output, stat) >= FLAKY_RERUN_AT:
+            await job.report("That failure looks flaky; running the tests once more")
+            code, output = await run_shell(engine.test_command, job.workdir, timeout=engine.step_timeout)
+            tail = "\n".join(output.splitlines()[-20:])
+            if code == 0:
+                return StepResult("pass", f"Tests passed on the second run (the first looked flaky).\n{tail}".strip(), flaky=True)
         return StepResult("fail", f"Tests failed (exit {code}).\n{tail}".strip())
 
 
@@ -225,6 +241,14 @@ HANDLERS: dict[str, BuildingHandler] = {
 }
 
 
+def _first_words(text: str, chars: int) -> str:
+    """The start of `text` on one line, cut at a word boundary."""
+    text = " ".join(text.split())
+    if len(text) <= chars:
+        return text or "Done."
+    return text[:chars].rsplit(" ", 1)[0] + "…"
+
+
 def split_pr_text(text: str, fallback_title: str) -> tuple[str, str]:
     """First non-empty line = title (minus '#'/'Title:' decorations), the rest = body."""
     lines = [line.rstrip() for line in text.strip().splitlines()]
@@ -293,6 +317,7 @@ class WorkflowEngine:
         test_command: str | None = None,
         keep_worktrees: bool = False,
         git_author: str = "Mii-nagement <mii@localhost>",
+        judge=None,  # judge.RuleJudge (default) or judge.JevJudge: moods, missing verdicts, flaky runs, help
     ):
         self.bus = bus
         self.bubbles = bubbles
@@ -306,6 +331,7 @@ class WorkflowEngine:
         self.test_command = test_command
         self.keep_worktrees = keep_worktrees
         self.git_author = git_author
+        self.judge = judge or RuleJudge()
         self.queue: asyncio.Queue[str] = asyncio.Queue()  # the inbox: every island's new task ids
         self.lanes: dict[str, Lane] = {}  # island id -> its line of packages (run_forever)
         self._cancelling: set[str] = set()  # task ids that cancel() is stopping
@@ -451,6 +477,7 @@ class WorkflowEngine:
 
         history: list[str] = []  # notes passed along with the package
         visits: dict[str, int] = {}
+        helps = 0  # help visits so far (MAX_HELPS)
         previous: Resident | None = None
         outcome = "pass"
         building_id: str | None = graph.start()
@@ -474,15 +501,29 @@ class WorkflowEngine:
             await self._emit(task, events.task(task))
 
             visits[building_id] = visits.get(building_id, 0) + 1
-            result, step = await self._run_step(
+            result, step, job = await self._run_step(
                 task, building, resident, visits[building_id], history, workdir, sandbox, rules=island.rules
             )
             history.append(f"{resident.name} at the {building.name}: {result.outcome.upper()}. {result.summary}")
             task = await self._get(Task, task.id)  # a handler may have set pr_url
             await self._update_weather(task.island_id)
 
-            # 4. React, then follow the road that matches the outcome.
-            resident = await self._set_mood(resident, "happy" if result.outcome == "pass" else "frustrated")
+            # 4. React.
+            resident = await self._set_mood(resident, await self.judge.mood(
+                resident, building, result, visits[building_id], step.timed_out, step.bubbles_raised))
+
+            # 5. Stuck? A neighbour may come over (once per visit, MAX_HELPS per task). Their outcome
+            #    then picks the road: the Workshop handler commits their work like anyone else's.
+            if result.outcome == "fail" and helps < MAX_HELPS and (
+                result.help_request or await self.judge.needs_help(job, result)
+            ):
+                helper = await self._find_helper(task, building, resident, result.help_request)
+                if helper is not None:
+                    helps += 1
+                    result = await self._help_visit(task, building, resident, helper, result.help_request,
+                                                    visits[building_id], history, workdir, sandbox, island.rules)
+
+            # 6. Follow the road that matches the outcome.
             previous, outcome = resident, result.outcome
             building_id = graph.next_building(building_id, outcome)
 
@@ -498,17 +539,24 @@ class WorkflowEngine:
 
     # --- One step ------------------------------------------------------------------
 
-    async def _run_step(self, task, building, resident, attempt, history, workdir, sandbox=None, rules=None) -> tuple[StepResult, Step]:
-        """Run one building visit with a timeout, and record it as a Step row."""
+    async def _run_step(self, task, building, resident, attempt, history, workdir, sandbox=None, rules=None,
+                        *, request: str | None = None, helped: str | None = None) -> tuple[StepResult, Step, AgentJob]:
+        """Run one building visit with a timeout, and record it as a Step row.
+
+        `request` + `helped`: this is a help visit; `resident` is the helper, `helped` the
+        resident who asked, and `request` what they asked (it goes on top of the instructions).
+        """
         step = await Step.objects.acreate(
             island_id=task.island_id, task_id=task.id, building_id=building.id,
-            building_type=building.type, resident_id=resident.id, brain=resident.brain,
+            building_type=building.type, resident_id=resident.id, brain=resident.brain, helped=helped,
         )
         bubbles_raised = 0
 
         async def ask(kind: str, text: str, options: list[str] | None = None, detail: str | None = None) -> str | None:
             nonlocal bubbles_raised
             bubbles_raised += 1
+            if kind == "struggling":
+                job.struggled = True  # the judge's "needs help" reads this
             # Permission and review bubbles are you approving something: they can wait longer.
             timeout = self.permission_timeout if kind in ("permission", "ready") else self.bubble_timeout
             await self._set_mood(resident, BUBBLE_MOODS.get(kind, "confused"))
@@ -516,12 +564,22 @@ class WorkflowEngine:
             await self._set_mood(resident, "focused")
             return answer
 
+        # Who else lives here (for SAY TO), and what they left for this resident on this task.
+        everyone = [r async for r in Resident.objects.filter(island_id=task.island_id).order_by("id")]
+        names = {r.id: r.name for r in everyone}
+        neighbours = [f"{r.name} ({r.job})" for r in everyone if r.id != resident.id]
+        messages = await self._messages_for(task, resident, names)
+
         handler = HANDLERS[building.type]
+        instructions = handler.instructions(task)
+        if request:
+            instructions = f"{names.get(helped, 'A neighbour')} asked for your help: {request}\n\n{instructions}"
         job = AgentJob(
-            resident=resident, task=task, building=building, instructions=handler.instructions(task),
+            resident=resident, task=task, building=building, instructions=instructions,
             ask=ask, report=partial(self._report, task, resident), attempt=attempt,
             history=list(history), workdir=workdir, sandbox=sandbox, read_only=handler.read_only,
             rules=rules or {}, notebook=partial(self._set_notebook, resident),
+            messages=messages, notes=resident.notes, neighbours=neighbours,
         )
         timed_out = False
         try:
@@ -530,10 +588,80 @@ class WorkflowEngine:
             timed_out = True
             result = StepResult("fail", f"{resident.name} ran out of time.")
             await self._set_mood(resident, "tired")
+        if not result.explicit:  # the agent forgot its VERDICT line: the judge reads the reply
+            result = await self.judge.verdict(job, result)
+        await self._after_step(task, resident, result, everyone)
 
         step = await self._update(Step, step.id, outcome=result.outcome, summary=result.summary, timed_out=timed_out,
-                                  bubbles_raised=bubbles_raised, finished_at=utcnow())
-        return result, step
+                                  bubbles_raised=bubbles_raised, flaky=result.flaky, finished_at=utcnow())
+        return result, step, job
+
+    async def _messages_for(self, task: Task, resident: Resident, names: dict[str, str]) -> list[str]:
+        """What neighbours said to this resident on this task (`chat` events), oldest first."""
+        return [
+            f"{names.get(e.payload.get('from'), e.payload.get('from'))}: {e.payload.get('text', '')}"
+            async for e in Event.objects.filter(
+                island_id=task.island_id, type="chat", payload__task=task.id, payload__to=resident.id
+            ).order_by("id")
+        ]
+
+    async def _after_step(self, task: Task, resident: Resident, result: StepResult, everyone: list[Resident]) -> None:
+        """Deliver the reply's `SAY TO` notes as chat and write its `REMEMBER` lines in the diary."""
+        by_name = {r.name.lower(): r for r in everyone if r.id != resident.id}
+        for name, text in result.says:
+            to = by_name.get(name.strip().lower())
+            if to is None:
+                log.info("%s said something to %r, who doesn't live here", resident.name, name)
+                continue
+            await self._emit(task, events.chat(resident.id, to.id, task.id, text))
+        if result.remember:
+            lines = [line for line in resident.notes.splitlines() if line.strip()] + result.remember
+            notes = "\n".join(lines)
+            while len(notes) > NOTES_CHARS and len(lines) > 1:
+                lines.pop(0)  # the oldest memory goes first
+                notes = "\n".join(lines)
+            resident.notes = notes[-NOTES_CHARS:]
+            await Resident.objects.filter(pk=resident.id).aupdate(notes=resident.notes)
+
+    # --- Help visits ---------------------------------------------------------------
+
+    @staticmethod
+    def _help_text(building: Building, task: Task) -> str:
+        return f"I'm stuck at the {building.name} on '{task.title}'. Can you take a look?"
+
+    async def _find_helper(self, task: Task, building: Building, asker: Resident, text: str | None) -> Resident | None:
+        """A free neighbour (idle or asleep) the judge thinks should come over, or None."""
+        others = [
+            r async for r in Resident.objects.filter(island_id=task.island_id, state__in=["idle", "sleeping"])
+            .exclude(pk=asker.id).order_by("id")
+        ]
+        if not others:
+            return None
+        scores: dict[str, float] = {}
+        async for f in Friendship.objects.filter(island_id=task.island_id).filter(Q(a=asker.id) | Q(b=asker.id)):
+            scores[f.b if f.a == asker.id else f.a] = f.score
+        request = HelpRequest(asker, building, task, text or self._help_text(building, task), scores)
+        return await self.judge.pick_helper(request, others)
+
+    async def _help_visit(self, task, building, asker, helper, text, attempt, history, workdir, sandbox, rules) -> StepResult:
+        """The helper walks over, does the step for the asker, reports back, and goes idle again."""
+        text = text or self._help_text(building, task)
+        await self._emit(task, events.chat(asker.id, helper.id, task.id, text))
+        helper = await self._walk(helper, building.id)
+        helper = await self._set_state(helper, "working")
+        await self._set_mood(helper, "focused")
+        try:
+            result, step, _ = await self._run_step(task, building, helper, attempt, history, workdir, sandbox,
+                                                   rules=rules, request=text, helped=asker.id)
+            history.append(f"{helper.name} helped {asker.name} at the {building.name}: {result.outcome.upper()}. {result.summary}")
+            await self._emit(task, events.chat(helper.id, asker.id, task.id, _first_words(result.summary, CHAT_CHARS)))
+            await self._befriend(task.island_id, asker.id, helper.id)
+            await self._set_mood(helper, await self.judge.mood(helper, building, result, attempt, step.timed_out, step.bubbles_raised))
+            await self._update_weather(task.island_id)
+            result.help_request = None  # a helper doesn't call for help in turn
+            return result
+        finally:
+            await self._set_state(helper, "idle")  # also when the task is cancelled mid-visit
 
     # --- Helpers -------------------------------------------------------------------
 

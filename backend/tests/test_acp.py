@@ -53,6 +53,16 @@ def test_parse_verdict_uses_the_last_verdict_line():
     assert "VERDICT" not in parse_verdict("Done.\nVERDICT: PASS").summary
 
 
+def test_parse_verdict_reads_help_say_and_remember_lines():
+    text = "Tried twice.\nHELP: the auth tests hang\nSAY TO Sydney: I touched config.py\nremember: tests are slow\nVERDICT: FAIL"
+    result = parse_verdict(text)
+    assert result.outcome == "fail" and result.explicit is True
+    assert result.help_request == "the auth tests hang"
+    assert result.says == [("Sydney", "I touched config.py")] and result.remember == ["tests are slow"]
+    assert result.summary == "Tried twice."  # the note lines never reach the package history
+    assert parse_verdict("no verdict at all").explicit is False
+
+
 async def test_acp_runner_needs_a_worktree():
     result = await AcpRunner("claude-code").run(make_job("claude-code"))
     assert result.outcome == "fail" and "worktree" in result.summary
