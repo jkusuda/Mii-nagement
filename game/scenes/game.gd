@@ -47,6 +47,7 @@ const FOCUS_SHIFT := -0.36
 
 var dropdown := IslandDropdown.new()
 var building_panel := BuildingPanel.new()
+var talk_room := TalkRoom.new()  # a resident card's Talk: just them, in their room
 var picker: BuildingPicker
 var settings_popup := SettingsPopup.new()
 var build_mode := BuildMode.new()
@@ -186,8 +187,13 @@ func _ready() -> void:
 	# Added last, so it's drawn over everything else.
 	add_child(building_panel)
 	building_panel.closed.connect(rig.unfocus)
-	building_panel.answer_requested.connect(%Sidebar.open_reply)
-	Net.snapshot_received.connect(func(_island): building_panel.close())  # another island
+	add_child(talk_room)
+	building_panel.talk_requested.connect(talk_room.open)
+	Net.snapshot_received.connect(
+		func(_island):  # another island
+			building_panel.close()
+			talk_room.close()
+	)
 
 	add_child(toast)
 
@@ -206,6 +212,7 @@ func show_screen(which: String) -> void:
 	screen = which
 	if which != "island":
 		building_panel.close()
+		talk_room.close()
 	home.visible = which == "home"
 	island_creator.visible = which == "island_creator"
 	%Margin.visible = which not in ["home", "island_creator"]

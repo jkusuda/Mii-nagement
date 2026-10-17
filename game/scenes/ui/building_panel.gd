@@ -14,8 +14,8 @@ extends Control
 ## middle. Click the haze, the ✕, or press Esc to close.
 
 signal closed
-## A resident's "Answer" button: open that bubble's reply in the sidebar.
-signal answer_requested(bubble_id: String)
+## A resident's "Talk" button: open the TalkRoom with just them in it.
+signal talk_requested(resident_id: String)
 
 const CLOSE_ICON := preload("res://assets/icons/x.svg")
 const SEND_ICON := preload("res://assets/icons/plus.svg")
@@ -232,16 +232,17 @@ func _fill_stage() -> void:
 	if tasks.is_empty():
 		_list.add_child(_empty("No packages here right now."))
 
-	# Who's here: residents standing at this building, plus the one who works here.
+	# Who's here: only residents working at this building right now (or waiting
+	# on you here). Walkers on their way and those resting elsewhere don't show.
 	var people := []
 	for r in Net.island.get("residents", []):
-		if r.get("building") == id or r.get("id") == building.get("resident"):
+		if r.get("building") == id and (r.get("state") == "working" or not Net.bubble_of(str(r.get("id"))).is_empty()):
 			people.append(r)
 	_list.add_child(_subheading("Residents"))
 	if people.is_empty():
-		_list.add_child(_empty("Nobody works here yet. Move a resident in from the Residents tab."))
+		_list.add_child(_empty("Nobody is working here right now."))
 	for r in people:
-		_list.add_child(_resident_card(r, id))
+		_list.add_child(_resident_card(r))
 
 
 # --- Cards -----------------------------------------------------------------------
@@ -433,8 +434,9 @@ static func _escape(text: String) -> String:
 	return text.replace("[", "[lb]")
 
 
-## One resident: initial, name, job · mood, what they're doing, and Answer if they need you.
-func _resident_card(r: Dictionary, here_id: String) -> Control:
+## One resident: initial, name, job · mood, what they're doing, their state, and
+## Talk (orange when they need you), which opens the TalkRoom.
+func _resident_card(r: Dictionary) -> Control:
 	var color := Color(str(r.get("color", "#8A8FA8")))
 	var avatar := PanelContainer.new()
 	avatar.custom_minimum_size = Vector2(44, 44)
@@ -449,29 +451,32 @@ func _resident_card(r: Dictionary, here_id: String) -> Control:
 	texts.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	texts.add_child(_text(str(r.get("name", "?")), 17, true))
 	var about := "%s · feeling %s" % [str(r.get("job", "")).capitalize(), ResidentData.vibe_word(r)]
-	if r.get("building") != here_id:
-		about += " · works here, now at the %s" % Net.find_building(str(r.get("building", ""))).get("name", "island")
 	texts.add_child(_detail(about, 13))
 	if r.get("activity"):
 		texts.add_child(_activity(str(r["activity"])))
 
-	var bubble := Net.bubble_of(str(r.get("id", "")))
-	var side: Control
-	if not bubble.is_empty():
-		side = Button.new()
-		side.set_script(AnswerButton)  # the wavy orange button (paints itself in _ready)
-		side.theme_type_variation = &"AnswerButton"
-		side.custom_minimum_size = Vector2(96, 34)
-		side.text = "Answer"
-		side.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		side.pressed.connect(
-			func():
-				answer_requested.emit(str(bubble["id"]))
-				close()
-		)
+	var needs_you := not Net.bubble_of(str(r.get("id", ""))).is_empty()
+	var state := str(r.get("state", "idle"))
+	var side := VBoxContainer.new()
+	side.add_theme_constant_override("separation", 6)
+	side.add_child(_pill(STATES.get(state, state.capitalize()), color if state == "working" else Color("8A8FA8")))
+	var talk := Button.new()
+	talk.text = "Talk"
+	talk.custom_minimum_size = Vector2(96, 34)
+	talk.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	talk.focus_mode = Control.FOCUS_NONE
+	if needs_you:
+		talk.set_script(AnswerButton)  # the wavy orange button (paints itself in _ready)
+		talk.theme_type_variation = &"AnswerButton"
+		talk.tooltip_text = "%s is waiting for you" % str(r.get("name", "They"))
 	else:
-		var state := str(r.get("state", "idle"))
-		side = _pill(STATES.get(state, state.capitalize()), color if state == "working" else Color("8A8FA8"))
+		talk.theme_type_variation = &"OutlineButton"
+	talk.pressed.connect(
+		func():
+			talk_requested.emit(str(r["id"]))
+			close()
+	)
+	side.add_child(talk)
 	return _card_row(avatar, texts, side)
 
 

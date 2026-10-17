@@ -55,6 +55,7 @@ Start from the change you want, open the files in the order given, then run the 
 | island map rules (land, lots, doors) | `island_map.py` `validate_map` **and** `game/scenes/island/island_layout.gd` `problem()`: keep them in step | `uv run pytest tests/test_island_map.py` + `make godot-check` |
 | founding an island, repos | `islands.py` (`create_island`) → `repos.py` (git) → `github.py` (`gh`) | `uv run pytest tests/test_islands.py` |
 | a screen or popup | `game/scenes/game.gd` (`show_screen`, the nav) → the screen's folder below; build UI in code with `UI.label` and the theme in `ui/theme.tres` | `make godot-check`, then play it |
+| a building's card, Talk with one resident | `game/scenes/ui/building_panel.gd` (who's listed: residents *working* there) → `game/scenes/ui/talk_room.gd` (their own 3D room, a 2D speech bubble over their head, answers via `Net.send_answer`) | `make godot-check`, then play it |
 | how residents move, emote, talk | the `godot-animation` skill (`.claude/skills/godot-animation/SKILL.md`) | play it |
 | a recording of the game | the `demo-video` skill | |
 
