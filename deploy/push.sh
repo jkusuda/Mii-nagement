@@ -19,5 +19,5 @@ make web
 rsync -azR --delete \
   --exclude .venv --exclude .worktrees --exclude __pycache__ --exclude '*.db' --exclude .secrets.json \
   backend deploy game/builds/web "$host:/opt/mii/"
-ssh "$host" 'cd /opt/mii/deploy && docker compose --env-file server.env up -d --build && docker compose ps'
+ssh "$host" 'cd /opt/mii/deploy && docker compose --env-file server.env up -d --build && docker compose --env-file server.env ps'
 echo "Deployed: https://$(setting MII_DOMAIN)"

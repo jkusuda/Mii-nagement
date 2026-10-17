@@ -100,8 +100,13 @@ godot-check:
 reset:
 	cd $(BACKEND) && $(UV) run python manage.py seed --reset
 
-# Needs Godot's web export templates (Editor > Manage Export Templates).
+# Needs Godot's web export templates (Editor > Manage Export Templates). Exports from a
+# copy of the game (.web-src, kept between runs so only changes re-import) whose building
+# textures are capped at 1024 px: the desktop keeps 4096, browsers download ~85 MB, not ~330.
 web:
 	@[ -n "$(GODOT)" ] || { echo "Godot not found (set GODOT=/path/to/godot)"; exit 1; }
+	@rsync -a --delete --exclude .godot --exclude builds game/ .web-src/
+	@sed -i.bak 's/^process\/size_limit=0$$/process\/size_limit=1024/' .web-src/assets/models/*.jpg.import && rm .web-src/assets/models/*.bak
 	@mkdir -p game/builds/web
-	"$(GODOT)" --headless --path game --export-release Web builds/web/index.html
+	"$(GODOT)" --headless --path .web-src --import >/dev/null 2>&1 || true
+	"$(GODOT)" --headless --path .web-src --export-release Web "$(CURDIR)/game/builds/web/index.html"
