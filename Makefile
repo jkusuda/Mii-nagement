@@ -101,12 +101,17 @@ reset:
 	cd $(BACKEND) && $(UV) run python manage.py seed --reset
 
 # Needs Godot's web export templates (Editor > Manage Export Templates). Exports from a
-# copy of the game (.web-src, kept between runs so only changes re-import) whose building
-# textures are capped at 1024 px: the desktop keeps 4096, browsers download ~85 MB, not ~330.
+# copy of the game (.web-src, kept between runs so only changes re-import) made lighter for
+# browsers: building textures capped at 1024 px, and the models (not the Mii) without
+# shadow meshes and LODs. The desktop keeps all of it; the download is ~50 MB, not ~330.
 web:
 	@[ -n "$(GODOT)" ] || { echo "Godot not found (set GODOT=/path/to/godot)"; exit 1; }
 	@rsync -a --delete --exclude .godot --exclude builds game/ .web-src/
-	@sed -i.bak 's/^process\/size_limit=0$$/process\/size_limit=1024/' .web-src/assets/models/*.jpg.import && rm .web-src/assets/models/*.bak
+	@sed -i.bak 's/^process\/size_limit=0$$/process\/size_limit=1024/' .web-src/assets/models/*.jpg.import
+	@for f in .web-src/assets/models/*.glb.import; do [ "$${f##*/}" = mii.glb.import ] || sed -i.bak \
+		-e 's/^meshes\/create_shadow_meshes=true$$/meshes\/create_shadow_meshes=false/' \
+		-e 's/^meshes\/generate_lods=true$$/meshes\/generate_lods=false/' "$$f"; done
+	@rm -f .web-src/assets/models/*.bak
 	@mkdir -p game/builds/web
 	"$(GODOT)" --headless --path .web-src --import >/dev/null 2>&1 || true
 	"$(GODOT)" --headless --path .web-src --export-release Web "$(CURDIR)/game/builds/web/index.html"

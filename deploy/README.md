@@ -1,9 +1,11 @@
 # Web deployment
 
-The game in a browser and the backend on one server: a Vultr VM running two containers,
-the backend (`backend.Dockerfile`) and Caddy (`Caddyfile`), which serves the web export
-of the game, forwards the API and WebSocket to the backend, and gets the HTTPS
-certificate. The game finds the backend at the address it was loaded from (`net.gd`).
+The website and the backend on one server: a Vultr VM running two containers, the
+backend (`backend.Dockerfile`) and Caddy (`Caddyfile`), which serves the landing page
+(`landing/`, at `/`) and the web export of the game (at `/app/`), forwards the API and
+WebSocket to the backend, and gets the HTTPS certificate. The game finds the backend at
+the address it was loaded from (`net.gd`). The landing page points people to the
+desktop version first: the browser build is lighter and slower.
 
 ## One-time setup
 
@@ -29,7 +31,7 @@ certificate. The game finds the backend at the address it was loaded from (`net.
 
     deploy/push.sh root@<server ip>
 
-Then open `https://<MII_DOMAIN>`, Settings > Log in. Only logged-in players can found
+Then open `https://<MII_DOMAIN>/app/`, Log in (the button next to Settings). Only logged-in players can found
 islands; an island is visible to its owner and its members.
 
 ## On the server
@@ -45,8 +47,9 @@ volume, so they survive a redeploy.
 
 ## Notes
 
-- The web export is about 85 MB compressed (mostly the building models), so the
-  first load takes a while.
+- The web export is about 50 MB compressed (mostly the building models' meshes), so
+  the first load takes a while; later visits reuse the browser's cache. `make web`
+  makes it lighter than the desktop game (see the Makefile).
 - In a browser, "Use a folder on this computer" is hidden (that would be the server's
   disk) and attaching files to a package doesn't work yet.
 - `PUBLIC_DEMO=1` locks the Settings screen: settings and keys come from `server.env`.

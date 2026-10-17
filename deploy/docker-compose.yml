@@ -19,6 +19,7 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ../game/builds/web:/srv/game:ro
+      - ./landing:/srv/landing:ro
       - caddy:/data
     depends_on:
       - backend
