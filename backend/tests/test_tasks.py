@@ -8,7 +8,7 @@ from conftest import ScriptedRunner, db_test, make_workflow
 
 from mii import residents
 from mii.consumers import handle_message
-from mii.models import Friendship, Task, island_snapshot
+from mii.models import Building, Friendship, Island, Resident, Task, island_snapshot
 
 pytestmark = db_test
 
@@ -83,3 +83,49 @@ async def test_task_and_resident_messages_over_the_socket(island):
     assert await handle_message(runtime, "sunny", {"type": "delete_resident", "id": mo.id}) is None
     assert client.of_type("resident_removed")[-1]["id"] == mo.id
     assert (await handle_message(runtime, "sunny", {"type": "delete_resident", "id": mo.id}))["type"] == "error"
+
+
+class OverlapRunner(ScriptedRunner):
+    """Records how many steps run at the same moment, and on which islands."""
+
+    def __init__(self, delay: float):
+        super().__init__(delay=delay)
+        self.running: set[str] = set()
+        self.most_at_once = 0
+
+    async def run(self, job):
+        self.running.add(job.task.island_id)
+        self.most_at_once = max(self.most_at_once, len(self.running))
+        try:
+            return await super().run(job)
+        finally:
+            self.running.discard(job.task.island_id)
+
+
+async def test_islands_work_in_parallel_but_one_package_at_a_time_each(island):
+    # A second, one-building island next to the seed island.
+    await Island.objects.acreate(id="breezy", name="Breezy")
+    await Resident.objects.acreate(id="bo", island_id="breezy", name="Bo", job="planner")
+    await Building.objects.acreate(id="breezy_mailbox", island_id="breezy", type="mailbox", name="Mailbox",
+                                   x=1, y=1, resident_id="bo")
+    runner = OverlapRunner(delay=0.2)
+    workflow, _ = make_workflow(runner)
+    worker = asyncio.create_task(workflow.run_forever())
+    try:
+        first = await workflow.submit("sunny", "Sunny one")
+        second = await workflow.submit("sunny", "Sunny two")
+        other = await workflow.submit("breezy", "Breezy one")
+        await asyncio.sleep(0.3)
+        # Breezy didn't wait for Sunny's packages; Sunny's second waits for its first.
+        assert (await Task.objects.aget(pk=other.id)).status in ("in_progress", "done")
+        assert (await Task.objects.aget(pk=second.id)).status == "queued"
+        assert workflow.busy_islands() >= {"sunny"}
+        for _ in range(100):
+            if await Task.objects.filter(pk__in=[first.id, second.id, other.id], status="done").acount() == 3:
+                break
+            await asyncio.sleep(0.05)
+        assert await Task.objects.filter(status="done").acount() == 3
+        assert runner.most_at_once == 2  # one step on each island at the same time, never more
+    finally:
+        worker.cancel()
+        await asyncio.gather(worker, return_exceptions=True)

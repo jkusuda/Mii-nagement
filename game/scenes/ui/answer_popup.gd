@@ -85,6 +85,8 @@ func open(bubble: Dictionary) -> void:
 		"ready":
 			if not task.is_empty():
 				body.add_child(_task_card(task))
+			if not str(_or_empty(bubble.get("detail"))).is_empty():
+				body.add_child(_code(str(bubble["detail"])))  # what changed (git diff --stat)
 			_review_answer(body, options, who)
 		_:
 			if not task.is_empty():
@@ -281,7 +283,9 @@ func _review_answer(body: VBoxContainer, options: Array, who: String) -> void:
 	for option in options.slice(1):
 		buttons.append([str(option), _send_with_note.bind(str(option))])
 	buttons.append([str(options[0]), _send_with_note.bind(str(options[0]))])
-	_footer(body, "Approving sends the package on to the next building.", buttons)
+	var merges := "merge" in str(options[0]).to_lower()
+	_footer(body, "Approving merges this work at the Post Office." if merges
+		else "Approving sends the package on to the next building.", buttons)
 
 
 ## Questions: option buttons when there are options, otherwise a text box.

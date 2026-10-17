@@ -81,12 +81,18 @@ The client should rebuild its view from scratch when it gets one.
 
 - `repo`: the island's GitHub repo (`owner/name`) or `null`. `path`: the island's
   local git repository (every island is a repository; see `GET /islands` and
-  `POST /islands` in architecture.md). `branch`: what residents branch off from.
+  `POST /islands` in architecture.md). `branch`: what residents branch off from,
+  and what the Post Office's PRs target. An island founded with a `repo` is a
+  `gh repo clone` of it; one founded with `existing_repo` (a local git folder)
+  gets `repo` from that folder's GitHub `origin` (`null` if it has none, so no
+  PRs) and `branch` from its checked-out branch unless one is given.
   `plan`: the town plan its steps match (`classic`, `quick_fixes`) or `custom`. `rules`: house rules from
   the island creator (`true` = ask me before doing this). `shell` and
   `install_packages` turn a resident's `execute` key from `yes` into `ask` (for
-  every command, or for commands that look like a package install); `merge_pr`
-  is stored only: the post office opens PRs and never merges them.
+  every command, or for commands that look like a package install). `merge_pr`
+  makes the Courthouse ask you (a `ready` bubble, "Approve & merge" / "Send
+  back") before the Post Office merges the PR it opens; off, it merges without
+  asking.
 - `created_at`: when the island was founded (ISO-8601 UTC). The game counts
   days from it ("Day 1" is the founding day, in the player's local time).
 - `map`: how the island looks: land, pond, plants, season (see "Island map" below).
@@ -269,7 +275,13 @@ If the bubble ID is unknown or already resolved, the server replies with `error`
 
 For a bubble with `options`, `response` is one of them. A `ready` bubble's
 response may add a note for the resident after a colon, e.g.
-`"Send back: also test IPv6"`.
+`"Send back: also test IPv6"` (the package goes back to the Workshop with it).
+
+Where bubbles come from: ✋ `permission` when an agent wants a house key set to
+`ask`; ❓ `confused` when an agent ends its turn with a `QUESTION:` line (ACP
+brains) or calls `ask_user` (OpenRouter); ✅ `ready` from the Courthouse once
+the reviewer passes work that will become a PR; 💤 `tired` when a brain isn't
+logged in. Mock residents raise any kind at random.
 
 ### `create_resident`
 Move a new resident onto the island (the resident creator's "Move in"). The

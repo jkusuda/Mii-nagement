@@ -50,6 +50,14 @@ class FakeAgent(Agent):
         async def say(line: str) -> None:
             await self._conn.session_update(session_id=session_id, update=AgentMessageChunk(session_update="agent_message_chunk", content=TextContentBlock(type="text", text=line)))
 
+        # `please ask`: stop to ask the island owner first; the runner prompts again with the answer.
+        if "please ask" in text and "island owner answered" not in text and "Nobody answered" not in text:
+            await say("I'm not sure which file you mean.\nQUESTION: Should I change hello.py or a new file?")
+            return PromptResponse(stop_reason="end_turn")
+        if "island owner answered" in text or "Nobody answered" in text:
+            await say(f"Thanks! Going with: {text.strip()[:80]}\nVERDICT: PASS")
+            return PromptResponse(stop_reason="end_turn")
+
         await say(f"Looking at the code (gifts: {','.join(self.gifts) or 'none'}). ")
         await self._conn.session_update(session_id=session_id, update=UsageUpdate(session_update="usage_update", used=250, size=1000))
         await self._conn.session_update(

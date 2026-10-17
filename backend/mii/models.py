@@ -38,7 +38,7 @@ class Island(models.Model):
     branch = models.CharField(max_length=200, default="main")  # residents branch off from here
     plan = models.CharField(max_length=50, default="classic")  # the town plan its steps match, or "custom" (islands.py PLANS)
     # House rules from the island creator: True = ask me before doing this.
-    # Stored only for now (merge_pr, install_packages, shell).
+    # True = ask me first: merge_pr (Courthouse approval), install_packages and shell (house keys).
     rules = models.JSONField(default=dict)
     created_at = models.DateTimeField(default=utcnow)  # "Day 1" in the game
     # Land tiles, pond, plants, season: see "Island map" in islands.py. {} = the classic island.

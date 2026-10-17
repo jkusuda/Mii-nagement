@@ -15,6 +15,7 @@ Python SDK: `agent-client-protocol` (https://agentclientprotocol.github.io/pytho
 import asyncio
 import logging
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -45,7 +46,7 @@ from acp.schema import (
 )
 
 from mii import prefs
-from mii.agents import AgentJob, StepResult, build_prompt, parse_verdict, permission_for
+from mii.agents import VERDICT_PATTERN, AgentJob, StepResult, build_prompt, parse_verdict, permission_for
 from mii.personality import build_system_prompt
 from mii.sandbox import SandboxError, is_inside
 
@@ -367,6 +368,25 @@ async def _end_process_tree(proc: asyncio.subprocess.Process, grace: float = 2.0
     log.warning("agent process %s did not exit", proc.pid)
 
 
+# ACP has no "ask the user" request, so agents ask by ending their turn with a
+# QUESTION line. The runner shows it as a ❓ bubble and prompts again with the answer.
+QUESTION_RULE = (
+    "If you need the island owner (the human) to decide something you can't work out from the code, "
+    "stop and end your reply with one line `QUESTION: <your question>` instead of a VERDICT line. "
+    "You'll get their answer and can carry on. Only ask when it really matters."
+)
+QUESTION_PATTERN = re.compile(r"^\s*QUESTION:\s*(.+?)\s*$", re.MULTILINE)
+MAX_QUESTIONS = 3  # per step; after that the agent has to decide
+
+
+def find_question(text: str) -> str | None:
+    """The agent's last QUESTION line, unless it also gave a verdict (then it decided)."""
+    if VERDICT_PATTERN.search(text):
+        return None
+    questions = QUESTION_PATTERN.findall(text)
+    return questions[-1][:300] if questions else None
+
+
 class AcpRunner:
     """One brain's runner. A fresh agent process per step, so nothing leaks between steps."""
 
@@ -413,10 +433,19 @@ class AcpRunner:
                 session_id = session.session_id
                 await self._configure(conn, session, job)
 
-                prompt = build_prompt(job, build_system_prompt(job.resident))
-                response = await conn.prompt(session_id=session_id, prompt=[TextContentBlock(type="text", text=prompt)])
-                if response.stop_reason != "end_turn":
-                    return StepResult("fail", f"{self.brain} stopped early ({response.stop_reason}).")
+                prompt = f"{build_prompt(job, build_system_prompt(job.resident))}\n\n{QUESTION_RULE}"
+                for asked in range(MAX_QUESTIONS + 1):
+                    client.text.clear()  # each turn's reply on its own: the last one carries the verdict
+                    response = await conn.prompt(session_id=session_id, prompt=[TextContentBlock(type="text", text=prompt)])
+                    if response.stop_reason != "end_turn":
+                        return StepResult("fail", f"{self.brain} stopped early ({response.stop_reason}).")
+                    question = find_question("".join(client.text))
+                    if question is None or asked == MAX_QUESTIONS:
+                        break
+                    answer = await job.ask("confused", question)
+                    prompt = (f"The island owner answered: {answer}" if answer
+                              else "Nobody answered in time. Use your best judgement and carry on.")
+                    prompt += "\n\nWhen you're done, end with one line: `VERDICT: PASS` or `VERDICT: FAIL`."
                 return parse_verdict("".join(client.text))
         except asyncio.CancelledError:
             # The engine's step timeout. Ask the agent to stop before the process is killed.

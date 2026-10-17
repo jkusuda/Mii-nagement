@@ -179,3 +179,22 @@ async def test_acp_runner_reports_a_missing_login_as_a_tired_bubble(sandbox):
 
     assert result.outcome == "fail" and "login" in result.summary
     assert ask.asked[0][0] == "tired"
+
+
+async def test_acp_resident_asks_a_question_and_carries_on_with_the_answer(sandbox):
+    workdir = sandbox.create_worktree("t_test")
+    runner = AcpRunner("claude-code", command=[sys.executable, str(FAKE_AGENT)])
+    ask = RecordingAsk("A new file, please")
+    job = make_job("claude-code", workdir=workdir, instructions="please ask", ask=ask, sandbox=sandbox)
+    result = await asyncio.wait_for(runner.run(job), 20)
+    assert ask.asked == [("confused", "Should I change hello.py or a new file?", None)]
+    assert result.outcome == "pass" and "A new file, please" in result.summary
+    assert "QUESTION" not in result.summary  # only the last turn makes the summary
+
+
+def test_find_question():
+    from mii.agents.acp import find_question
+
+    assert find_question("Hmm.\nQUESTION: Which branch?") == "Which branch?"
+    assert find_question("QUESTION: one?\nVERDICT: PASS") is None  # it decided after all
+    assert find_question("All done.\nVERDICT: FAIL") is None

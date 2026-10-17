@@ -76,7 +76,10 @@ Backend design: [docs/architecture.md](docs/architecture.md).
 - [ ] Island looks (seasons), Caretaker
 - [x] ACP runner honours island `branch` (worktrees + PRs) and house `rules` (`shell`, `install_packages`)
 - [ ] "Celebrating" island status (the events endpoint exists now; game side to do)
-- [ ] Run several tasks at once (one per free resident)
+- [x] Islands work in parallel (one package at a time per island)
+- [x] Approve & merge: the Courthouse asks (`merge_pr` rule), the Post Office merges via `gh`
+- [x] ACP residents ask questions (`QUESTION:` line -> ❓ bubble -> answer in the same session)
+- [ ] Several packages at once on one island
 - [x] Friendship meter between residents who hand off to each other (`Friendship` table,
       `friendships` in the snapshot, `friendship` event; resident cards show the best friend)
 - [x] Cancel a task (`cancel_task` / `POST .../cancel`), create one over the socket

@@ -10,13 +10,19 @@ Where repos go, by default:
     macOS / Windows   ~/Documents/Mii-nagement/<island-id>
     Linux             ~/Mii-nagement/<island-id>
 Override the root with ISLANDS_ROOT in .env, or pass `folder` when founding an
-island. `existing_repo` adopts a repo you already have instead of creating one.
+island. Three ways to get the repository (create_island):
+    new       no `repo`: a fresh repo with a README
+    clone     `repo` ("owner/name"): `gh repo clone` into <folder>/<island-id>, on the island's branch
+    adopt     `existing_repo` (a local path): use that git folder as is; owner/name comes
+              from its GitHub `origin`, so the Post Office can open PRs
 
 A new island starts with no residents: the creator makes them next
 (create_resident), and each one moves into the buildings for their job.
 """
 
+import os
 import re
+import shutil
 import subprocess
 from collections import deque
 from pathlib import Path
@@ -41,7 +47,7 @@ PLANS = {
     "quick_fixes": ("mailbox", "workshop", "post_office"),  # small chores, no tests or review stop
 }
 
-RULES = ("merge_pr", "install_packages", "shell")  # house rules: True = ask me first (stored only for now)
+RULES = ("merge_pr", "install_packages", "shell")  # house rules: True = ask me first (engine.py, agents/__init__.py)
 REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 MAX_NAME = 30
 
@@ -442,8 +448,10 @@ def create_island(data: dict) -> Island:
       name (required), repo ("owner/name" on GitHub), branch (default main),
       shape (a SHAPES key, default classic), steps (which buildings, see STEP_ORDER)
       or plan ("classic" | "quick_fixes", a preset of steps), season, rules ({rule: bool}),
-      folder (directory to create the repo in; default: default_folder()),
-      existing_repo (adopt this git repo instead of creating one).
+      folder (directory to create or clone the repo in; default: default_folder()),
+      existing_repo (adopt this git folder instead of creating or cloning one).
+    With `repo` and no `existing_repo` the repo is cloned from GitHub (see the module
+    docstring); branch defaults to the repo's own branch, or main for a new repo.
     """
     name = str(data.get("name", "")).strip()
     if not 1 <= len(name) <= MAX_NAME:
@@ -451,7 +459,7 @@ def create_island(data: dict) -> Island:
     repo = str(data.get("repo") or "").strip() or None
     if repo and not REPO.match(repo):
         raise IslandError(f"repo must look like owner/name, got {repo}")
-    branch = str(data.get("branch") or "main").strip() or "main"
+    branch = str(data.get("branch") or "").strip() or None  # None: the repo's own branch (or main)
     if data.get("steps") is not None:
         steps = validate_steps(data["steps"])
     else:
@@ -469,17 +477,16 @@ def create_island(data: dict) -> Island:
     if not isinstance(rules, dict) or any(k not in RULES or not isinstance(v, bool) for k, v in rules.items()):
         raise IslandError(f"rules must map {list(RULES)} to true/false")
 
+    island_id = unique_island_id(name)
+    folder = Path(str(data["folder"])).expanduser().resolve() if data.get("folder") else default_folder()
+    if data.get("existing_repo"):
+        path, repo, branch = adopt_repo(Path(str(data["existing_repo"])).expanduser().resolve(), repo, branch)
+    elif repo:
+        path, branch = clone_repo(repo, folder / island_id, branch, name)  # slow: the caller is off the event loop
+    else:
+        path, branch = init_repo(folder, island_id, name), branch or "main"
+
     with transaction.atomic():
-        island_id = unique_island_id(name)
-        if data.get("existing_repo"):
-            path = Path(str(data["existing_repo"])).expanduser().resolve()
-            if not (path / ".git").is_dir():
-                raise IslandError(f"{path} is not a git repository")
-        else:
-            folder = data.get("folder")
-            path = init_repo(Path(str(folder)).expanduser().resolve() if folder else default_folder(), island_id, name)
-        if repo:
-            link_remote(path, repo)  # so the post office can push branches and open PRs
         island = Island.objects.create(
             id=island_id, name=name, repo=repo, repo_path=str(path), branch=branch, plan=_plan_name(steps),
             rules={rule: bool(rules.get(rule, False)) for rule in RULES}, map=default_map(shape, season),
@@ -504,11 +511,79 @@ def init_repo(folder: Path, island_id: str, name: str) -> Path:
         path.mkdir(parents=True, exist_ok=True)
     except OSError as e:
         raise IslandError(f"cannot create {path}: {e.strerror}")
-    (path / "README.md").write_text(f"# {name}\n\nThis repository is the island \"{name}\" in Mii-nagement.\n")
     _git(path, "init", "-q")
-    _git(path, "add", "README.md")
-    _git(path, "-c", "user.name=Mii-nagement", "-c", "user.email=mii@localhost", "commit", "-q", "-m", "New island")
+    _first_commit(path, name)
     return path
+
+
+# `gh` as a command list, so tests can swap in a stand-in (tests/fake_gh.py).
+GH = ["gh"]
+CLONE_TIMEOUT = 15 * 60  # seconds; big repos take a while
+GITHUB_URL = re.compile(r"github\.com[:/]+([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?)(?:\.git)?/?$")
+
+
+def clone_repo(repo: str, path: Path, branch: str | None, name: str) -> tuple[Path, str]:
+    """Clone github.com/<repo> into `path` with the user's `gh` login and check out `branch`
+    (None: the repo's default branch). Returns (path, branch). An empty GitHub repo gets the
+    island's first commit (a README) on `branch`. On failure the half-made folder goes again."""
+    if path.exists() and any(path.iterdir()):
+        raise IslandError(f"{path} exists and is not empty: pick another folder, or use it as a folder on this computer")
+    _gh_ready()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        raise IslandError(f"cannot create {path.parent}: {e.strerror}")
+    created = not path.exists()
+    try:
+        _run_gh("repo", "clone", repo, str(path), what=f"cloning {repo}", timeout=CLONE_TIMEOUT)
+        if _has_commits(path):
+            if branch and branch != current_branch(path):
+                if not _ok(path, "rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{branch}"):
+                    raise IslandError(f"{repo} has no branch {branch}")
+                _git(path, "checkout", "-q", "-B", branch, f"origin/{branch}")
+        else:  # an empty repo on GitHub: start it like a new island
+            branch = branch or "main"
+            _git(path, "symbolic-ref", "HEAD", f"refs/heads/{branch}")
+            _first_commit(path, name)
+        return path, branch or current_branch(path) or "main"
+    except BaseException:
+        if created:
+            shutil.rmtree(path, ignore_errors=True)
+        raise
+
+
+def adopt_repo(path: Path, repo: str | None, branch: str | None) -> tuple[Path, str | None, str]:
+    """Use a git folder that's already on this computer. Returns (path, repo, branch): `repo`
+    comes from its GitHub origin when not given, `branch` defaults to the checked-out one."""
+    if not path.is_dir():
+        raise IslandError(f"{path} is not a folder")
+    if not (path / ".git").exists():  # a folder (or a worktree's .git file)
+        raise IslandError(f"{path} is not a git repository (run `git init` there first)")
+    if not _has_commits(path):
+        raise IslandError(f"{path} has no commits yet: commit something first, so residents have a branch to start from")
+    origin = github_repo_of(path)
+    if repo and origin and origin.lower() != repo.lower():
+        raise IslandError(f"{path} pushes to {origin}, not {repo}")
+    if repo and not origin:
+        link_remote(path, repo)
+    branch = branch or current_branch(path) or "main"
+    if not (_ok(path, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}")
+            or _ok(path, "rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{branch}")):
+        raise IslandError(f"{path} has no branch {branch}")
+    return path, repo or origin, branch
+
+
+def github_repo_of(path: Path) -> str | None:
+    """"owner/name" of the repo's `origin`, if it is on GitHub."""
+    result = subprocess.run(["git", "-C", str(path), "remote", "get-url", "origin"], capture_output=True, text=True)
+    match = GITHUB_URL.search(result.stdout.strip()) if result.returncode == 0 else None
+    return match.group(1) if match else None
+
+
+def current_branch(path: Path) -> str | None:
+    result = subprocess.run(["git", "-C", str(path), "symbolic-ref", "--quiet", "--short", "HEAD"],
+                            capture_output=True, text=True)
+    return result.stdout.strip() or None
 
 
 def link_remote(path: Path, repo: str) -> None:
@@ -516,6 +591,45 @@ def link_remote(path: Path, repo: str) -> None:
     has_origin = subprocess.run(["git", "-C", str(path), "remote", "get-url", "origin"], capture_output=True).returncode == 0
     if not has_origin:
         _git(path, "remote", "add", "origin", f"https://github.com/{repo}.git")
+
+
+def _gh_ready() -> None:
+    """gh is installed and logged in (it does the cloning and, later, the PRs)."""
+    try:
+        status = subprocess.run([*GH, "auth", "status"], capture_output=True, text=True, timeout=30)
+    except FileNotFoundError:
+        raise IslandError("the GitHub CLI (gh) is not installed: get it from https://cli.github.com, then run `gh auth login`")
+    except subprocess.TimeoutExpired:
+        raise IslandError("`gh auth status` timed out")
+    if status.returncode != 0:
+        raise IslandError("gh is not logged in to GitHub: run `gh auth login` in a terminal, then try again")
+
+
+def _run_gh(*args: str, what: str, timeout: int) -> None:
+    # GIT_TERMINAL_PROMPT=0: never hang waiting for a password nobody can type.
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+    try:
+        result = subprocess.run([*GH, *args], capture_output=True, text=True, timeout=timeout, env=env)
+    except FileNotFoundError:
+        raise IslandError("the GitHub CLI (gh) is not installed: get it from https://cli.github.com")
+    except subprocess.TimeoutExpired:
+        raise IslandError(f"{what} took longer than {timeout // 60} minutes")
+    if result.returncode != 0:
+        raise IslandError(f"{what} failed: {(result.stderr.strip() or result.stdout.strip())[-300:]}")
+
+
+def _has_commits(path: Path) -> bool:
+    return _ok(path, "rev-parse", "--verify", "--quiet", "HEAD")
+
+
+def _ok(path: Path, *args: str) -> bool:
+    return subprocess.run(["git", "-C", str(path), *args], capture_output=True).returncode == 0
+
+
+def _first_commit(path: Path, name: str) -> None:
+    (path / "README.md").write_text(f"# {name}\n\nThis repository is the island \"{name}\" in Mii-nagement.\n")
+    _git(path, "add", "README.md")
+    _git(path, "-c", "user.name=Mii-nagement", "-c", "user.email=mii@localhost", "commit", "-q", "-m", "New island")
 
 
 def ensure_repo(island: Island) -> Island:

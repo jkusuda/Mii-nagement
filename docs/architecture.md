@@ -110,14 +110,22 @@ After changing a model: `uv run python manage.py makemigrations mii`, then
      instructions + history as one prompt. While it runs: tool calls become
      `activity` events; permission requests are decided by the resident's house
      keys (`yes` = allow, `no` = reject, `ask` = a ✋ bubble whose buttons are
-     the agent's own options; no answer = reject); file reads/writes are served only inside the worktree. The final
-     text's `VERDICT: PASS/FAIL` line decides. The process is always closed.
+     the agent's own options; no answer = reject); file reads/writes are served only inside the worktree.
+     ACP has no "ask the user" request, so the prompt tells the agent it may
+     end a turn with `QUESTION: ...`: the runner shows a ❓ bubble and prompts
+     the same session again with your answer (up to 3 per step). The final
+     turn's `VERDICT: PASS/FAIL` line decides. The process is always closed.
    - **OpenRouterRunner**: the same contract over OpenRouter's chat API with
      built-in tools.
    Some handlers do more: the **Workshop** commits the worktree after the
    coder, the **Lab** runs `TEST_COMMAND` itself and uses the exit code, the
-   **Courthouse** prepends `git diff --stat`, the **Post Office** turns the
-   reply into a PR title/body and opens the PR when the island has a repo.
+   **Courthouse** prepends `git diff --stat` and, once the reviewer passes it on
+   an island with a GitHub repo, asks you with a ✅ `ready` bubble ("Approve &
+   merge" / "Send back"; skipped when the `merge_pr` house rule is off, which
+   approves it). Send back fails the step with your note. The **Post Office**
+   turns the reply into a PR title/body, opens the PR, and merges it with
+   `gh pr merge` if you approved (squash, else merge, else rebase). Unanswered:
+   the PR stays open.
 4. The outcome picks the next road. A `Step` row is saved for insights. When
    the task ends the worktree is removed (unless `KEEP_WORKTREES=1`).
 
@@ -156,7 +164,7 @@ the same keys and rules to its `run_command` tool.
 | `GET /gifts` | per gift (MCP server): `ok`, `label`, `hint` (the creator greys out the rest) |
 | `GET /models` | the OpenRouter catalogue (needs `OPENROUTER_API_KEY`) |
 | `GET /islands` | every island (id, name, repo, created_at, ...: the Archipelago screen), plus `default_folder` for new repositories |
-| `POST /islands` | found an island: `{"name", "repo"?, "branch"?, "shape"?, "steps"? \| "plan"?: "classic" \| "quick_fixes", "season"?, "rules"?, "folder"?, "existing_repo"?}` → its snapshot. Creates the git repo (or adopts `existing_repo`) and lays out the shape's lots and the roads for the steps |
+| `POST /islands` | found an island: `{"name", "repo"?, "branch"?, "shape"?, "steps"? \| "plan"?: "classic" \| "quick_fixes", "season"?, "rules"?, "folder"?, "existing_repo"?}` → its snapshot (400 `{"error"}` with a readable reason). The repository comes one of three ways: no `repo` → a new repo with a README in `<folder>/<id>`; `repo` → `gh repo clone owner/name <folder>/<id>` (needs `gh` installed and logged in; the folder must be empty or missing; checks out `branch`, default the repo's default branch; an empty GitHub repo gets a first README commit); `existing_repo` → that git folder as is (needs a commit; `repo` is read from its GitHub `origin` when not given, `branch` defaults to its checked-out branch). Then it lays out the shape's lots and the roads for the steps. Cloning runs in a worker thread and can take a while |
 | `GET /github/repos?q=` | the user's repos, through their logged-in `gh` (island creator) |
 | `GET /github/branches?repo=` | a repo's branches, through `gh` |
 | `GET /islands/{id}` | the island snapshot |
@@ -197,7 +205,7 @@ commit note, the test output, the review, the PR text.
 ```
 
 `events` is the island's stored event stream between the task's `in_progress`
-and `done`/`failed` events (the engine runs one task at a time, so that window
+and `done`/`failed` events (an island runs one task at a time, so that window
 is the task's), in the shape planned for `GET /islands/{id}/events`.
 
 ## Insights payload
@@ -272,6 +280,7 @@ live CLIs still need a hands-on check (see README "Real agents").
 ## Not in scope (on purpose)
 
 LangChain or other direct-API runners beyond OpenRouter, friendship scores, the
-ML team router, running several tasks at once. (Several islands work: one task
-queue for all of them. Island News is written by the game from stored events;
+ML team router, several tasks at once on one island. (Islands run in parallel:
+`run_forever` hands each task to its island's `Lane`, which runs that island's
+packages one at a time. Island News is written by the game from stored events;
 the backend only serves them, see "Events history".)

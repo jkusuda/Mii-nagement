@@ -174,8 +174,9 @@ env var) and `git config --global http.sslBackend schannel` make uv and git trus
   Keep brain-specific details inside those runners, never in the engine,
   protocol, or game.
 - **Keep the backend small.** Out of scope on purpose: LangChain or more direct
-  API runners (OpenRouter is the one), friendship, ML router, parallel tasks.
-  Several islands share one task queue. Island News is written in the game
+  API runners (OpenRouter is the one), ML router, several packages at once on
+  one island. Islands work in parallel (one `Lane` per island in engine.py),
+  one package at a time each. Island News is written in the game
   from stored events; the backend only serves them.
 - **Migrations are Django's.** After changing a table in `models.py`, run
   `uv run python manage.py makemigrations mii` and check the migration in. The
