@@ -115,11 +115,34 @@ class Sandbox:
         """Commit everything in the task's worktree. Returns False when there was nothing to commit."""
         path = self.worktree_path(task_id)
         self._git(path, "add", "-A")
-        if self._ok(path, "diff", "--cached", "--quiet"):
+        merging = self._ok(path, "rev-parse", "-q", "--verify", "MERGE_HEAD")  # a conflict fix (merge_in)
+        if not merging and self._ok(path, "diff", "--cached", "--quiet"):
             return False  # nothing staged
+        if merging and (left := self.conflict_markers(task_id)):
+            raise SandboxError(f"conflict markers are still in {', '.join(left)}: resolve them first")
         name, email = split_author(author)
         self._git(path, "-c", f"user.name={name}", "-c", f"user.email={email}", "commit", "-q", "-m", message)
         return True
+
+    def merge_in(self, task_id: str, ref: str, author: str = DEFAULT_GIT_AUTHOR) -> list[str]:
+        """Merge `ref` into the task's worktree. A clean merge is committed; conflicts are left in
+        the files (MERGE_HEAD set) for the coder, and commit_all concludes the merge. Returns the
+        files still in conflict. A merge already in progress (a resumed task) is left alone."""
+        path = self.worktree_path(task_id)
+        if not self._ok(path, "rev-parse", "-q", "--verify", "MERGE_HEAD"):
+            name, email = split_author(author)
+            self._git(
+                path, "-c", f"user.name={name}", "-c", f"user.email={email}", "merge", "--no-edit", ref, check=False
+            )
+        return self._git(path, "diff", "--name-only", "--diff-filter=U", check=False).split()
+
+    def conflict_markers(self, task_id: str) -> list[str]:
+        """Files where the task added a <<<<<<< / ======= / >>>>>>> line since its branch started,
+        committed or not (git diff --check flags them), so a conflict fix never ships them."""
+        path = self.worktree_path(task_id)
+        out = self._git(path, "diff", "--check", self._base(task_id), check=False)
+        files = [line.split(":", 1)[0] for line in out.splitlines() if line.endswith(": leftover conflict marker")]
+        return list(dict.fromkeys(files))
 
     def diff_stat(self, task_id: str) -> str:
         """What the task branch changed compared to where it started (for the reviewer)."""

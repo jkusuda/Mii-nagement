@@ -117,6 +117,9 @@ class Task(models.Model):
     issue_number = models.IntegerField(null=True, blank=True)  # the GitHub issue it came from
     branch = models.CharField(max_length=200, null=True, blank=True)  # mii/<task_id>, in the task's worktree
     pr_url = models.CharField(max_length=500, null=True, blank=True)  # set by the post office
+    # A merge-conflict fix (sync.py): start from this PR branch, merge the island's branch in,
+    # and the post office pushes back onto it instead of opening a new PR.
+    target_branch = models.CharField(max_length=200, null=True, blank=True)
     merged_at = models.DateTimeField(null=True, blank=True)  # when the PR was merged (insights.py asks `gh`)
     created_at = models.DateTimeField(default=utcnow)
     finished_at = models.DateTimeField(null=True, blank=True)  # when it became done / failed
@@ -263,6 +266,7 @@ def task_detail_dict(t: Task, steps: list[Step]) -> dict:
         **task_to_dict(t),
         "description": t.description,
         "branch": t.branch,
+        "target_branch": t.target_branch,
         "created_at": t.created_at.isoformat(),
         "finished_at": t.finished_at.isoformat() if t.finished_at else None,
         "steps": [step_to_dict(s) for s in steps],

@@ -271,25 +271,42 @@ class PostOffice(BuildingHandler):
         if not island.repo:
             result.summary += " No GitHub repo linked to this island, so no PR was opened."
             return result
-        title, body = split_pr_text(result.summary, fallback_title=job.task.title)
-        await job.report("Opening the pull request")
-        try:
-            url = await asyncio.to_thread(
-                github.open_pull_request, island.repo, job.workdir, job.task.branch, title, body, island.branch
+        if job.task.target_branch:  # a conflict fix: update the PR it was made for, no new PR
+            left = await asyncio.to_thread(job.sandbox.conflict_markers, job.task.id)
+            if left:
+                return StepResult("fail", f"Conflict markers are still in {', '.join(left)}: not pushing that.")
+            await job.report(f"Pushing the fix to {job.task.target_branch}")
+            try:
+                await asyncio.to_thread(github.push_to, job.workdir, job.task.target_branch)
+            except github.GitHubError as e:
+                return StepResult("fail", f"Could not push to {job.task.target_branch}: {e}")
+            # The PR belongs to the task that opened it: merging it marks that task, not the fix.
+            task = (
+                await Task.objects.filter(island_id=island.id, branch=job.task.target_branch)
+                .exclude(pr_url=None)
+                .afirst()
             )
-        except github.GitHubError as e:
-            return StepResult("fail", f"Could not open the PR: {e}")
-        task = await engine.set_pr_url(job.task, url)
-        if not engine.approved(job.task.id):
-            return StepResult("pass", f"Opened {url}")
+            url, done = task.pr_url if task else None, f"Pushed the fix to {job.task.target_branch}"
+        else:
+            title, body = split_pr_text(result.summary, fallback_title=job.task.title)
+            await job.report("Opening the pull request")
+            try:
+                url = await asyncio.to_thread(
+                    github.open_pull_request, island.repo, job.workdir, job.task.branch, title, body, island.branch
+                )
+            except github.GitHubError as e:
+                return StepResult("fail", f"Could not open the PR: {e}")
+            task, done = await engine.set_pr_url(job.task, url), f"Opened {url}"
+        if not engine.approved(job.task.id) or not url:
+            return StepResult("pass", done)
         await job.report("Merging the pull request")
         try:
             method = await asyncio.to_thread(github.merge_pull_request, url)
         except github.GitHubError as e:
-            return StepResult("pass", f"Opened {url}, but couldn't merge it: {e}")
+            return StepResult("pass", f"{done}, but couldn't merge {url}: {e}")
         task.merged_at = utcnow()
         await task.asave(update_fields=["merged_at"])
-        return StepResult("pass", f"Opened and merged {url} ({method}).")
+        return StepResult("pass", f"{done} and merged the PR ({method}).")
 
 
 HANDLERS: dict[str, BuildingHandler] = {
@@ -444,15 +461,19 @@ class WorkflowEngine:
         description: str = "",
         issue_number: int | None = None,
         attachments: list[tuple[str, bytes]] = (),
+        target_branch: str | None = None,
     ) -> Task:
         """Add a task to the queue. It starts at the island's mailbox. `attachments` are
-        (safe file name, bytes), already checked by tasks.parse_attachments."""
+        (safe file name, bytes), already checked by tasks.parse_attachments. A `target_branch`
+        (sync.py's conflict fixes) is an open PR's branch: the work starts there, the island's
+        branch is merged in, and the Post Office pushes back to it, updating that PR."""
         task = await Task.objects.acreate(
             id="t_" + uuid.uuid4().hex[:6],
             island_id=island_id,
             title=title,
             description=description,
             issue_number=issue_number,
+            target_branch=target_branch,
         )
         for name, data in attachments:
             await Attachment.objects.acreate(task=task, name=name, data=data)
@@ -609,11 +630,17 @@ class WorkflowEngine:
     async def _run_task(self, task: Task, sandbox: Sandbox | None, runner: AgentRunner) -> Task:
         island = await Island.objects.aget(pk=task.island_id)
         graph = await IslandGraph.load(task.island_id)
-        # The task branch starts from the island's branch (`main` unless the creator chose another).
+        # The task branch starts from the island's branch (`main` unless the creator chose another),
+        # or, for a conflict fix, from the PR branch with the island's branch merged in (conflicts
+        # are left in the files for the coder; Workshop's commit concludes the merge).
         workdir = None
         if sandbox:
             async with self._git:
-                workdir = await asyncio.to_thread(sandbox.create_worktree, task.id, island.branch)
+                workdir = await asyncio.to_thread(sandbox.create_worktree, task.id, task.target_branch or island.branch)
+                if task.target_branch:
+                    await asyncio.to_thread(
+                        sandbox.merge_in, task.id, sandbox.resolve_branch(island.branch), self.git_author
+                    )
         if workdir:
             task = await self._update(Task, task.id, branch=f"mii/{task.id}")
             files = [(a.name, bytes(a.data)) async for a in Attachment.objects.filter(task_id=task.id).order_by("id")]

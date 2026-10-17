@@ -8,6 +8,7 @@
                gh pr create --repo <owner/name> --head mii/<task_id> --base <island branch> --title ... --body ...
     PR state:  gh pr view <url> --json state,mergedAt   (insights.py: "PRs merged")
     merge:     gh pr merge <url> --squash   (or --merge / --rebase, whichever the repo allows)
+    fix out:   git push origin HEAD:refs/heads/mii/<pr task>   (a conflict fix updates its PR, sync.py)
 
 Everything here blocks on subprocesses; async callers wrap it in asyncio.to_thread.
 """
@@ -134,6 +135,12 @@ def open_pull_request(repo: str, worktree: Path, branch: str, title: str, body: 
     return lines[-1]
 
 
+def push_to(worktree: Path, branch: str) -> None:
+    """Push the worktree's commit onto an existing branch on origin (a conflict fix updating its
+    PR). Never forced: the fix started from that branch, so anything else is someone's new work."""
+    _run(["git", "push", "origin", f"HEAD:refs/heads/{branch}"], cwd=worktree)
+
+
 MERGE_METHODS = ("--squash", "--merge", "--rebase")
 
 
@@ -156,3 +163,8 @@ def pr_merged_at(pr_url: str) -> str | None:
     """When the PR was merged (ISO-8601), or None while it's open or closed unmerged."""
     data = _json(_run([*GH, "pr", "view", pr_url, "--json", "state,mergedAt"]))
     return data.get("mergedAt") or None
+
+
+def pr_state(pr_url: str) -> str:
+    """OPEN, CLOSED or MERGED (sync.py only fixes conflicts on open PRs)."""
+    return str(_json(_run([*GH, "pr", "view", pr_url, "--json", "state"])).get("state", ""))

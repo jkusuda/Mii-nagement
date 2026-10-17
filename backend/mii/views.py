@@ -15,7 +15,7 @@ from django.http import HttpRequest, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
-from mii import auth, events, github, islands, layout, metrics, prefs, residents, tasks, vocab, weather
+from mii import auth, events, github, islands, layout, metrics, prefs, residents, sync, tasks, vocab, weather
 from mii.agents.acp import GIFTS, BrainError, available_brains, available_gifts, list_brain_models
 from mii.agents.openrouter import list_models
 from mii.auth import island_guard
@@ -288,6 +288,24 @@ async def island_issues(request: HttpRequest, island_id: str) -> JsonResponse:
         return JsonResponse({"issues": await asyncio.to_thread(github.list_issues, island.repo, limit)})
     except github.GitHubError as e:
         return _error(str(e), 503)
+
+
+@csrf_exempt
+@island_guard
+async def sync_view(request: HttpRequest, island_id: str) -> JsonResponse:
+    """GET: how far the island's branch is behind / ahead of GitHub (after a fetch). POST: pull,
+    push, and send a fix package for every open PR that now conflicts (sync.py)."""
+    island = await _island_or_404(island_id)
+    if isinstance(island, JsonResponse):
+        return island
+    try:
+        if request.method == "GET":
+            return JsonResponse(await sync.status(island))
+        if request.method == "POST":
+            return JsonResponse(await sync.sync(island, get_runtime().workflow))
+    except sync.SyncError as e:
+        return _error(str(e), e.status)
+    return _error("GET or POST", 405)
 
 
 @csrf_exempt

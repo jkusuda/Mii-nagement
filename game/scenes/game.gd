@@ -22,7 +22,8 @@ extends Control
 ## a package" in the top bar opens it too), the other buildings show what's at
 ## that stage. The Archipelago's Settings button opens SettingsPopup.
 ##
-## The Build button opens build mode (scenes/build/build_mode.gd).
+## The Build button opens build mode (scenes/build/build_mode.gd); the Sync
+## button at the end of the nav is scenes/ui/sync_button.gd.
 
 const BuildingLabelScene := preload("res://scenes/ui/building_label.tscn")
 
@@ -42,6 +43,7 @@ var picker: BuildingPicker
 var settings_popup := SettingsPopup.new()
 var build_mode := BuildMode.new()
 var toast := Toast.new()  # server errors no screen handled itself
+var sync_button := SyncButton.new()  # last in the bottom nav: pull/push the island's branch
 
 ## Which screen is showing: "home" (the archipelago), "island_creator",
 ## "island", "residents", "creator", "insights", or "news".
@@ -121,6 +123,8 @@ func _ready() -> void:
 	news.replay_started.connect(show_screen.bind("island"))
 	_show_unread(news.unread())
 	%BackButton.pressed.connect(_go_back)
+	%Insights.get_parent().add_child(sync_button)  # the nav's row of buttons
+	sync_button.finished.connect(toast.show_message)
 
 	# The archipelago and the island switcher.
 	home.visit.connect(_visit_island)

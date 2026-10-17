@@ -437,6 +437,64 @@ async def test_unanswered_review_leaves_the_pr_open_and_rule_off_merges_without_
     assert gh.merged == [task.pr_url] and client.of_type("bubble") == []
 
 
+class ResolvingRunner(WritingRunner):
+    """Resolves hello.py's conflict at the workshop, unless `keep_markers`."""
+
+    def __init__(self, keep_markers: bool = False):
+        self.keep_markers = keep_markers
+
+    async def run(self, job) -> StepResult:
+        if job.building.type == "workshop" and not self.keep_markers:
+            (job.workdir / "hello.py").write_text("print('pr and main')\n")
+        return await super().run(job)
+
+
+def make_conflict(sandbox) -> None:
+    """mii/t_pr and the island's branch both change hello.py."""
+    repo = sandbox.repo_path
+    main = sandbox._git(repo, "branch", "--show-current").strip()
+    author = ["-c", "user.name=t", "-c", "user.email=t@t"]
+    sandbox._git(repo, "checkout", "-q", "-b", "mii/t_pr")
+    (repo / "hello.py").write_text("print('pr')\n")
+    sandbox._git(repo, *author, "commit", "-qam", "pr")
+    sandbox._git(repo, "checkout", "-q", main)
+    (repo / "hello.py").write_text("print('main')\n")
+    sandbox._git(repo, *author, "commit", "-qam", "main moved on")
+
+
+async def test_a_conflict_fix_never_commits_or_pushes_conflict_markers(island, sandbox, sandboxes, monkeypatch):
+    FakeGitHub(monkeypatch)
+    pushed = []
+    monkeypatch.setattr("mii.github.push_to", lambda worktree, branch: pushed.append(branch))
+    await Island.objects.filter(pk="sunny").aupdate(repo="o/r", rules={"merge_pr": False})
+    make_conflict(sandbox)
+
+    workflow, _ = make_workflow(ResolvingRunner(keep_markers=True), sandboxes=sandboxes, keep_worktrees=True)
+    task = await workflow.run_task((await workflow.submit("sunny", "Fix merge conflicts", target_branch="mii/t_pr")).id)
+
+    assert task.status == "failed" and pushed == []
+    assert sandbox.conflict_markers(task.id) == ["hello.py"]
+
+
+async def test_a_conflict_fix_starts_from_the_pr_branch_and_pushes_back_to_it(island, sandbox, sandboxes, monkeypatch):
+    gh, pushed = FakeGitHub(monkeypatch), []
+    monkeypatch.setattr("mii.github.push_to", lambda worktree, branch: pushed.append(branch))
+    await Island.objects.filter(pk="sunny").aupdate(repo="o/r", rules={"merge_pr": False})
+    make_conflict(sandbox)
+    await Task.objects.acreate(
+        id="t_pr", island_id="sunny", title="Say hi", status="done", branch="mii/t_pr", pr_url="https://gh/pr/7"
+    )
+
+    workflow, _ = make_workflow(ResolvingRunner(), sandboxes=sandboxes, test_command="true", keep_worktrees=True)
+    task = await workflow.run_task((await workflow.submit("sunny", "Fix merge conflicts", target_branch="mii/t_pr")).id)
+
+    assert task.status == "done" and gh.opened == [] and pushed == ["mii/t_pr"]
+    assert gh.merged == ["https://gh/pr/7"]  # merge_pr off: approved
+    assert task.pr_url is None and (await Task.objects.aget(pk="t_pr")).merged_at is not None  # the PR's own task
+    parents = sandbox._git(sandbox.repo_path, "log", "--format=%P", f"mii/{task.id}", "--merges", "-1").split()
+    assert len(parents) == 2  # the Workshop's commit concluded the merge of main into the PR branch
+
+
 def test_merge_tries_the_methods_the_repo_allows(monkeypatch):
     from mii import github
 

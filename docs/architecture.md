@@ -94,6 +94,7 @@ Grouped by layer; a module only imports from its own layer or the ones below it.
 | domain | `residents.py` | create / edit / delete residents (the resident creator) | `test_residents.py` |
 | domain | `layout.py` | the workflow graph by hand (`set_layout`), `assign_buildings` | `test_layout.py` |
 | domain | `tasks.py` | a request (`title` or GitHub `issue`) → a queued task | `test_tasks.py` |
+| domain | `sync.py` | the Sync button: fetch, fast-forward, push the island's branch; a fix package (`Task.target_branch`) for each open PR that now conflicts | `test_sync.py`, `test_engine.py` |
 | domain | `talk.py` | a `talk` message: one read-only chat turn with a resident in a building's role (throwaway worktree in real mode), answered to the sender only | `test_talk.py` |
 | domain | `insights.py`, `weather.py`, `replay.py`, `personality.py` | stats, island weather, replaying a recorded task, the system prompt | `test_insights.py`, `test_weather.py`, `test_replay.py`, `test_personality.py` |
 | infra | `sandbox.py` | worktrees per task, path checks, `run_shell` (**the safety boundary**) | `test_engine.py` |
@@ -131,7 +132,7 @@ Bubbles sidebar, and every screen (`show_screen()` shows one).
 | `scenes/residents/` | Residents tab, resident cards, the resident creator, `resident_data.gd` (jobs, brains, gifts, vibes) |
 | `scenes/mii/` | the 3D Mii (`mii.gd`), its parts (`mii_parts.gd`), the creator's preview stage |
 | `scenes/news/`, `scenes/insights/` | the News tab (`news_stories.gd` writes the stories) and the Insights tab |
-| `scenes/ui/` | sidebar, bubble cards, the answer popup, building panel, the talk popup (`talk_popup.gd` + `talk_room.gd`), settings, toasts, `ui.gd` (`UI.label`) |
+| `scenes/ui/` | sidebar, bubble cards, the answer popup, building panel, the talk popup (`talk_popup.gd` + `talk_room.gd`), settings, toasts, the Sync button (`sync_button.gd`), `ui.gd` (`UI.label`) |
 | `ui/theme.tres`, `shaders/`, `assets/` | every colour and style, the GPU shaders, models / icons / fonts / Mii parts |
 
 **`Net` signals and who listens** (every screen also redraws on `island_changed`):
@@ -139,7 +140,7 @@ Bubbles sidebar, and every screen (`show_screen()` shows one).
 | Signal | Listeners |
 |---|---|
 | `connected`, `disconnected` | `game.gd`, `home.gd`, `islands.gd`, `bubbles_sidebar.gd` |
-| `snapshot_received` | `game.gd`, `residents_screen.gd`, `news_screen.gd`, `island_residents.gd`, `island_life.gd` |
+| `snapshot_received` | `game.gd`, `residents_screen.gd`, `news_screen.gd`, `island_residents.gd`, `island_life.gd`, `sync_button.gd` |
 | `agent_moved` | `island_residents.gd`, `island_life.gd` |
 | `agent_state_changed`, `mood_changed`, `handoff_happened`, `task_updated` | `island_life.gd` (and `insights_screen.gd` for tasks) |
 | `chat_said` | `island_residents.gd` |
@@ -163,6 +164,7 @@ Bubbles sidebar, and every screen (`show_screen()` shows one).
 | `GET /islands/{id}/insights` | `insights/insights_screen.gd` |
 | `PUT /islands/{id}/layout` | `build/build_mode.gd` |
 | `GET/PUT /settings`, `GET /health`, `GET /brains/detail`, `GET /models` | `ui/settings_popup.gd` |
+| `GET/POST /islands/{id}/sync` | `ui/sync_button.gd` (the Sync button at the end of the bottom nav) |
 | `GET /brains/detail`, `GET /gifts`, `GET /brains/{brain}/models` | `residents/resident_creator.gd` |
 
 ## One task, end to end
@@ -248,7 +250,9 @@ Bubbles sidebar, and every screen (`show_screen()` shows one).
    the task ends the worktree is removed (unless `KEEP_WORKTREES=1`).
 
 The task's worktree branches off the island's `branch` (a local branch, else
-`origin/<branch>`, else HEAD), and the PR is opened against it. The resident's
+`origin/<branch>`, else HEAD), and the PR is opened against it. A conflict fix from the
+Sync button (`Task.target_branch`, http-api.md "Sync") instead starts from the PR's branch
+with the island's branch merged in, and the Post Office pushes it back onto that PR. The resident's
 gifts go to `session/new` as MCP servers (`GIFTS` in `agents/acp.py`; a gift
 that can't run here is skipped with an `activity` note), the agent's usage
 updates become `notebook` events, and permission requests are decided by the
@@ -369,7 +373,7 @@ lives in `spectator/`; this is not a game message, so protocol.md doesn't list i
 | `Resident` | name, job, 4 personality sliders, `brain`, optional `model`, catchphrase, color, house `keys`, `gifts`, live state / building / mood / `notebook` / `activity`, `appearance`, `notes` (the diary: `REMEMBER:` lines from their own replies) |
 | `Building` | type, name, lot (`x`, `y`, `facing`), resident |
 | `Road` | from, to, condition |
-| `Task` | title, status, where the package is, who carries it, `issue_number`, `branch`, `pr_url`, `merged_at`, `created_at` / `finished_at` |
+| `Task` | title, status, where the package is, who carries it, `issue_number`, `branch`, `pr_url`, `target_branch` (a conflict fix: the PR branch it starts from and pushes back to, `sync.py`), `merged_at`, `created_at` / `finished_at` |
 | `Attachment` | a file sent with a task: name (made safe) and bytes; written to `.mii-attachments/` in the task's worktree when it starts |
 | `Step` | one building visit: task, building, resident, brain, outcome, timed out?, bubbles raised, `flaky` (tests passed on the re-run), `helped` (a help visit: who asked), start/finish time |
 | `Event` | every event sent to the game (history + replay) |

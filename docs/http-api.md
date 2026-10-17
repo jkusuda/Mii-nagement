@@ -33,6 +33,8 @@ The WebSocket messages are in [protocol.md](protocol.md); how the pieces fit is 
 | `GET /islands/{id}/insights?range=week` | stats for the Insights screen and News' "This week" (`today` / `week` / `month`) |
 | `GET /islands/{id}/events?limit=200` | stored events, oldest first, for the News tab (see "Events history") |
 | `PUT /islands/{id}/layout` | build mode over HTTP: `{"buildings", "roads"}` → the saved layout (same rules as `set_layout` in protocol.md); or the game's form `{"map", "buildings": [{type, x, y, facing}]}` → the new snapshot (also sent to every client as a stored `snapshot` event), 400 / 409 (steps changing during a task), see protocol.md "Island map" |
+| `GET /islands/{id}/sync` | `git fetch origin`, then `{"branch", "remote", "behind", "ahead"}`: how far the island's branch is from `origin/<branch>` (the Sync button's count). `remote: false` = no `origin`. 400 without a repository, 502 when git fails |
+| `POST /islands/{id}/sync` | the Sync button, see "Sync" below → the same fields plus `pulled`, `pushed`, `conflicts: [{task, branch, pr_url, files, fix_task}]` and a readable `message`. 409 `{"error"}` (nothing changed) for uncommitted changes on the checked-out branch or a branch that diverged from GitHub; 400 without a repository or `origin`; 502 when git fails |
 | `GET /settings` | effective settings (incl. `judge` = `auto` / `off` / `jev` / `gemini`, `judge_model`, `spectator_url`, `godot_path`, `parallel_packages` 1-8, `master_key`: residents never ask, every bubble answers itself), what `.env` locks, which API keys are set (incl. `typesafe_api_key`, `spectator_secret`) |
 | `PUT /settings` | `{"settings": {...}, "secrets": {"openrouter_api_key": "sk-..." \| null}}`; keys go to the keychain and are never echoed. 403 on the public demo; 401 without a token when login is on |
 | `POST /replay/{task_id}?speed=4` | replay a recorded task (demo safety net); private islands as below |
@@ -57,6 +59,29 @@ writes them to `.mii-attachments/` in its worktree, with a `.gitignore` of `*` s
 they're never committed, and every resident's prompt lists them. Mock mode keeps
 them and lists them too; the mock planner "reads" each one in the thinking dropdown.
 
+## Sync
+
+`POST /islands/{id}/sync` (`sync.py`) keeps the island's repository in step with GitHub:
+
+1. `git fetch origin`. A branch with local commits *and* new ones on GitHub is refused (409):
+   merge it by hand. Nothing is ever forced.
+2. **Pull:** fast-forward the island's branch to `origin/<branch>` (`merge --ff-only` when
+   it is checked out and clean, otherwise the branch ref moves without touching files).
+3. **Push:** a branch that is only ahead is pushed to `origin`.
+4. **Conflicts:** every finished task with an open PR (`pr_url` set, not merged, newest 20) is
+   checked with `git merge-tree` (git 2.38+) against the island's branch. One that no longer
+   merges, and whose PR `gh` still calls `OPEN`, gets a **fix package**: a task with
+   `target_branch` = the PR's branch (its own `pr_url` stays null: the PR belongs to the
+   task that opened it). Its worktree starts from that branch with the island's branch merged
+   in and the conflict markers left in the files; the Workshop's commit concludes the merge
+   (refused while any `<<<<<<<` / `>>>>>>>` marker is left); the Post Office pushes it onto
+   the PR branch (`git push origin HEAD:<branch>`, never forced, never with markers) instead
+   of opening a new PR, and merges the PR (marking the original task merged) if you approved
+   at the Courthouse. A PR that already has a fix queued or running
+   gets no second one.
+
+`GET /islands/{id}/tasks` shows a fix package's `target_branch` (null for other tasks).
+
 ## Tasks over HTTP
 
 `POST /islands/{id}/tasks` is how work reaches the island without the game: a
@@ -70,7 +95,7 @@ commit note, the test output, the review, the PR text.
 ```json
 {
   "id": "t_d5d447", "title": "Add hello.txt", "status": "done", "building": "post_office", "agent": "jun",
-  "pr_url": null, "description": "...", "issue": null, "branch": "mii/t_d5d447", "created_at": "...",
+  "pr_url": null, "description": "...", "issue": null, "branch": "mii/t_d5d447", "target_branch": null, "created_at": "...",
   "steps": [
     {"building": "mailbox", "building_type": "mailbox", "resident": "jun", "brain": "claude-code",
      "outcome": "pass", "summary": "1. Create hello.txt ...", "timed_out": false, "bubbles_raised": 0,
