@@ -399,7 +399,11 @@ func _show_time() -> void:
 	%DayIcon.texture = MOON_ICON if night else SUN_ICON
 	%DayIcon.modulate = NIGHT_COLOR if night else Color("FDC902")
 
-	var kind := Clock.weather(str(Net.island.get("id", "")))
+	# The backend's weather (read off the island's recent work) wins; the clock's daily roll
+	# fills in before a snapshot arrives or when the server says "night" (everyone asleep).
+	var kind := str(Net.island.get("weather", ""))
+	if not WEATHER_LOOKS.has(kind):
+		kind = Clock.weather(str(Net.island.get("id", "")))
 	var look: Array = WEATHER_LOOKS[kind]
 	%WeatherIcon.texture = look[1] if night else look[0]
 	%WeatherIcon.modulate = NIGHT_COLOR if night and kind in ["sunny", "partly_cloudy"] else look[2]

@@ -5,12 +5,13 @@ request. One instance per connection. We don't use a channel layer (no Redis):
 the EventBus keeps the connected consumers in memory and calls send_json().
 """
 
+import asyncio
 from urllib.parse import parse_qs
 
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 
-from mii import events, layout, residents, tasks
+from mii import events, islands, layout, residents, tasks
 from mii.models import Island, island_layout, island_snapshot
 from mii.runtime import get_runtime
 
@@ -19,10 +20,18 @@ async def handle_message(runtime, island_id: str, message) -> dict | None:
     """Client -> server messages (docs/protocol.md). Unknown types are ignored.
 
     Returns an `error` event for the sender only, or None. Anything every client
-    should see goes through runtime.bus.
+    should see goes through runtime.bus. A message's optional `request_id` is
+    echoed on the error, so the client can tell which command was refused.
     """
     if not isinstance(message, dict):
         return events.error("message must be a JSON object")
+    reply = await _handle(runtime, island_id, message)
+    if reply is not None and message.get("request_id") is not None:
+        reply["request_id"] = str(message["request_id"])
+    return reply
+
+
+async def _handle(runtime, island_id: str, message: dict) -> dict | None:
     kind = message.get("type")
     if kind == "answer_bubble":
         bubble_id = str(message.get("id", ""))
@@ -68,6 +77,15 @@ async def handle_message(runtime, island_id: str, message) -> dict | None:
         except layout.LayoutError as e:
             return events.error(str(e))
         await runtime.bus.emit(island_id, events.layout(**saved))
+    elif kind == "update_island":
+        data = message.get("island")
+        if not isinstance(data, dict):
+            return events.error("update_island needs an `island` object")
+        try:
+            island = await asyncio.to_thread(islands.update_island, island_id, data)
+        except islands.IslandError as e:
+            return events.error(str(e))
+        await runtime.bus.emit(island_id, events.island(island))
     return None
 
 
@@ -89,6 +107,7 @@ class IslandConsumer(AsyncJsonWebsocketConsumer):
             await self.close()
             return
         self.island_id = island_id
+        snapshot["mock_agents"] = runtime.mock_agents
         await self.send_json({"type": "snapshot", "island": snapshot})
         runtime.bus.add_client(self, island_id)  # only this island's events
 

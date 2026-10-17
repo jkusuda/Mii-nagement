@@ -11,7 +11,7 @@ class MockRunner:
 
     # Chance of failing on the first visit, by building type. It halves on each
     # retry, so packages don't bounce forever.
-    FAIL_CHANCE = {"lab": 0.4, "courthouse": 0.3}
+    FAIL_CHANCE = {"workshop": 0.15, "lab": 0.4, "courthouse": 0.3}  # a Workshop fail may come with a HELP line
 
     ACTIVITY = {
         "mailbox": "Reading the request",
@@ -35,6 +35,11 @@ class MockRunner:
     }
     # Options per bubble kind. A "ready" answer may carry a note: "Send back: also test IPv6".
     OPTIONS = {"permission": ["Allow once", "Always allow", "Reject"], "ready": ["Approve", "Send back"]}
+
+    # Island life, for free: what a mock resident asks of, says to, or remembers about the others.
+    HELP_LINES = ["I can't get these tests green. Can someone look?", "This plan doesn't match the code I see. Help?"]
+    SAY_LINES = ["Heads up: I touched the config loader.", "Thanks for the plan, it helped!", "Your tests are slow, you know."]
+    REMEMBER_LINES = ["This repo's tests are slow; run the small suite first.", "The owner likes short PR descriptions."]
 
     def __init__(self, work_seconds=(1.5, 4.0), bubble_chance=0.25, rng: random.Random | None = None):
         self.work_seconds = work_seconds
@@ -73,5 +78,18 @@ class MockRunner:
 
         fail_chance = self.FAIL_CHANCE.get(job.building.type, 0.0) / job.attempt
         if self.rng.random() < fail_chance:
-            return StepResult("fail", f"(mock) Found a problem at the {job.building.name}.{note}")
-        return StepResult("pass", f"(mock) Done at the {job.building.name}.{note}")
+            result = StepResult("fail", f"(mock) Found a problem at the {job.building.name}.{note}")
+        else:
+            result = StepResult("pass", f"(mock) Done at the {job.building.name}.{note}")
+        return self._chatter(job, result)
+
+    def _chatter(self, job: AgentJob, result: StepResult) -> StepResult:
+        """Sometimes ask a neighbour for help (on a fail), leave a note, or write in the diary."""
+        if result.outcome == "fail" and self.rng.random() < 0.5:
+            result.help_request = self.rng.choice(self.HELP_LINES)
+        if job.neighbours and self.rng.random() < 0.3:
+            name = self.rng.choice(job.neighbours).split(" (")[0]
+            result.says = [(name, self.rng.choice(self.SAY_LINES))]
+        if self.rng.random() < 0.2:
+            result.remember = [self.rng.choice(self.REMEMBER_LINES)]
+        return result

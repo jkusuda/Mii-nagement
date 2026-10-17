@@ -283,7 +283,7 @@ func _on_repos(result: int, code: int, _headers, body: PackedByteArray) -> void:
 		%GhStatus.text = "From your GitHub (gh) · %d repos" % _repos.size()
 	else:
 		_repos = []
-		var why: String = data.get("detail", "") if typeof(data) == TYPE_DICTIONARY else "backend offline"
+		var why: String = str(data.get("error", data.get("detail", ""))) if typeof(data) == TYPE_DICTIONARY else "backend offline"
 		%GhStatus.text = "Couldn't list repos (%s). Type owner/name." % why
 	_show_repos()
 

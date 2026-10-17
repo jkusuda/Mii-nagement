@@ -127,6 +127,16 @@ GIFTS = {
         "label": "Terminal", "command": ["npx", "-y", "mcp-server-commands"],
         "hint": "an extra shell tool (the ACP agents have their own too)",
     },
+    # Animation and video work (the island's own game lives in game/, a Godot 4 project).
+    "godot": {
+        "label": "Godot", "command": ["npx", "-y", "godot-mcp-runtime"],
+        "needs_env": "GODOT_PATH",
+        "hint": "run, script and screenshot a Godot 4 project (set GODOT_PATH, the Godot executable, in settings)",
+    },
+    "video": {
+        "label": "Video", "command": ["npx", "-y", "ffmpeg-mcp"], "needs": "ffmpeg",
+        "hint": "convert, trim and thumbnail media with ffmpeg",
+    },
 }
 
 # ACP tool kind -> house key (Resident.keys: "yes" = allow by itself, "ask" = ✋ bubble, "no" = reject).
@@ -429,7 +439,8 @@ class AcpRunner:
         # are added; the OpenRouter key stays with us.
         # An empty key (e.g. `ANTHROPIC_API_KEY=` in .env) is left out: some CLIs treat a
         # set-but-blank key as "use this key" and stop using your subscription login.
-        env = {k: v for k, v in os.environ.items() if k != "OPENROUTER_API_KEY" and not (_is_key(k) and not v.strip())}
+        # Our own keys (OpenRouter, TypeSafe) stay with us: prefs.PRIVATE_ENV.
+        env = {k: v for k, v in os.environ.items() if k not in prefs.PRIVATE_ENV and not (_is_key(k) and not v.strip())}
         env = prefs.secrets_env() | env | self.spec["env"]
         client = MiiClient(job, job.workdir)
         session_id: str | None = None

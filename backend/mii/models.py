@@ -75,6 +75,10 @@ class Resident(models.Model):
     mood = models.CharField(max_length=20, default="happy")
     # How full the agent's context window is, 0.0-1.0 (from ACP usage updates). None = unknown.
     notebook = models.FloatField(null=True, blank=True)
+    # The last `activity` line the agent reported, so a client that connects later still sees it.
+    activity = models.TextField(blank=True, default="")
+    # The diary: `REMEMBER:` lines from the resident's own replies, oldest first (engine.NOTES_CHARS cap).
+    notes = models.TextField(blank=True, default="")
 
 
 class Building(models.Model):
@@ -128,6 +132,8 @@ class Step(models.Model):
     summary = models.TextField(blank=True, default="")  # what the resident reported (the plan, the commit, the review...)
     timed_out = models.BooleanField(default=False)
     bubbles_raised = models.IntegerField(default=0)
+    flaky = models.BooleanField(default=False)  # the Lab's tests failed, then passed on their one re-run
+    helped = models.CharField(max_length=64, null=True, blank=True)  # a help visit: the resident this step helped
     started_at = models.DateTimeField(default=utcnow)
     finished_at = models.DateTimeField(null=True, blank=True)
 
@@ -199,6 +205,21 @@ def resident_to_dict(r: Resident) -> dict:
         "building": r.building_id,
         "mood": r.mood,
         "notebook": r.notebook,
+        "activity": r.activity,
+    }
+
+
+def island_to_dict(i: Island) -> dict:
+    """The island's header fields: the top of the snapshot, and the `island` event."""
+    return {
+        "id": i.id,
+        "name": i.name,
+        "repo": i.repo,
+        "path": i.repo_path,
+        "branch": i.branch,
+        "plan": i.plan,
+        "rules": i.rules,
+        "created_at": i.created_at.isoformat(),
     }
 
 
@@ -241,6 +262,8 @@ def step_to_dict(s: Step) -> dict:
         "summary": s.summary,
         "timed_out": s.timed_out,
         "bubbles_raised": s.bubbles_raised,
+        "flaky": s.flaky,
+        "helped": s.helped,
         "started_at": s.started_at.isoformat(),
         "finished_at": s.finished_at.isoformat() if s.finished_at else None,
         "seconds": s.seconds,
@@ -266,18 +289,14 @@ async def island_layout(island_id: str) -> dict:
 
 async def island_snapshot(island_id: str, open_bubbles: list[dict]) -> dict:
     """Full island state for the `snapshot` event. Raises Island.DoesNotExist."""
-    from mii.islands import default_map  # here, not at the top: islands.py imports this module
+    from mii import weather  # here, not at the top: weather.py imports this module
+    from mii.islands import default_map  # same reason: islands.py imports this module
 
     island = await Island.objects.aget(pk=island_id)
     return {
-        "id": island.id,
-        "name": island.name,
-        "repo": island.repo,
-        "path": island.repo_path,
-        "branch": island.branch,
-        "plan": island.plan,
-        "rules": island.rules,
-        "created_at": island.created_at.isoformat(),
+        **island_to_dict(island),
+        "server_time": utcnow().isoformat(),
+        "weather": await weather.current(island_id),
         "map": island.map or default_map(),
         **await island_layout(island_id),
         "residents": [resident_to_dict(r) async for r in Resident.objects.filter(island_id=island_id).order_by("id")],

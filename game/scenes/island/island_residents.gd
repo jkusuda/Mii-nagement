@@ -15,12 +15,17 @@ extends Node3D
 ##
 ## The paths come from the island's map (Island.map, IslandBuilder); when
 ## it changes (build mode), everyone is placed again.
+##
+## Between packages, island_life.gd (the `Life` child) borrows idle residents
+## for strolls, visits and chatter. The server always wins: any event for a
+## resident ends their ambient action (stop_life) before we place them.
 
 const ResidentScene := preload("res://scenes/island/island_resident.tscn")
 const SEARCH_TILES := 12  # how far along the path a hidden stop may slide
 
 var _walkers := {}  # resident id -> IslandResident
 var _stops := {}    # building id -> Vector3, worked out once per building (per island)
+var _life: IslandLife
 
 @onready var island: IslandBuilder = get_node("../Island")
 
@@ -29,7 +34,47 @@ func _ready() -> void:
 	Net.snapshot_received.connect(func(_island): _rebuild.call_deferred())  # after the island is rebuilt
 	Net.agent_moved.connect(_on_moved)
 	Net.island_changed.connect(_sync)
+	Net.chat_said.connect(_on_chat)
 	island.built.connect(_rebuild)
+	_life = IslandLife.new()
+	_life.name = "Life"
+	add_child(_life)
+	_life.setup(self)
+
+
+## --- What island_life.gd needs ----------------------------------------------------
+
+func walker(resident_id: String) -> IslandResident:
+	return _walkers.get(resident_id)
+
+
+func walkers() -> Dictionary:
+	return _walkers
+
+
+func layout() -> IslandLayout:
+	return island.layout
+
+
+func plants() -> Node3D:
+	return island.plants
+
+
+## Put everyone who isn't busy back at their slot (after an ambient action).
+func line_up() -> void:
+	_line_up(false)
+
+
+## A resident said something: a speech line over their head, and the listener turns.
+func _on_chat(from_agent: String, to_agent: String, _task: String, text: String) -> void:
+	var speaker: IslandResident = _walkers.get(from_agent)
+	var listener: IslandResident = _walkers.get(to_agent)
+	if speaker:
+		speaker.say(text, clamp(2.5 + text.length() * 0.05, 3.0, 8.0))
+		if listener:
+			speaker.look_toward(listener.global_position)
+	if listener and speaker:
+		listener.look_toward(speaker.global_position)
 
 
 ## Throw everything away and place everyone exactly where the snapshot says.
@@ -72,7 +117,13 @@ func _line_up(snap: bool) -> void:
 	var at_building := {}  # building id -> [resident, ...]
 	for resident in Net.island.get("residents", []):
 		var walker: IslandResident = _walkers.get(str(resident["id"]))
-		if walker == null or walker.is_walking:
+		if walker == null:
+			continue
+		if walker.life_busy:
+			if str(resident.get("state", "idle")) in ["idle", "sleeping"]:
+				continue  # off on an ambient stroll; island_life brings them back
+			walker.stop_life()  # the server put them to work: ambient life ends now
+		if walker.is_walking:
 			continue
 		var building := str(resident.get("building", ""))
 		if resident.get("state") == "walking" and walker.global_position.distance_to(_stop(building)) > 1.5:
@@ -98,6 +149,7 @@ func _on_moved(agent: String, from_building: String, to_building: String) -> voi
 	var walker: IslandResident = _walkers.get(agent)
 	if walker == null:
 		return
+	walker.stop_life()
 	var points: Array[Vector3] = []
 	var stops := [walker.global_position]
 	for building in _road_route(from_building, to_building):

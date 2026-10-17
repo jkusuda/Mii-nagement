@@ -24,6 +24,10 @@ signal bubble_shown(bubble: Dictionary)
 signal bubble_resolved(bubble_id: String)
 signal handoff_happened(from_agent: String, to_agent: String, task: String, outcome: String)
 signal mood_changed(agent: String, mood: String)
+## One resident said something to another (a help request, the helper's reply, a note).
+signal chat_said(from_agent: String, to_agent: String, task: String, text: String)
+## The backend's weather for the island changed (sunny / cloudy / rainy / night).
+signal weather_changed(kind: String)
 signal task_updated(task: Dictionary)
 signal server_error(message: String)
 ## A resident was created or edited (by this client or another one).
@@ -212,6 +216,9 @@ func _handle_message(text: String) -> void:
 		"snapshot":
 			island = event["island"]
 			island_id = str(island.get("id", ""))
+			for r in island.get("residents", []):
+				if r.get("state") == "idle":
+					r["idle_since"] = Time.get_unix_time_from_system()  # for the "bored" vibe (ResidentData.vibe)
 			for bubble in island.get("bubbles", []):
 				bubble["since"] = Time.get_unix_time_from_system()
 			snapshot_received.emit(island)
@@ -220,7 +227,10 @@ func _handle_message(text: String) -> void:
 			resident_updated.emit(event["resident"])
 		"agent_state":
 			var building := _str(event.get("building"))
-			_patch_resident(event["agent"], {"state": event["state"], "building": building})
+			var changes := {"state": event["state"], "building": building}
+			if event["state"] == "idle":
+				changes["idle_since"] = Time.get_unix_time_from_system()
+			_patch_resident(event["agent"], changes)
 			agent_state_changed.emit(str(event["agent"]), str(event["state"]), building)
 		"move":
 			agent_moved.emit(str(event["agent"]), _str(event["from"]), _str(event["to"]))
@@ -248,6 +258,15 @@ func _handle_message(text: String) -> void:
 		"activity":
 			_patch_resident(event["agent"], {"activity": event["text"]})
 			activity_reported.emit(str(event["agent"]), str(event["text"]))
+		"chat":
+			chat_said.emit(str(event["from"]), str(event["to"]), _str(event.get("task")), str(event.get("text", "")))
+			return  # nothing in `island` changes
+		"weather":
+			island["weather"] = str(event["weather"])
+			weather_changed.emit(str(event["weather"]))
+		"island":
+			# The header changed (renamed, repo linked, rules edited): replace those fields only.
+			island.merge(event["island"], true)
 		"resident_removed":
 			var residents: Array = island.get("residents", [])
 			for i in range(residents.size() - 1, -1, -1):

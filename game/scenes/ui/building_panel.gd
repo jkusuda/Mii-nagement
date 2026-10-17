@@ -415,7 +415,7 @@ func _resident_card(r: Dictionary, here_id: String) -> Control:
 	texts.add_theme_constant_override("separation", 2)
 	texts.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	texts.add_child(_text(str(r.get("name", "?")), 17, true))
-	var about := "%s · feeling %s" % [str(r.get("job", "")).capitalize(), r.get("mood", "fine")]
+	var about := "%s · feeling %s" % [str(r.get("job", "")).capitalize(), ResidentData.vibe_word(r)]
 	if r.get("building") != here_id:
 		about += " · works here, now at the %s" % Net.find_building(str(r.get("building", ""))).get("name", "island")
 	texts.add_child(_detail(about, 13))

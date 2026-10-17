@@ -4,6 +4,7 @@ from mii import views
 
 urlpatterns = [
     path("health", views.health),
+    path("meta", views.meta),
     path("settings", views.settings_view),
     path("brains", views.brains),
     path("brains/detail", views.brains_detail),
@@ -17,6 +18,7 @@ urlpatterns = [
     path("islands/<str:island_id>/tasks", views.tasks_view),
     path("islands/<str:island_id>/tasks/<str:task_id>", views.get_task),
     path("islands/<str:island_id>/tasks/<str:task_id>/cancel", views.cancel_task),
+    path("islands/<str:island_id>/issues", views.island_issues),
     path("islands/<str:island_id>/insights", views.get_insights),
     path("islands/<str:island_id>/events", views.get_events),
     path("islands/<str:island_id>/layout", views.layout_view),

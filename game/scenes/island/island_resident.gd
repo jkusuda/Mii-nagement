@@ -1,10 +1,13 @@
 class_name IslandResident
 extends Node3D
-## One resident on the 3D island: their Mii, a name tag, a bubble icon when they
-## need you, and "z z" when they sleep.
+## One resident on the 3D island: their Mii, a name tag, a mood word under it, a
+## bubble icon when they need you, "z z" when they sleep, a speech line when they
+## say something, and little emotes (hops, slumps, head turns).
 ##
 ## island_residents.gd decides *where* they go; this script only knows how to
-## walk along a list of points and how to look for each state.
+## walk along a list of points and how to look for each state. island_life.gd
+## borrows idle residents for ambient strolls and chats (`life_busy`); any
+## server event for them calls stop_life() and the server's word wins.
 
 signal arrived
 
@@ -17,9 +20,21 @@ var resident_id := ""
 var state := "idle"
 var is_walking := false
 
+## True while island_life.gd has borrowed this resident for an ambient action.
+var life_busy := false
+## Where they stood before island_life took them for a stroll (so they can go back).
+var home_spot := Vector3.ZERO
+
+const FONT := preload("res://assets/font/DreamLife-V1.0.0_by_MaxiGamer.ttf")
+const INK := Color(0.161, 0.18, 0.314, 1)
+
 var _facing := 0.0  # radians around y, 0 = toward the camera
 var _work_tween: Tween
 var _walk_tween: Tween
+var _emote_tween: Tween
+var _speech_tween: Tween
+var _mood_tag: Label3D
+var _speech: Label3D
 
 @onready var mii: Mii = %Mii
 @onready var name_tag: Label3D = %NameTag
@@ -30,6 +45,29 @@ var _walk_tween: Tween
 
 func _ready() -> void:
 	mii.scale = Vector3.ONE * MII_SCALE
+	# Built in code rather than in the .tscn: two more Label3Ds like NameTag.
+	_mood_tag = _make_label(Vector3(0, 2.72, 0), 30, 0.02)
+	_speech = _make_label(Vector3(0, 5.1, 0), 36, 0.02)
+	_speech.width = 440.0
+	_speech.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_speech.visible = false
+
+
+## A billboard label in the island's font with a white outline, like NameTag.
+func _make_label(at: Vector3, size: int, pixel: float) -> Label3D:
+	var label := Label3D.new()
+	label.position = at
+	label.pixel_size = pixel
+	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	label.no_depth_test = true
+	label.render_priority = 1
+	label.font = FONT
+	label.font_size = size
+	label.outline_size = 12
+	label.modulate = INK
+	label.outline_modulate = Color.WHITE
+	add_child(label)
+	return label
 
 
 ## Show the resident's details (a dictionary from Net.island). `open_bubble` is
@@ -40,6 +78,8 @@ func show_resident(resident: Dictionary, open_bubble: Dictionary) -> void:
 	if look != mii.appearance:
 		mii.appearance = look
 	name_tag.text = str(resident.get("name", "?"))
+	_mood_tag.text = ResidentData.vibe_word(resident)
+	_mood_tag.modulate = ResidentData.vibe_color(resident)
 	bubble.visible = not open_bubble.is_empty()
 	if bubble.visible:
 		var kind := str(open_bubble["kind"])
@@ -103,6 +143,91 @@ func settle(spot: Vector3, new_state: String, look_at_point: Vector3) -> void:
 		_:
 			_facing = 0.0
 			mii.play("idle")
+
+
+## Say something out loud for a few seconds (a chat line, a help request, a thought).
+## Godot concept: a Tween can also wait (tween_interval) and run a function at the
+## end (tween_callback), so one Tween does "show, wait, fade, hide".
+func say(text: String, seconds := 4.0) -> void:
+	if _speech_tween:
+		_speech_tween.kill()
+	_speech.text = text
+	_speech.modulate.a = 1.0
+	_speech.outline_modulate.a = 1.0
+	_speech.visible = true
+	_speech_tween = create_tween()
+	_speech_tween.tween_interval(max(seconds - 0.6, 0.2))
+	_speech_tween.tween_property(_speech, "modulate:a", 0.0, 0.6)
+	_speech_tween.parallel().tween_property(_speech, "outline_modulate:a", 0.0, 0.6)
+	_speech_tween.tween_callback(func(): _speech.visible = false)
+
+
+## A little reaction: "hop", "proud" (three hops), "frustrated" (a slump), "tired"
+## (a slow sway), "confused" (a head turn), "shift" (roll over in their sleep),
+## "wave". While working, the hop loop owns the Mii's height, so hops become a
+## small bounce in scale instead.
+func emote(kind: String) -> void:
+	if _emote_tween:
+		_emote_tween.kill()
+	var s := MII_SCALE
+	_emote_tween = create_tween()
+	match kind:
+		"hop", "happy", "proud", "wave":
+			var hops := 3 if kind == "proud" else 1
+			for i in hops:
+				if _work_tween:
+					_emote_tween.tween_property(mii, "scale", Vector3(s * 1.08, s * 0.94, s * 1.08), 0.12)
+					_emote_tween.tween_property(mii, "scale", Vector3.ONE * s, 0.12)
+				else:
+					_emote_tween.tween_property(mii, "position:y", 0.4, 0.16).set_ease(Tween.EASE_OUT)
+					_emote_tween.tween_property(mii, "position:y", 0.0, 0.16).set_ease(Tween.EASE_IN)
+			if kind == "wave":
+				say("hi!", 1.5)
+		"frustrated":
+			_emote_tween.tween_property(mii, "scale:y", s * 0.9, 0.25)
+			_emote_tween.tween_interval(1.2)
+			_emote_tween.tween_property(mii, "scale:y", s, 0.3)
+		"tired":
+			for i in 2:
+				_emote_tween.tween_property(mii, "rotation:z", 0.08, 0.9).set_trans(Tween.TRANS_SINE)
+				_emote_tween.tween_property(mii, "rotation:z", -0.08, 0.9).set_trans(Tween.TRANS_SINE)
+			_emote_tween.tween_property(mii, "rotation:z", 0.0, 0.5)
+		"confused":
+			var start := _facing
+			_emote_tween.tween_property(self, "_facing", start + 0.6, 0.3)
+			_emote_tween.tween_property(self, "_facing", start - 0.6, 0.6)
+			_emote_tween.tween_property(self, "_facing", start, 0.3)
+		"shift":
+			_emote_tween.tween_property(self, "_facing", _facing + deg_to_rad(25), 1.5).set_trans(Tween.TRANS_SINE)
+		_:
+			_emote_tween.kill()
+			_emote_tween = null
+
+
+## Turn to face a point (used by island_life when two residents chat).
+func look_toward(point: Vector3) -> void:
+	_face_toward(point)
+
+
+## The server has plans for this resident: drop whatever ambient action they were
+## in. Anyone awaiting `arrived` gets it (deferred, so callers finish first).
+func stop_life() -> void:
+	if not life_busy and not is_walking:
+		return
+	life_busy = false
+	if _walk_tween:
+		_walk_tween.kill()
+		_walk_tween = null
+	if _emote_tween:
+		_emote_tween.kill()
+		_emote_tween = null
+	mii.position.y = 0.0
+	mii.scale = Vector3.ONE * MII_SCALE
+	mii.rotation.z = 0.0
+	if is_walking:
+		is_walking = false
+		mii.play("idle")
+		arrived.emit.call_deferred()
 
 
 ## Jump straight to a spot (no walk), for a fresh snapshot.

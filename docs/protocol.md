@@ -49,6 +49,9 @@ The client should rebuild its view from scratch when it gets one.
       "plants": null,
       "season": "summer"
     },
+    "server_time": "2026-10-16T09:41:03+00:00",
+    "weather": "sunny",
+    "mock_agents": true,
     "buildings": [
       {"id": "mailbox", "type": "mailbox", "name": "Mailbox", "x": 3, "y": 2, "facing": 0, "resident": "jun"}
     ],
@@ -63,12 +66,13 @@ The client should rebuild its view from scratch when it gets one.
         "bluntness": 0.3, "caution": 0.7, "chattiness": 0.6, "creativity": 0.5,
         "keys": {"read": "yes", "edit": "ask", "execute": "ask", "fetch": "no"},
         "gifts": [],
-        "appearance": {"skin": "#F2C6A0", "hair": 12, "hair_color": "#3B2418", "eyes": 3, "brows": 1, "nose": 0, "mouth": 2},
-        "state": "idle", "building": "mailbox", "mood": "happy", "notebook": null
+        "state": "idle", "building": "mailbox", "mood": "happy", "notebook": null,
+        "activity": "Reading auth.py",
+        "appearance": {"skin": "#F2C6A0", "hair": 12, "hair_color": "#3B2418", "eyes": 3, "brows": 1, "nose": 0, "mouth": 2}
       }
     ],
     "bubbles": [
-      {"id": "b_3f2a", "agent": "carlos", "kind": "confused", "text": "Which test file?"}
+      {"id": "b_3f2a", "agent": "carlos", "kind": "confused", "text": "Which test file?", "asked_at": "2026-10-16T09:39:12+00:00"}
     ],
     "tasks": [
       {"id": "t_12", "title": "Fix login typo", "status": "in_progress", "building": "lab", "agent": "carlos", "pr_url": null, "issue": 42}
@@ -96,6 +100,10 @@ The client should rebuild its view from scratch when it gets one.
   asking.
 - `created_at`: when the island was founded (ISO-8601 UTC). The game counts
   days from it ("Day 1" is the founding day, in the player's local time).
+  `server_time`: the server's clock when the snapshot was made, for the same sum.
+- `weather`: `sunny | cloudy | rainy | night`, the island's mood read off its
+  recent work (see the `weather` event). `mock_agents`: `true` while every
+  resident runs on the free mock brain (worth a small badge).
 - `map`: how the island looks: land, pond, plants, season (see "Island map" below).
 - `buildings[].x / y`: the top-left tile of the building's 3×3-tile lot.
   `facing`: where its door looks: `0` south (toward the camera), `1` east,
@@ -113,7 +121,7 @@ The client should rebuild its view from scratch when it gets one.
   or `no`. The ACP runner honours them: `yes` answers the agent's own
   "allow once" option, `ask` shows a ✋ bubble, `no` rejects.
 - `residents[].gifts`: ids of extra MCP servers (`browser`, `github`, `docs`,
-  `database`, `terminal`) the resident brings to every ACP session (the `GIFTS`
+  `database`, `terminal`, `godot`, `video`) the resident brings to every ACP session (the `GIFTS`
   table in `backend/mii/agents/acp.py`). `GET /gifts` says which ones work on
   this machine. The `openrouter` brain has no MCP client, so it ignores them.
 - `residents[].appearance`: how the resident's Mii looks. Only the game reads it
@@ -124,7 +132,13 @@ The client should rebuild its view from scratch when it gets one.
   object of at most 24 short keys with numbers, booleans, or short strings.
 - `residents[].notebook`: how full the agent's context window is, 0.0-1.0, or
   `null` until the agent reports it (see the `notebook` event).
-- `bubbles`: bubbles still waiting for an answer.
+- `residents[].activity`: the last `activity` line the resident reported (`""`
+  if none yet), so a client that connects mid-task shows it right away.
+- `residents[].appearance`: cosmetics from the resident creator (face, hair,
+  hat...). The backend stores and echoes the object untouched; the game owns
+  its meaning (docs/mii-customization.md). `{}` until set.
+- `bubbles`: bubbles still waiting for an answer. `asked_at` (ISO-8601 UTC) is
+  when each one appeared, for "2m ago" after a reconnect.
 - `tasks[].status`: `queued`, `in_progress`, `done`, `failed`, or `cancelled`.
 - `friendships`: the friendship meter, one entry per pair of residents who have
   handed packages to each other (`a` < `b` by id). `handoffs` counts them,
@@ -200,7 +214,10 @@ A resident's mood changed.
 ```json
 {"type": "mood", "agent": "sydney", "mood": "proud"}
 ```
-`mood`: `happy | focused | confused | frustrated | tired | proud`.
+`mood`: `happy | focused | confused | frustrated | tired | proud`. The list may grow;
+show an unknown mood neutrally. (With a TypeSafe key saved, the backend's judge reads the
+mood off what the resident just did; otherwise simple rules pick it. The game adds a few
+"vibes" of its own on top, such as sleepy or bored, from the snapshot alone.)
 
 | mood         | suggested emoji |
 |--------------|-----------------|
@@ -274,15 +291,44 @@ shapes are the snapshot's.
  "roads": [{"from": "mailbox", "to": "workshop", "condition": "always"}]}
 ```
 
-### `error`
-The server couldn't handle something the client sent.
+### `island`
+The island's header changed (renamed, a repo linked, branch or house rules
+edited, by any client). Same fields as the top of the snapshot: replace them.
 ```json
-{"type": "error", "message": "unknown bubble id: b_nope"}
+{"type": "island", "island": {"id": "sunny", "name": "Sunnier Isle", "repo": "me/sunny", "path": "/home/you/Documents/Mii-nagement/sunny", "branch": "main", "plan": "classic", "rules": {"merge_pr": true, "install_packages": true, "shell": false}, "created_at": "2026-10-04T09:12:00+00:00"}}
+```
+
+### `chat`
+One resident said something to another: a request for help, the helper's reply, or a
+note left with a `SAY TO <Name>:` line. Show a speech bubble over `from`; there is
+nothing to answer. Residents see what was said to them on their next step of that task.
+```json
+{"type": "chat", "from": "carlos", "to": "jun", "task": "t_12", "text": "I'm stuck at the Lab on 'Fix login typo'. Can you take a look?"}
+```
+
+### `weather`
+The island's weather changed. `sunny` when the last few steps mostly passed (or
+nothing has happened yet), `cloudy` when about half failed, `rainy` when most
+failed, `night` while every resident is asleep. Sent after a step or a
+sleep/wake changes it, never more often than it changes.
+```json
+{"type": "weather", "weather": "rainy"}
+```
+
+### `error`
+The server couldn't handle something the client sent. If the message carried a
+`request_id`, the error carries it back, so the client knows which command failed.
+```json
+{"type": "error", "message": "unknown bubble id: b_nope", "request_id": "r_17"}
 ```
 
 ---
 
 ## Client → server
+
+Any message may carry a `request_id` (a string of the client's choosing). The
+server never uses it except to echo it on an `error` reply. Success shows up as
+the broadcast event the command produces.
 
 ### `answer_bubble`
 You answered a bubble. The server sends the answer to the waiting resident, then
@@ -390,6 +436,16 @@ Build mode: replace the island's buildings and roads. Send the whole layout.
   change applies to the next package (a running one keeps its graph).
   Same thing over HTTP: `PUT /islands/{id}/layout` with `{"buildings", "roads"}`.
 
+### `update_island`
+Rename the island, link (or change) its GitHub repo, or edit its branch or house
+rules after founding. Only the fields sent change. Linking a repo also points
+the island repository's `origin` at it, so the post office can push.
+```json
+{"type": "update_island", "island": {"name": "Sunnier Isle", "repo": "me/sunny", "rules": {"shell": true}}}
+```
+The server replies with `error` (bad name or repo, nothing to change), or an
+`island` event to every client. Same thing over HTTP: `PATCH /islands/{id}`.
+
 ---
 
 ## Island map
@@ -453,6 +509,12 @@ For each building the package visits:
    waits for `answer_bubble` or a timeout, then `bubble_resolved`). A step that
    runs past the step timeout is stopped and counts as `fail`.
 5. `mood`
+5b. A free neighbour may take a visit instead of the building's owner, at most twice per
+   task: when the package keeps coming back to a work building after a failed check (the
+   owner retries once first; the judge decides from the third visit), or right away when a
+   failing reply had a `HELP:` line. Then: `chat` (owner → helper), `handoff` to the helper,
+   their `move` / `agent_state`, `activity` and `bubble`s, `chat` back (helper → owner),
+   `mood`. The helper carries the package on, so the next handoff comes from them.
 6. The step finishes with an outcome (`pass` or `fail`), and the engine picks the
    next road:
    - a road whose `condition` matches the outcome wins;

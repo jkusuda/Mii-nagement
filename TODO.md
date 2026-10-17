@@ -59,6 +59,12 @@ Backend design: [docs/architecture.md](docs/architecture.md).
 - [x] **Game: send a package** (POST /islands/{id}/tasks): title + details, or a GitHub issue number.
 - [x] **Game: click a building**: the camera glides to it and a panel opens (Mailbox: open issues +
       send a new one; other buildings: packages at that stage, residents there and their activity).
+- [x] **Island after founding**: `PATCH /islands/{id}` / `update_island` (rename, link a repo, branch,
+      rules) + the `island` event; `GET /islands/{id}/issues` to start a task from a GitHub issue;
+      `GET /meta` so the game stops hard-coding backend lists; `weather` in the snapshot and as an
+      event; `activity`, `appearance` and bubble `asked_at` in the snapshot; `request_id` on errors.
+- [ ] **Game: use them**: island settings (rename / link repo), issue picker in the Mailbox, read
+      `/meta` instead of `ResidentData` constants, show the backend `weather`, send `appearance`.
 - [ ] **Build mode**: place the 5 building types and draw pass/fail roads.
       Backend done: `set_layout` / `PUT /islands/{id}/layout` + the `layout` event (protocol.md).
       The game still needs the editing UI.
@@ -80,6 +86,16 @@ Backend design: [docs/architecture.md](docs/architecture.md).
 - [x] Approve & merge: the Courthouse asks (`merge_pr` rule), the Post Office merges via `gh`
 - [x] ACP residents ask questions (`QUESTION:` line -> ❓ bubble -> answer in the same session)
 - [ ] Several packages at once on one island
+- [x] The judge (`judge.py`): moods, missing verdicts, flaky Lab re-runs, Insights tip, who helps.
+      Rules by default; TypeSafe Jev with a `typesafe_api_key` (mock mode too)
+- [x] Residents help each other: `HELP:` → a free neighbour walks over and does the step; `SAY TO <Name>:`
+      notes; `REMEMBER:` diary; `chat` events. Game: speech lines, mood words on the island
+- [x] Island life (game only): idle residents stroll, visit friends and chat, gaze at the pond, mutter, wave,
+      hop on `proud`, slump on `frustrated`; vibes (sleepy, bored, lonely, excited, relaxed) read off the snapshot
+- [ ] A free backend "social ticker" so every client and News see the same ambient chats
+- [ ] Two accounts on one island (see architecture.md "Two people, one island"); LAN co-pilot works today
+- [x] Gifts for animation and video work: `godot` (godot-mcp-runtime, needs `GODOT_PATH`), `video` (ffmpeg-mcp);
+      project skills `.claude/skills/godot-animation`, `demo-video`
 - [x] Friendship meter between residents who hand off to each other (`Friendship` table,
       `friendships` in the snapshot, `friendship` event; resident cards show the best friend)
 - [x] Cancel a task (`cancel_task` / `POST .../cancel`), create one over the socket

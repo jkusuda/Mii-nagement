@@ -14,6 +14,7 @@ from mii import events, islands, prefs, seed
 from mii.agents import make_runner
 from mii.config import config
 from mii.engine import WorkflowEngine
+from mii.judge import JevJudge, RuleJudge
 from mii.models import Island
 from mii.sandbox import Sandboxes
 
@@ -28,8 +29,9 @@ class Runtime:
         self.sandboxes = None
         self.bus = events.EventBus()
         self.bubbles = events.Bubbles(self.bus)
+        self.judge = RuleJudge()  # reload() swaps in JevJudge when a TypeSafe key is saved
         self.workflow = WorkflowEngine(
-            self.bus, self.bubbles, make_runner(True), sandboxes=None,
+            self.bus, self.bubbles, make_runner(True), sandboxes=None, judge=self.judge,
             walk_seconds=config.walk_seconds, bubble_timeout=config.bubble_timeout,
             permission_timeout=config.permission_timeout, sleep_after=config.sleep_after,
             step_timeout=config.step_timeout, git_author=config.git_author,
@@ -60,6 +62,13 @@ class Runtime:
         )
         self.workflow.test_command = settings["test_command"]
         self.workflow.keep_worktrees = settings["keep_worktrees"]
+        # The judge (moods, missing verdicts, flaky re-runs, tips, help): Jev whenever a key is set
+        # (mock mode too, the calls cost a fraction of a cent), unless the `judge` setting is "off".
+        key = await sync_to_async(prefs.secret)("typesafe_api_key")
+        if isinstance(self.judge, JevJudge):
+            await self.judge.aclose()
+        self.judge = JevJudge(key) if key and str(settings.get("judge") or "auto").lower() != "off" else RuleJudge()
+        self.workflow.judge = self.judge
         return snap
 
     @staticmethod

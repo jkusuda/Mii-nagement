@@ -14,6 +14,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 
 from mii import github
+from mii.judge import RuleJudge
 from mii.models import Building, Event, Resident, Step, Task, utcnow
 
 log = logging.getLogger(__name__)
@@ -23,7 +24,7 @@ MAX_PR_CHECKS = 10  # how many open PRs we ask `gh` about per request
 REJECT_PATTERN = re.compile(r"^\s*(reject|deny|no|don't|do not|never)\b", re.IGNORECASE)
 
 
-async def island_insights(island_id: str, range_name: str = "week") -> dict:
+async def island_insights(island_id: str, range_name: str = "week", judge=None) -> dict:
     """The full insights payload. Each section is filled in by one helper below."""
     days = RANGES[range_name]
     today = datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -58,7 +59,10 @@ async def island_insights(island_id: str, range_name: str = "week") -> dict:
         "brains": by_brain(steps),
         "buildings": by_building(steps),
     }
-    payload["tip"] = tip(payload, bubbles, names, range_name)
+    payload["tip"] = await (judge or RuleJudge()).tip(
+        {**payload["island"], "buildings": payload["buildings"], "residents": payload["residents"]},
+        tip_candidates(payload, bubbles, names, range_name),
+    )
     return payload
 
 
@@ -98,12 +102,16 @@ def per_day(tasks: list[Task], start: datetime, days: int) -> list[dict]:
 
 
 def lab_stats(steps: list[Step]) -> dict:
-    """Test runs at the Lab: pass rate, and "flaky" = tasks whose tests failed once and then passed."""
+    """Test runs at the Lab: pass rate, and "flaky" = tasks whose tests failed once and then passed
+    (including the Lab's own re-run when the judge called a failure flaky: Step.flaky)."""
     runs = [s for s in steps if s.building_type == "lab" and s.outcome]
-    by_task: dict[str, list[str]] = defaultdict(list)
+    by_task: dict[str, list[Step]] = defaultdict(list)
     for s in runs:
-        by_task[s.task_id].append(s.outcome)
-    flaky = sum("fail" in outcomes and outcomes[-1] == "pass" for outcomes in by_task.values())
+        by_task[s.task_id].append(s)
+    flaky = sum(
+        any(s.flaky for s in visits) or ("fail" in [s.outcome for s in visits] and visits[-1].outcome == "pass")
+        for visits in by_task.values()
+    )
     return {"tests_pass_rate": _rate(runs, "pass") if runs else None, "flaky_tests": flaky}
 
 
@@ -145,28 +153,30 @@ async def _refresh_merges(tasks: list[Task]) -> None:
             await Task.objects.filter(pk=task.id).aupdate(merged_at=task.merged_at)
 
 
-def tip(payload: dict, bubbles: dict, names: dict[str, str], range_name: str) -> str:
-    """One friendly suggestion, from the first rule that applies."""
+def tip_candidates(payload: dict, bubbles: dict, names: dict[str, str], range_name: str) -> dict[str, str]:
+    """Every friendly suggestion that applies, best rule first (the judge picks one; the rules take the first)."""
     island, when = payload["island"], {"today": "today", "week": "this week", "month": "this month"}[range_name]
     total = island["tasks_done"] + island["tasks_failed"]
     if total == 0:
-        return f"No packages {when} yet. Drop a task in the Mailbox to get things moving."
+        return {"quiet": f"No packages {when} yet. Drop a task in the Mailbox to get things moving."}
+    tips: dict[str, str] = {}
     bouncy = [b for b in payload["buildings"] if b["visits"] >= 2 and b["fail_rate"] >= 0.5]
     if bouncy:
         worst = max(bouncy, key=lambda b: b["fail_rate"])
-        return f"The {names.get(worst['building'], worst['building'])} sends most packages back. Worth a look at what it's asking for."
+        tips["bouncy"] = f"The {names.get(worst['building'], worst['building'])} sends most packages back. Worth a look at what it's asking for."
     unanswered = bubbles["shown"] - bubbles["answered"]
     if bubbles["shown"] >= 2 and unanswered / bubbles["shown"] > 0.5:
-        return f"{unanswered} bubbles went unanswered {when}. Check the Bubbles sidebar more often, or lend more house keys."
+        tips["unanswered"] = f"{unanswered} bubbles went unanswered {when}. Check the Bubbles sidebar more often, or lend more house keys."
     chatty = max(payload["residents"], key=lambda r: r["bubbles"], default=None)
     if chatty and chatty["bubbles"] >= 3:
-        return f"{names.get(chatty['resident'], chatty['resident'])} keeps asking ({chatty['bubbles']} bubbles). Clearer task descriptions or more house keys would help."
+        tips["chatty"] = f"{names.get(chatty['resident'], chatty['resident'])} keeps asking ({chatty['bubbles']} bubbles). Clearer task descriptions or more house keys would help."
     rate = island["tests_pass_rate"]
     if rate is not None and rate < 0.7 and sum(b["visits"] for b in payload["buildings"] if b["type"] == "lab") >= 3:
-        return f"The Lab fails {round((1 - rate) * 100)}% of its runs. A more careful coder might help."
+        tips["lab"] = f"The Lab fails {round((1 - rate) * 100)}% of its runs. A more careful coder might help."
     if island["tasks_done"] > island["tasks_done_before"]:
-        return f"{island['tasks_done']} packages delivered {when}, up from {island['tasks_done_before']}. The island is humming."
-    return f"A steady stretch {when}. Nothing needs fixing right now."
+        tips["humming"] = f"{island['tasks_done']} packages delivered {when}, up from {island['tasks_done_before']}. The island is humming."
+    tips["steady"] = f"A steady stretch {when}. Nothing needs fixing right now."
+    return tips
 
 
 def by_resident(steps: list[Step]) -> list[dict]:

@@ -82,6 +82,13 @@ func _story_for(e: Dictionary) -> Dictionary:
 				"permission": return _make(who, "%s needs a key: %s" % [_name(who), e.get("text", "")], "Permission", Color("D6457A"), "residents")
 				"ready": return _make(who, "%s finished something to look at%s." % [_name(who), place], "Ready", Color("009D85"), "residents")
 				"tired": return _make(who, "%s is worn out%s." % [_name(who), place], "Tired", Color("C57722"), "residents")
+		"chat":
+			var speaker := _name(str(e.get("from", "")))
+			var listener := _name(str(e.get("to", "")))
+			var line := str(e.get("text", ""))
+			if line.length() > 70:
+				line = line.substr(0, 67) + "…"
+			return _make(str(e.get("from", "")), "%s to %s: “%s”" % [speaker, listener, line], "Chat", Color("3E7FCB"), "residents")
 		"mood":
 			if e.get("mood") == "proud":
 				return _make(who, "%s is feeling proud." % _name(who), "Proud", Color("009D85"), "residents")

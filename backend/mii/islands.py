@@ -632,6 +632,47 @@ def _first_commit(path: Path, name: str) -> None:
     _git(path, "-c", "user.name=Mii-nagement", "-c", "user.email=mii@localhost", "commit", "-q", "-m", "New island")
 
 
+def update_island(island_id: str, data: dict) -> Island:
+    """Rename an island, or link / change its GitHub repo, branch, or house rules (PATCH /islands/{id},
+    `update_island`). Only the fields sent change. Sync (git): async callers use asyncio.to_thread.
+
+    Linking a repo also points the repository's `origin` at it, so the post office can push.
+    Raises Island.DoesNotExist or IslandError.
+    """
+    island = Island.objects.get(pk=island_id)
+    changes: list[str] = []
+    if "name" in data:
+        name = str(data.get("name") or "").strip()
+        if not 1 <= len(name) <= MAX_NAME:
+            raise IslandError(f"name must be 1-{MAX_NAME} characters")
+        island.name, changes = name, changes + ["name"]
+    if "repo" in data:
+        repo = str(data.get("repo") or "").strip() or None
+        if repo and not REPO.match(repo):
+            raise IslandError(f"repo must look like owner/name, got {repo}")
+        island.repo, changes = repo, changes + ["repo"]
+    if "branch" in data:
+        branch = str(data.get("branch") or "main").strip() or "main"
+        path = Path(island.repo_path) if island.repo_path else None
+        if path and (path / ".git").is_dir() and not (
+            _ok(path, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}")
+            or _ok(path, "rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{branch}")
+        ):
+            raise IslandError(f"{path} has no branch {branch}")
+        island.branch, changes = branch, changes + ["branch"]
+    if "rules" in data:
+        rules = data.get("rules")
+        if not isinstance(rules, dict) or any(k not in RULES or not isinstance(v, bool) for k, v in rules.items()):
+            raise IslandError(f"rules must map {list(RULES)} to true/false")
+        island.rules, changes = {**island.rules, **rules}, changes + ["rules"]
+    if not changes:
+        raise IslandError("nothing to change: send name, repo, branch, or rules")
+    if island.repo and "repo" in changes and island.repo_path and (Path(island.repo_path) / ".git").is_dir():
+        link_remote(Path(island.repo_path), island.repo)
+    island.save(update_fields=changes)
+    return island
+
+
 def ensure_repo(island: Island) -> Island:
     """Give an island without a repository one, in the default folder. Sync."""
     if island.repo_path and (Path(island.repo_path) / ".git").is_dir():

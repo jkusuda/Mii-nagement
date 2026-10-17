@@ -1,6 +1,7 @@
 """HTTP endpoints (plain async Django views, JSON in / JSON out):
 
     GET  /health                       is the server up? which mode?
+    GET  /meta                         the vocabulary the game would otherwise hard-code (jobs, traits, brains, ...)
     GET  /brains                       {brain: true/false} (what the game's creator greys out)
     GET  /brains/detail                per brain: installed, logged_in, api_key, hint
     GET  /gifts                        per gift (MCP server): ok, label, hint (what the creator greys out)
@@ -11,6 +12,8 @@
     GET  /github/repos?q=              the user's repos (via gh), for the island creator
     GET  /github/branches?repo=        a repo's branches (via gh)
     GET  /islands/{id}                 the island snapshot
+    PATCH /islands/{id}                rename, link a repo, change branch / rules {"name"?, "repo"?, "branch"?, "rules"?}
+    GET  /islands/{id}/issues          the linked repo's open GitHub issues (via gh), to start a task from one
     GET  /islands/{id}/tasks           the island's tasks with their steps (?status=done,failed&limit=50)
     POST /islands/{id}/tasks           {"title": "...", "description": "..."} or {"issue": 42} -> runs through the island
     GET  /islands/{id}/tasks/{task}    one task: steps (what each resident reported) + the events while it ran
@@ -32,11 +35,13 @@ from django.views.decorators.http import require_GET, require_POST
 
 from asgiref.sync import sync_to_async
 
-from mii import events, github, islands, layout, prefs, residents, tasks
-from mii.agents.acp import available_brains, available_gifts
+from mii import events, github, islands, judge, layout, prefs, residents, tasks, weather
+from mii.agents.acp import BRAINS, GIFTS, available_brains, available_gifts
 from mii.agents.openrouter import list_models
+from mii.engine import BUBBLE_MOODS, HANDLERS
 from mii.insights import RANGES, island_insights
-from mii.models import Event, Island, Step, Task, island_snapshot, step_to_dict, task_detail_dict, task_to_dict
+from mii.models import DEFAULT_KEYS, Event, Island, Step, Task, island_snapshot, step_to_dict, task_detail_dict, task_to_dict
+from mii.personality import JOBS, TRAITS
 from mii.replay import ReplayError, replay_task
 from mii.runtime import get_runtime
 
@@ -51,12 +56,40 @@ async def _island_or_none(island_id: str) -> Island | None:
 
 @require_GET
 async def health(request: HttpRequest) -> JsonResponse:
-    return JsonResponse({"ok": True, "mock_agents": get_runtime().mock_agents})
+    runtime = get_runtime()
+    return JsonResponse({"ok": True, "mock_agents": runtime.mock_agents, "judge": runtime.judge.name})
 
 
 def _brains() -> dict[str, dict]:
     """available_brains() with the API keys saved in Settings (keychain reads: run in a thread)."""
     return available_brains(prefs.secret("openrouter_api_key"), prefs.secrets_env())
+
+
+@require_GET
+async def meta(request: HttpRequest) -> JsonResponse:
+    """Every list the game shows pickers for, so it never has to repeat backend vocabulary.
+
+    Static: it comes from the tables in personality.py, acp.py, islands.py, residents.py
+    and engine.py. The game keeps its own copies as an offline fallback.
+    """
+    return JsonResponse({
+        "jobs": list(JOBS),
+        "job_buildings": residents.JOB_BUILDINGS,
+        "traits": {name: {"low": low, "medium": medium, "high": high} for name, (low, medium, high) in TRAITS.items()},
+        "brains": ["mock", *BRAINS, "openrouter"],
+        "gifts": {gift: spec["label"] for gift, spec in GIFTS.items()},
+        "keys": {"names": list(DEFAULT_KEYS), "values": list(residents.KEY_VALUES), "defaults": DEFAULT_KEYS},
+        "building_types": list(HANDLERS),
+        "road_conditions": list(layout.CONDITIONS),
+        "plans": {plan: {"steps": list(steps)} for plan, steps in islands.PLANS.items()},
+        "shapes": list(islands.SHAPES),
+        "rules": list(islands.RULES),
+        "bubble_kinds": list(BUBBLE_MOODS),
+        "moods": list(judge.MOODS),
+        "states": ["idle", "walking", "working", "sleeping"],
+        "task_statuses": ["queued", "in_progress", "done", "failed", "cancelled"],
+        "weather": list(weather.KINDS),
+    })
 
 
 @require_GET
@@ -132,7 +165,8 @@ async def github_branches(request: HttpRequest) -> JsonResponse:
 
 @csrf_exempt
 async def island_view(request: HttpRequest, island_id: str) -> JsonResponse:
-    """GET: the island snapshot. DELETE: abandon the island (its git repository stays on disk)."""
+    """GET: the island snapshot. PATCH: rename / link a repo / change branch or rules.
+    DELETE: abandon the island (its git repository stays on disk)."""
     if request.method == "DELETE":
         try:
             kept = await islands.delete_island(island_id)
@@ -141,13 +175,49 @@ async def island_view(request: HttpRequest, island_id: str) -> JsonResponse:
         except islands.IslandError as e:
             return _error(str(e), 409)
         return JsonResponse({"deleted": island_id, "repo_kept": kept})
+    if request.method == "PATCH":
+        try:
+            body = json.loads(request.body or b"{}")
+        except json.JSONDecodeError:
+            return _error("body is not valid JSON", 400)
+        if not isinstance(body, dict):
+            return _error("body must be a JSON object", 400)
+        try:
+            island = await asyncio.to_thread(islands.update_island, island_id, body)
+        except Island.DoesNotExist:
+            return _error(f"no island {island_id!r}", 404)
+        except islands.IslandError as e:
+            return _error(str(e), 400)
+        event = events.island(island)
+        await get_runtime().bus.emit(island_id, event)  # every client redraws the top bar
+        return JsonResponse(event["island"])
     if request.method != "GET":
-        return _error("GET or DELETE", 405)
+        return _error("GET, PATCH or DELETE", 405)
+    runtime = get_runtime()
     try:
-        snapshot = await island_snapshot(island_id, get_runtime().bubbles.for_island(island_id))
+        snapshot = await island_snapshot(island_id, runtime.bubbles.for_island(island_id))
     except Island.DoesNotExist:
         return _error(f"no island {island_id!r}", 404)
+    snapshot["mock_agents"] = runtime.mock_agents
     return JsonResponse(snapshot)
+
+
+@require_GET
+async def island_issues(request: HttpRequest, island_id: str) -> JsonResponse:
+    """Open issues on the island's GitHub repo, newest first, so a task can start from one."""
+    island = await _island_or_none(island_id)
+    if island is None:
+        return _error(f"no island {island_id!r}", 404)
+    if not island.repo:
+        return _error("this island has no GitHub repo (link one with PATCH /islands/{id})", 400)
+    try:
+        limit = min(max(1, int(request.GET.get("limit", "50"))), 200)
+    except ValueError:
+        return _error("limit must be a number", 400)
+    try:
+        return JsonResponse({"issues": await asyncio.to_thread(github.list_issues, island.repo, limit)})
+    except github.GitHubError as e:
+        return _error(str(e), 503)
 
 
 @csrf_exempt
@@ -262,7 +332,7 @@ async def get_insights(request: HttpRequest, island_id: str) -> JsonResponse:
     range_name = request.GET.get("range", "week")
     if range_name not in RANGES:
         return _error(f"range must be one of {list(RANGES)}", 400)
-    return JsonResponse(await island_insights(island_id, range_name))
+    return JsonResponse(await island_insights(island_id, range_name, get_runtime().judge))
 
 
 @require_GET
