@@ -35,6 +35,10 @@ func _init() -> void:
 	_details.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
 	_details.add_theme_stylebox_override("normal", THEME.get_stylebox("normal", "LineEdit"))
 	_details.add_theme_stylebox_override("focus", THEME.get_stylebox("focus", "LineEdit"))
+	# TextEdit has no colors in theme.tres, so Godot's light default would show
+	# on white. Take the title field's ink and caret so both inputs match.
+	_details.add_theme_color_override("font_color", THEME.get_color("font_color", "LineEdit"))
+	_details.add_theme_color_override("caret_color", THEME.get_color("caret_color", "LineEdit"))
 	add_child(_field("Details", _details))
 
 	_issue.placeholder_text = "e.g. 42"
