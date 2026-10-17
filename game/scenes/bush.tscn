@@ -1,0 +1,14 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scenes/swaying_plant.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://assets/models/bush.glb" id="2_model"]
+
+[node name="Bush" type="Node3D"]
+script = ExtResource("1_script")
+sway_degrees = 1.5
+sway_period = 2.8
+
+[node name="Sway" type="Node3D" parent="."]
+
+[node name="Model" parent="Sway" instance=ExtResource("2_model")]
+position = Vector3(0, 0.45, 0)

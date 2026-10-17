@@ -61,6 +61,11 @@ game/
                        Net.island (kept live by net.gd); day/weather are still placeholders.
   scenes/island_3d.tscn  3D world (models, sun, water); rendered inside game.tscn's SubViewport
   scenes/camera_rig.gd   zoom (wheel/trackpad/buttons) + drag-to-pan
+  scenes/apple_tree.tscn, bush.tscn  plants (origin at their base), instanced under Trees/Bushes in
+                       island_3d.tscn; both use swaying_plant.gd. Bushes cover the patches left where
+                       the trees baked into base_island.glb were removed: keep those spots covered
+                       (even under buildings, which are hidden on islands that lack them). New
+                       island decorations also go in SeaView.ISLAND_PARTS (scenes/sea/sea_view.gd)
   scenes/residents/    Residents tab (residents_screen, resident_card), resident_creator,
                        resident_data (jobs/brains/keys/gifts lists + mock residents)
   scenes/home/         Archipelago home screen (3D sea, plates, Waiting on you), island_plate,
@@ -77,6 +82,11 @@ game/
                        bubble_card (with reply box), answer_button, dashed_button
   ui/theme.tres        every color, font weight, and pill/button style (theme type variations)
   shaders/water.gdshader stylized water
+  shaders/pond.gdshader  additive shimmer + ripple rings over the pond painted into the island model
+  assets/models/materials/  building + island materials (used via each .glb.import). Mipmaps are
+                       OFF on purpose: the AI texture atlases pack islands edge to edge, so mipmaps
+                       bleed neighbouring texels along UV seams (white streaks on roofs/dock, blue
+                       streaks on grass)
   assets/icons/        Lucide icons (ISC license), recolored white so modulate can tint them
   assets/font/         DreamLife (single weight; heavier weights are FontVariation embolden)
   assets/ui/           nav button illustrations
