@@ -59,7 +59,6 @@ class AgentJob:
     read_only: bool = False  # True at buildings where the resident must not change files
     rules: dict = field(default_factory=dict)  # the island's house rules (see permission_for)
     notebook: NotebookFn | None = None  # how full the agent's context window is (ACP usage updates)
-    struggled: bool = False  # a 💦 bubble was raised during this step (the judge reads it)
     messages: list[str] = field(default_factory=list)  # "Jun: ..." notes neighbours left for this resident on this task
     notes: str = ""  # the resident's diary (Resident.notes), what they chose to remember from earlier tasks
     neighbours: list[str] = field(default_factory=list)  # "Jun (planner)", so SAY TO has names to use

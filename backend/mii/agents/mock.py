@@ -11,7 +11,7 @@ class MockRunner:
 
     # Chance of failing on the first visit, by building type. It halves on each
     # retry, so packages don't bounce forever.
-    FAIL_CHANCE = {"lab": 0.4, "courthouse": 0.3}
+    FAIL_CHANCE = {"workshop": 0.15, "lab": 0.4, "courthouse": 0.3}  # a Workshop fail may come with a HELP line
 
     ACTIVITY = {
         "mailbox": "Reading the request",

@@ -14,7 +14,7 @@ are the safety story; a probability is not). It decides flavour and small calls:
     verdict      pass or fail when an agent forgot its VERDICT line
     flaky        does a Lab failure look flaky, so the tests get one more run
     tip          which Insights tip fits the numbers
-    needs_help   is a resident stuck enough that a neighbour should come over
+    needs_help   is a package bouncing back enough that a neighbour should take the next turn
     pick_helper  which free neighbour should come
 
 A `typesafe_api_key` secret (TYPESAFE_API_KEY) switches JevJudge on; the `judge`
@@ -94,9 +94,10 @@ class RuleJudge:
         """The first candidate: insights.tip_candidates lists them in the old first-match order."""
         return next(iter(candidates.values()))
 
-    async def needs_help(self, job: AgentJob, result: StepResult) -> bool:
-        """Stuck = failed again at the same building, or failed after a 💦 bubble."""
-        return result.outcome == "fail" and (job.attempt >= 2 or job.struggled)
+    async def needs_help(self, building: Building, attempt: int, last_note: str) -> bool:
+        """A package is back at this building for the `attempt`-th time (`last_note`: what sent it
+        back). The owner gets one retry of their own; from the third visit a neighbour takes over."""
+        return attempt >= 3
 
     async def pick_helper(self, request: HelpRequest, candidates: list[Resident]) -> Resident | None:
         """Someone whose job fits the building; else the asker's best friend; else nobody."""
@@ -117,14 +118,16 @@ class JevJudge(RuleJudge):
 
     def __init__(self, api_key: str, http: httpx.AsyncClient | None = None):
         self.api_key = api_key
-        self.http = http  # tests inject a client with a MockTransport
+        self.http = http or httpx.AsyncClient(timeout=TIMEOUT)  # one connection, reused (tests inject a MockTransport)
         self._warned = False
+
+    async def aclose(self) -> None:
+        await self.http.aclose()
 
     async def _ask(self, state: dict, questions: dict) -> dict | None:
         """POST one state + questions. Returns the `answers` dict, or None when Jev can't be used."""
-        http = self.http or httpx.AsyncClient(timeout=TIMEOUT)
         try:
-            response = await http.post(
+            response = await self.http.post(
                 API_URL, json={"model": MODEL, "state": state, "questions": questions},
                 headers={"Authorization": f"Bearer {self.api_key}"},
             )
@@ -141,9 +144,6 @@ class JevJudge(RuleJudge):
             else:
                 log.debug("Jev call failed: %s", e)
             return None
-        finally:
-            if self.http is None:
-                await http.aclose()
 
     async def mood(self, resident, building, result, attempt, timed_out, bubbles_raised):
         state = {
@@ -182,14 +182,13 @@ class JevJudge(RuleJudge):
         choice = _choice_of(await self._ask({"stats": stats}, {"tip": question}), "tip")
         return candidates[choice] if choice in candidates else await super().tip(stats, candidates)
 
-    async def needs_help(self, job, result):
-        if result.outcome != "fail":
-            return False
-        state = {"instructions": _tail(job.instructions), "reply": _tail(result.summary),
-                 "attempt": job.attempt, "struggled": job.struggled}
-        question = _noul("Would a teammate coming over to help likely get this unblocked?")
+    async def needs_help(self, building, attempt, last_note):
+        state = {"building": {"name": building.name, "type": building.type}, "visit": attempt,
+                 "what_sent_it_back": _tail(last_note)}
+        question = _noul("The same resident has failed to get this package past the next check; would a "
+                         "different teammate taking this turn likely get it unblocked?")
         value = _noul_of(await self._ask(state, {"help": question}), "help")
-        return value >= HELP_AT if value is not None else await super().needs_help(job, result)
+        return value >= HELP_AT if value is not None else await super().needs_help(building, attempt, last_note)
 
     async def pick_helper(self, request, candidates):
         if not candidates:

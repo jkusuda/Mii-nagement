@@ -100,11 +100,9 @@ def weather(kind: str) -> dict:
     return {"type": "weather", "weather": kind}
 
 
-def error(message: str, request_id: str | None = None) -> dict:
-    event = {"type": "error", "message": message}
-    if request_id is not None:
-        event["request_id"] = request_id
-    return event
+def error(message: str) -> dict:
+    """consumers.handle_message adds the client's `request_id`, when the message had one."""
+    return {"type": "error", "message": message}
 
 
 # --- Event bus -----------------------------------------------------------------

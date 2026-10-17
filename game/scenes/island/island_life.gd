@@ -155,7 +155,13 @@ func _still(walker: IslandResident) -> bool:
 ## Walk along the paths to a point. Returns false if the server interrupted us.
 func _go(walker: IslandResident, to: Vector3) -> bool:
 	var points: Array[Vector3] = IslandPaths.route(_residents.layout(), walker.global_position, to)
-	if points.is_empty():
+	# Already there? walk() would emit `arrived` before we could await it, and we'd wait forever.
+	var distance := 0.0
+	var last := walker.global_position
+	for p in points:
+		distance += last.distance_to(p)
+		last = p
+	if points.is_empty() or distance < 0.05:
 		return _still(walker)
 	walker.walk(points)
 	await walker.arrived

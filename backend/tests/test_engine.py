@@ -369,25 +369,28 @@ class LineRunner:
         return parse_verdict(planned.pop(0) if planned else "fine\nVERDICT: PASS")
 
 
-async def test_a_neighbour_helps_when_the_lab_keeps_failing(island):
+async def test_a_neighbour_takes_the_workshop_when_the_lab_keeps_failing(island):
     runner = ScriptedRunner(lab=["fail", "fail", "pass"])
     workflow, client = make_workflow(runner)
     task = await workflow.run_task((await workflow.submit("sunny", "Fix the thing")).id)
 
     assert task.status == "done"
-    # Second Lab fail: Carlos is stuck (attempt 2), Jun (his only friend so far) comes over and passes it.
-    assert runner.visited == ["mailbox", "workshop", "lab", "workshop", "lab", "lab", "courthouse", "post_office"]
-    assert runner.workers[4:6] == ["carlos", "jun"]
+    # Lab fails twice: Carlos gets one retry of his own, then Jun (his only friend so far) takes the
+    # third Workshop turn. The Lab itself is never "helped": its tests are the owner's call.
+    assert runner.visited == ["mailbox", "workshop", "lab", "workshop", "lab", "workshop", "lab", "courthouse", "post_office"]
+    assert runner.workers[3:6] == ["carlos", "carlos", "jun"]
     chats = [(e["from"], e["to"]) for e in client.of_type("chat")]
     assert chats == [("carlos", "jun"), ("jun", "carlos")]
-    assert "stuck at the Lab" in client.of_type("chat")[0]["text"]
+    assert "came back to the Workshop again" in client.of_type("chat")[0]["text"]
     steps = [s async for s in Step.objects.filter(task_id=task.id).order_by("id")]
-    assert steps[5].resident_id == "jun" and steps[5].helped == "carlos" and steps[5].building_type == "lab"
+    assert steps[5].resident_id == "jun" and steps[5].helped == "carlos" and steps[5].building_type == "workshop"
+    assert runner.jobs[5].instructions.startswith("Carlos asked for your help: The package came back")
+    assert "The package came back" not in "\n".join(runner.jobs[5].messages)  # not repeated under Messages
     assert ("carlos", "jun") in [(e["a"], e["b"]) for e in client.of_type("friendship")]
     jun_states = [(e["state"], e["building"]) for e in client.of_type("agent_state") if e["agent"] == "jun"]
-    assert ("working", "lab") in jun_states and jun_states[-3:] == [("walking", "post_office"), ("working", "post_office"), ("idle", "post_office")]
-    assert [(e["from"], e["to"]) for e in client.of_type("handoff")][-2:] == [("carlos", "sydney"), ("sydney", "jun")]
-    assert any("Jun helped Carlos" in job.history[-1] for job in runner.jobs if job.building.id == "courthouse")
+    assert ("working", "workshop") in jun_states and jun_states[-1] == ("idle", "post_office")
+    assert [(e["from"], e["to"]) for e in client.of_type("handoff")][-3:] == [("jun", "carlos"), ("carlos", "sydney"), ("sydney", "jun")]
+    assert any("Jun helped Carlos at the Workshop" in note for note in runner.jobs[-1].history)
 
 
 async def test_help_say_and_remember_lines(island):
@@ -396,7 +399,7 @@ async def test_help_say_and_remember_lines(island):
     task = await workflow.run_task((await workflow.submit("sunny", "Fix the thing")).id)
 
     assert task.status == "done"
-    # An explicit HELP line gets a visit on the first attempt. No other coder: Jun, the best friend, comes.
+    # An explicit HELP line gets a takeover of the same building right away. No other coder: Jun, the best friend, comes.
     visits = [(j.building.id, j.resident.id) for j in runner.jobs]
     assert visits[:3] == [("mailbox", "jun"), ("workshop", "carlos"), ("workshop", "jun")]
     helper_job = runner.jobs[2]
@@ -431,10 +434,10 @@ async def test_cancel_during_a_help_visit_sets_the_helper_idle(island):
     workflow, _ = make_workflow(ScriptedRunner(delay=0.3, lab=["fail", "fail", "fail"]))
     task = await workflow.submit("sunny", "Slow one")
     run = asyncio.create_task(workflow.run_task(task.id))
-    for _ in range(100):  # wait until Jun is working at the Lab (the help visit)
+    for _ in range(200):  # wait until Jun is working at the Workshop (the takeover, third visit)
         await asyncio.sleep(0.05)
         jun = await Resident.objects.aget(pk="jun")
-        if jun.state == "working" and jun.building_id == "lab":
+        if jun.state == "working" and jun.building_id == "workshop":
             break
     else:
         pytest.fail("the help visit never started")
@@ -486,3 +489,14 @@ async def test_mock_runner_sometimes_asks_for_help_or_chats():
         said += bool(result.says)
         remembered += bool(result.remember)
     assert asked and said and remembered
+
+
+async def test_lab_skips_the_flaky_rerun_when_the_step_budget_is_spent(island, sandboxes):
+    # The first run eats the whole budget (a hang): no second run, and the step fails cleanly.
+    workflow, client = make_workflow(ScriptedRunner(), sandboxes=sandboxes, judge=FlakyJudge(),
+                                     test_command="sleep 30", step_timeout=1.5)
+    task = await workflow.run_task((await workflow.submit("sunny", "Hangs")).id)
+    assert task.status == "failed"
+    lab = await Step.objects.filter(task_id=task.id, building_type="lab").afirst()
+    assert lab.outcome == "fail" and lab.flaky is False
+    assert not any("looks flaky" in e["text"] for e in client.of_type("activity"))

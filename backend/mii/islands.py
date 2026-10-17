@@ -652,7 +652,14 @@ def update_island(island_id: str, data: dict) -> Island:
             raise IslandError(f"repo must look like owner/name, got {repo}")
         island.repo, changes = repo, changes + ["repo"]
     if "branch" in data:
-        island.branch, changes = str(data.get("branch") or "main").strip() or "main", changes + ["branch"]
+        branch = str(data.get("branch") or "main").strip() or "main"
+        path = Path(island.repo_path) if island.repo_path else None
+        if path and (path / ".git").is_dir() and not (
+            _ok(path, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}")
+            or _ok(path, "rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{branch}")
+        ):
+            raise IslandError(f"{path} has no branch {branch}")
+        island.branch, changes = branch, changes + ["branch"]
     if "rules" in data:
         rules = data.get("rules")
         if not isinstance(rules, dict) or any(k not in RULES or not isinstance(v, bool) for k, v in rules.items()):

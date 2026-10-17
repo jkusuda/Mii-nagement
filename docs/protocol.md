@@ -509,11 +509,12 @@ For each building the package visits:
    waits for `answer_bubble` or a timeout, then `bubble_resolved`). A step that
    runs past the step timeout is stopped and counts as `fail`.
 5. `mood`
-5b. If the step failed and the resident is stuck (a `HELP:` line in their reply, or the
-   judge's call after a bounce), a free neighbour may come over, at most twice per task:
-   `chat` (asker → helper), the helper's `move` + `agent_state: walking` / `working`, their
-   own `activity` and `bubble`s, `chat` back (helper → asker), `friendship`, `mood`,
-   `agent_state: idle`. The helper's outcome is the one that picks the road.
+5b. A free neighbour may take a visit instead of the building's owner, at most twice per
+   task: when the package keeps coming back to a work building after a failed check (the
+   owner retries once first; the judge decides from the third visit), or right away when a
+   failing reply had a `HELP:` line. Then: `chat` (owner → helper), `handoff` to the helper,
+   their `move` / `agent_state`, `activity` and `bubble`s, `chat` back (helper → owner),
+   `mood`. The helper carries the package on, so the next handoff comes from them.
 6. The step finishes with an outcome (`pass` or `fail`), and the engine picks the
    next road:
    - a road whose `condition` matches the outcome wins;

@@ -247,6 +247,17 @@ async def test_patch_island_links_repo_and_broadcasts(island, fake_runtime, sand
     assert (await client.patch("/islands/nowhere", data=json.dumps({"name": "x"}), content_type="application/json")).status_code == 404
 
 
+async def test_patch_island_refuses_a_branch_the_repo_lacks(island, fake_runtime, sandboxes):
+    from mii.islands import current_branch
+    from mii.models import Island as IslandModel
+
+    client = AsyncClient()
+    assert (await client.patch("/islands/sunny", data=json.dumps({"branch": "develpo"}), content_type="application/json")).status_code == 400
+    have = current_branch(__import__("pathlib").Path((await IslandModel.objects.aget(pk="sunny")).repo_path))
+    ok = await client.patch("/islands/sunny", data=json.dumps({"branch": have}), content_type="application/json")
+    assert ok.status_code == 200 and ok.json()["branch"] == have
+
+
 async def test_island_issues_endpoint(island, fake_runtime, monkeypatch):
     from mii import github
 

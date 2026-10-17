@@ -35,7 +35,7 @@ from django.views.decorators.http import require_GET, require_POST
 
 from asgiref.sync import sync_to_async
 
-from mii import events, github, islands, layout, prefs, residents, tasks, weather
+from mii import events, github, islands, judge, layout, prefs, residents, tasks, weather
 from mii.agents.acp import BRAINS, GIFTS, available_brains, available_gifts
 from mii.agents.openrouter import list_models
 from mii.engine import BUBBLE_MOODS, HANDLERS
@@ -85,7 +85,7 @@ async def meta(request: HttpRequest) -> JsonResponse:
         "shapes": list(islands.SHAPES),
         "rules": list(islands.RULES),
         "bubble_kinds": list(BUBBLE_MOODS),
-        "moods": ["happy", "focused", "confused", "frustrated", "tired", "proud"],
+        "moods": list(judge.MOODS),
         "states": ["idle", "walking", "working", "sleeping"],
         "task_statuses": ["queued", "in_progress", "done", "failed", "cancelled"],
         "weather": list(weather.KINDS),

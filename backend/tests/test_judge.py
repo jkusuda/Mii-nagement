@@ -36,15 +36,12 @@ async def test_rule_judge_is_the_old_behaviour():
     assert await rules.tip({}, {"bouncy": "first", "steady": "second"}) == "first"
 
 
-async def test_rule_judge_needs_help_when_stuck():
+async def test_rule_judge_needs_help_from_the_third_visit():
     rules = RuleJudge()
-    job = make_job()
-    assert not await rules.needs_help(job, StepResult("fail"))  # first try: keep going
-    assert not await rules.needs_help(job, StepResult("pass"))
-    job.attempt = 2
-    assert await rules.needs_help(job, StepResult("fail"))
-    job.attempt, job.struggled = 1, True
-    assert await rules.needs_help(job, StepResult("fail"))
+    workshop = make_job(building_type="workshop").building
+    assert not await rules.needs_help(workshop, 1, "")  # first visit
+    assert not await rules.needs_help(workshop, 2, "Carlos at the Lab: FAIL.")  # the owner's own retry
+    assert await rules.needs_help(workshop, 3, "Carlos at the Lab: FAIL.")  # a neighbour takes the next turn
 
 
 async def test_rule_judge_picks_the_fitting_job_then_the_best_friend():
@@ -95,9 +92,11 @@ async def test_jev_judge_asks_typesafe_and_reads_the_answers():
     assert await j.tip({"tasks_done": 3}, {"bouncy": "A", "lab": "B", "steady": "C"}) == "B"
     assert await j.tip({"tasks_done": 0}, {"quiet": "only one"}) == "only one" and len(seen) == 1  # no call for one candidate
 
-    j, _ = jev({"help": {"type": "noul", "noul": 0.8}})
-    assert await j.needs_help(job, StepResult("fail"))
-    assert not await j.needs_help(job, StepResult("pass"))  # a pass never needs help
+    j, seen = jev({"help": {"type": "noul", "noul": 0.8}})
+    assert await j.needs_help(job.building, 2, "Carlos at the Lab: FAIL. 3 tests red")
+    assert seen[-1]["body"]["state"]["visit"] == 2
+    j, _ = jev({"help": {"type": "noul", "noul": 0.2}})
+    assert not await j.needs_help(job.building, 2, "Carlos at the Lab: FAIL.")
 
     jun, sydney = resident("jun", "planner"), resident("sydney", "reviewer")
     j, seen = jev({"helper": {"type": "choice", "choice": "sydney"}})
@@ -118,7 +117,7 @@ async def test_jev_judge_falls_back_to_the_rules(caplog):
         j3, _ = jev({"mood": {"type": "choice", "choice": "ecstatic"}})  # not one of ours
         assert await j3.mood(job.resident, job.building, StepResult("fail"), 1, False, 0) == "frustrated"
         j4, _ = jev(status=429)
-        assert await j4.needs_help(job, StepResult("fail")) is False
+        assert await j4.needs_help(job.building, 2, "x") is False
     assert [r for r in caplog.records if r.levelno == logging.WARNING and r.name == "mii.judge"]
     assert sum(1 for r in caplog.records if r.levelno == logging.WARNING and "Jev is unavailable" in r.message and r.name == "mii.judge") == 3
     # ... one per judge instance (j, j2, j4); the second failure of the same judge is only logged at DEBUG

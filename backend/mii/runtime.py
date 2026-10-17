@@ -65,6 +65,8 @@ class Runtime:
         # The judge (moods, missing verdicts, flaky re-runs, tips, help): Jev whenever a key is set
         # (mock mode too, the calls cost a fraction of a cent), unless the `judge` setting is "off".
         key = await sync_to_async(prefs.secret)("typesafe_api_key")
+        if isinstance(self.judge, JevJudge):
+            await self.judge.aclose()
         self.judge = JevJudge(key) if key and str(settings.get("judge") or "auto").lower() != "off" else RuleJudge()
         self.workflow.judge = self.judge
         return snap

@@ -158,16 +158,21 @@ any error. Mock mode included: the calls cost a fraction of a cent and are the d
 | verdict | the reply had no `VERDICT` line | "did the agent finish?" < 0.4 → fail | pass (as before) |
 | flaky | the Lab's `TEST_COMMAND` failed | "flaky or environmental?" ≥ 0.7 → run once more (`Step.flaky`) | never re-run |
 | tip | `GET .../insights` | picks among the tips whose rule applies | the first rule that applies |
-| needs help | a step failed | "would a teammate unblock this?" ≥ 0.6 | a second fail at the same building, or a 💦 bubble |
+| needs help | a package is back at a work building (never the Lab or Courthouse) | "would a different teammate taking this turn unblock it?" ≥ 0.6 | from the third visit (the owner retries once first) |
 | helper | help is needed | picks among the free neighbours (or nobody) | same job as the building, else the best friend |
 
-**Help visits.** A resident can write `HELP: <what I'm stuck on>` in a reply (or the judge
-decides they are stuck). A free neighbour (idle or asleep) walks over, runs the same
-building with the request on top of the normal instructions, in the same worktree; their
-outcome picks the road, the Workshop commits their work as usual. Both get a `chat`
-event (the request, then the first words of the helper's report), the friendship meter
-grows, the helper goes idle. At most `MAX_HELPS` (2) per task; a visit counts toward the
-20-step cap. **Notes:** `SAY TO <Name>: <message>` becomes a `chat` event and shows up
+**Help visits.** Two ways a neighbour takes a turn. When a package keeps coming back to a
+work building (Mailbox, Workshop, Post Office) after a failed check, the owner gets one
+retry of their own, then the judge may hand the next visit to a free neighbour (idle or
+asleep): same building, same worktree, the check's report on top of the instructions, their
+outcome picks the road and the Workshop commits their work as usual. The Lab and the
+Courthouse are never taken over: their tests and review are the owner's call. The other
+way is explicit: a resident writes `HELP: <what I'm stuck on>` in a failing reply and a
+neighbour redoes that building right away (at the Lab or Courthouse only a neighbour with
+the same job, so a coder never reviews their own work). Either way both get a `chat` event (the
+request, then the first words of the helper's report), the handoff grows the friendship
+meter, and the helper carries the package on. At most `MAX_HELPS` (2) per task; a visit
+counts toward the 20-step cap. **Notes:** `SAY TO <Name>: <message>` becomes a `chat` event and shows up
 under "Messages from your neighbours" in that resident's next prompt on the task.
 **Diary:** `REMEMBER: <line>` lines go to `Resident.notes` (oldest lines dropped past
 ~1500 characters) and open every future prompt of that resident. Every brain gets the same
