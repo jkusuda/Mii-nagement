@@ -48,6 +48,10 @@ game. No configuration file is needed. Ctrl+C stops all three. Other targets: `m
 `make sim`, `make watch`, `make game`, `make test`, `make reset`. If Godot isn't
 found, pass it: `make GODOT=/path/to/godot`.
 
+With real agents (mock mode off), use `make real` instead: the backend and the
+game, without the simulator (its fake tasks would become real agent work) and
+without `--reload` (editing the code would restart the server mid-task).
+
 ## Setup (once, by hand)
 
 You need macOS, [Homebrew](https://brew.sh), and

@@ -3,6 +3,7 @@
 #   make           same as `make up`: backend + simulator + the game, Ctrl+C stops all three
 #   make setup     install deps (first time; also run by `make up`). No .env needed.
 #   make up        backend + simulator + game
+#   make real      backend (no reload, no simulator) + game: for real agents (MOCK_AGENTS=0)
 #   make server    just the backend (http://localhost:8000)
 #   make sim       just the simulator (fake tasks; needs the backend)
 #   make watch     print the live event stream (needs the backend)
@@ -20,7 +21,7 @@ PORT ?= 8000
 # Find Godot: $GODOT, then `godot` on PATH, then the macOS app bundle.
 GODOT ?= $(shell command -v godot 2>/dev/null || ([ -x /Applications/Godot.app/Contents/MacOS/Godot ] && echo /Applications/Godot.app/Contents/MacOS/Godot))
 
-.PHONY: all up setup server sim watch game test reset check-tools
+.PHONY: all up real setup server sim watch game test reset check-tools
 
 all: up
 
@@ -56,6 +57,17 @@ up: setup
 	echo "backend ready at http://localhost:$(PORT)"; \
 	(cd $(BACKEND) && $(UV) run python manage.py seed --loop --url http://localhost:$(PORT)) & SIM=$$!; \
 	if [ -n "$(GODOT)" ]; then "$(GODOT)" --path game; else echo "Godot not found: backend + simulator running, Ctrl+C to stop"; wait $$SERVER; fi
+
+# Real agents: no simulator (its fake tasks would become real agent work) and no
+# --reload (editing the code would restart the server and stop a running task).
+real: setup
+	@set -e; \
+	cd $(BACKEND) && $(UV) run python -m uvicorn mii.asgi:application --port $(PORT) & SERVER=$$!; \
+	trap 'kill $$SERVER 2>/dev/null; wait $$SERVER 2>/dev/null; echo; echo "stopped"' EXIT INT TERM; \
+	for i in $$(seq 1 60); do curl -s localhost:$(PORT)/health >/dev/null && break; sleep 0.5; done; \
+	curl -s localhost:$(PORT)/health >/dev/null || { echo "backend did not start (is another one on port $(PORT)?)"; exit 1; }; \
+	echo "backend ready at http://localhost:$(PORT)"; \
+	if [ -n "$(GODOT)" ]; then "$(GODOT)" --path game; else echo "Godot not found: backend running, Ctrl+C to stop"; wait $$SERVER; fi
 
 test: setup
 	cd $(BACKEND) && $(UV) run pytest -q
