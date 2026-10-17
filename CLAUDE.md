@@ -32,9 +32,10 @@ backend/mii/
   events.py       event bus (persist to SQLite + broadcast) + bubbles
   engine.py       island graph + building handlers + task loop (step timeout, Step rows)
   residents.py    create_resident / update_resident (the resident creator)
+  islands.py      POST /islands: found an island from a town plan
   sandbox.py      one git worktree per task + is_inside()
   agents/         __init__ (AgentJob, BrainRunner, make_runner), mock.py, acp.py (BRAINS table)
-  github.py       issue in / PR out via the `gh` CLI            (boilerplate)
+  github.py       repo + branch lists via `gh`; issue in / PR out (boilerplate)
   insights.py     stats from the Step table                     (mostly boilerplate)
   replay.py       replay a recorded task into the game          (boilerplate)
   server.py       FastAPI app: /ws, /health, /brains, /islands/{id}, tasks, insights, replay
@@ -50,8 +51,9 @@ game/
   scenes/camera_rig.gd   zoom (wheel/trackpad/buttons) + drag-to-pan
   scenes/residents/    Residents tab (residents_screen, resident_card), resident_creator,
                        resident_data (jobs/brains/keys/gifts lists + mock residents)
-  scenes/home/         Archipelago home screen (island cards, Waiting on you), island_card,
-                       island_dropdown (switcher under the island name in the top bar)
+  scenes/home/         Archipelago home screen (3D sea, plates, Waiting on you), island_plate,
+                       island_dropdown (switcher in the top bar), island_creator (found an island)
+  scenes/sea/          sea_view: a 3D sea with any number of islands (water shader, sun, camera fit)
   scenes/news/         News tab: news_stories turns Net events (+ GET /islands/{id}/events, planned)
                        into stories; unread count drives the nav badge; daily digest setting
   scenes/insights/     Insights tab: GET /islands/{id}/insights (shape in architecture.md) + live

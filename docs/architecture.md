@@ -36,7 +36,9 @@ backend/mii/
   personality.py   job + sliders -> the prompt preamble
   events.py        event bus (save + broadcast) + bubbles
   engine.py        island graph + building handlers + task loop
-  residents.py     create / edit residents (from the game's resident creator)
+  residents.py     create / edit residents (from the game's resident creator); a new
+                   resident takes over their island's empty buildings for their job
+  islands.py       found an island from a town plan (POST /islands)
   sandbox.py       one git worktree per task + is_inside() path check
   agents/
     __init__.py    AgentJob, StepResult, BrainRunner, make_runner()
@@ -54,7 +56,7 @@ backend/mii/
 
 | Table | What it holds |
 |---|---|
-| `Island` | id, name, GitHub repo |
+| `Island` | id, name, GitHub repo, branch, town plan, house rules |
 | `Resident` | name, job, 4 personality sliders, `brain`, optional `model`, catchphrase, color, house `keys`, `gifts`, live state / building / mood |
 | `Building` | type, name, lot position, resident |
 | `Road` | from, to, condition |
@@ -92,6 +94,9 @@ backend/mii/
 | `GET /health` | is the server up, which mode |
 | `GET /brains` | which agent CLIs are installed |
 | `GET /islands` | every island: id, name, repo (the Archipelago screen) |
+| `POST /islands` | found an island: `{"name", "repo", "branch", "plan": "classic" \| "quick_fixes", "rules"}` → its snapshot |
+| `GET /github/repos?q=` | the user's repos, through their logged-in `gh` (island creator) |
+| `GET /github/branches?repo=` | a repo's branches, through `gh` |
 | `GET /islands/{id}` | the island snapshot |
 | `POST /islands/{id}/tasks` | `{"title": ...}` or `{"issue": 42}` |
 | `GET /islands/{id}/insights` | stats for the Insights screen |

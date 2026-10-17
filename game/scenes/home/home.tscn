@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://scenes/home/home.gd" id="1_home"]
 [ext_resource type="Texture2D" path="res://assets/icons/sun.svg" id="2_sun"]
@@ -7,6 +7,7 @@
 [ext_resource type="Texture2D" path="res://assets/icons/user.svg" id="5_user"]
 [ext_resource type="Texture2D" path="res://assets/icons/settings.svg" id="6_settings"]
 [ext_resource type="Script" path="res://scenes/ui/dashed_button.gd" id="7_dashed"]
+[ext_resource type="Script" path="res://scenes/sea/sea_view.gd" id="8_sea"]
 
 [node name="Home" type="Control"]
 layout_mode = 3
@@ -125,7 +126,7 @@ text = "Day 12 · 10:42"
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="Water" type="Panel" parent="Margin/Columns/Left/Frame"]
+[node name="Mask" type="Panel" parent="Margin/Columns/Left/Frame"]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -134,6 +135,62 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 theme_type_variation = &"FrameMask"
+clip_children = 1
+
+[node name="Sea" type="SubViewportContainer" parent="Margin/Columns/Left/Frame/Mask"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("8_sea")
+
+[node name="Overlay" type="Control" parent="Margin/Columns/Left/Frame"]
+unique_name_in_owner = true
+clip_contents = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="NewIsland" type="Button" parent="Margin/Columns/Left/Frame/Overlay"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(210, 130)
+layout_mode = 0
+offset_right = 210.0
+offset_bottom = 130.0
+tooltip_text = "Found a new island"
+theme_type_variation = &"FlatIconButton"
+script = ExtResource("7_dashed")
+
+[node name="Content" type="VBoxContainer" parent="Margin/Columns/Left/Frame/Overlay/NewIsland"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+alignment = 1
+
+[node name="Plus" type="Label" parent="Margin/Columns/Left/Frame/Overlay/NewIsland/Content"]
+layout_mode = 2
+theme_type_variation = &"ScreenTitle"
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+text = "+"
+horizontal_alignment = 1
+
+[node name="Title" type="Label" parent="Margin/Columns/Left/Frame/Overlay/NewIsland/Content"]
+layout_mode = 2
+theme_type_variation = &"SectionTitle"
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+text = "New island"
+horizontal_alignment = 1
 
 [node name="Border" type="Panel" parent="Margin/Columns/Left/Frame"]
 layout_mode = 1
@@ -145,34 +202,19 @@ grow_vertical = 2
 mouse_filter = 2
 theme_type_variation = &"FrameBorder"
 
-[node name="Inner" type="MarginContainer" parent="Margin/Columns/Left/Frame"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-theme_override_constants/margin_left = 18
-theme_override_constants/margin_top = 14
-theme_override_constants/margin_right = 18
-theme_override_constants/margin_bottom = 14
-
-[node name="Rows" type="VBoxContainer" parent="Margin/Columns/Left/Frame/Inner"]
-layout_mode = 2
-theme_override_constants/separation = 6
-
-[node name="ArchPill" type="PanelContainer" parent="Margin/Columns/Left/Frame/Inner/Rows"]
-layout_mode = 2
-size_flags_horizontal = 0
+[node name="ArchPill" type="PanelContainer" parent="Margin/Columns/Left/Frame"]
+layout_mode = 0
+offset_left = 14.0
+offset_top = 14.0
 mouse_filter = 2
 theme_type_variation = &"PillWhite"
 
-[node name="Row" type="HBoxContainer" parent="Margin/Columns/Left/Frame/Inner/Rows/ArchPill"]
+[node name="Row" type="HBoxContainer" parent="Margin/Columns/Left/Frame/ArchPill"]
 layout_mode = 2
 mouse_filter = 2
 theme_override_constants/separation = 7
 
-[node name="Map" type="TextureRect" parent="Margin/Columns/Left/Frame/Inner/Rows/ArchPill/Row"]
+[node name="Map" type="TextureRect" parent="Margin/Columns/Left/Frame/ArchPill/Row"]
 custom_minimum_size = Vector2(17, 17)
 layout_mode = 2
 size_flags_vertical = 4
@@ -182,71 +224,16 @@ texture = ExtResource("3_map")
 expand_mode = 1
 stretch_mode = 5
 
-[node name="Title" type="Label" parent="Margin/Columns/Left/Frame/Inner/Rows/ArchPill/Row"]
+[node name="Title" type="Label" parent="Margin/Columns/Left/Frame/ArchPill/Row"]
 layout_mode = 2
 theme_type_variation = &"LabelStrong"
 text = "Archipelago"
 
-[node name="Count" type="Label" parent="Margin/Columns/Left/Frame/Inner/Rows/ArchPill/Row"]
+[node name="Count" type="Label" parent="Margin/Columns/Left/Frame/ArchPill/Row"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"LabelMuted"
 text = "1 island"
-
-[node name="Scroll" type="ScrollContainer" parent="Margin/Columns/Left/Frame/Inner/Rows"]
-layout_mode = 2
-size_flags_vertical = 3
-horizontal_scroll_mode = 0
-
-[node name="Grid" type="GridContainer" parent="Margin/Columns/Left/Frame/Inner/Rows/Scroll"]
-unique_name_in_owner = true
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
-theme_override_constants/h_separation = 24
-theme_override_constants/v_separation = 16
-columns = 2
-
-[node name="NewIsland" type="Button" parent="Margin/Columns/Left/Frame/Inner/Rows/Scroll/Grid"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(250, 190)
-layout_mode = 2
-size_flags_horizontal = 3
-tooltip_text = "Island creation is coming next"
-theme_type_variation = &"FlatIconButton"
-disabled = true
-script = ExtResource("7_dashed")
-
-[node name="Content" type="VBoxContainer" parent="Margin/Columns/Left/Frame/Inner/Rows/Scroll/Grid/NewIsland"]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-alignment = 1
-
-[node name="Plus" type="Label" parent="Margin/Columns/Left/Frame/Inner/Rows/Scroll/Grid/NewIsland/Content"]
-layout_mode = 2
-theme_type_variation = &"ScreenTitle"
-theme_override_colors/font_color = Color(1, 1, 1, 1)
-text = "+"
-horizontal_alignment = 1
-
-[node name="Title" type="Label" parent="Margin/Columns/Left/Frame/Inner/Rows/Scroll/Grid/NewIsland/Content"]
-layout_mode = 2
-theme_type_variation = &"SectionTitle"
-theme_override_colors/font_color = Color(1, 1, 1, 1)
-text = "New island"
-horizontal_alignment = 1
-
-[node name="Hint" type="Label" parent="Margin/Columns/Left/Frame/Inner/Rows/Scroll/Grid/NewIsland/Content"]
-layout_mode = 2
-theme_type_variation = &"LabelMuted"
-theme_override_colors/font_color = Color(1, 1, 1, 0.85)
-text = "Link a repo, coming next"
-horizontal_alignment = 1
 
 [node name="NavRow" type="CenterContainer" parent="Margin/Columns/Left"]
 layout_mode = 2
@@ -260,11 +247,11 @@ layout_mode = 2
 theme_override_constants/separation = 8
 
 [node name="NewIslandNav" type="Button" parent="Margin/Columns/Left/NavRow/NavTray/Buttons"]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(180, 50)
 layout_mode = 2
-tooltip_text = "Island creation is coming next"
+tooltip_text = "Found a new island"
 theme_type_variation = &"NavButton"
-disabled = true
 text = "New island"
 icon = ExtResource("4_plus")
 

@@ -37,6 +37,9 @@ The client should rebuild its view from scratch when it gets one.
     "id": "sunny",
     "name": "Sunny Isle",
     "repo": null,
+    "branch": "main",
+    "plan": "classic",
+    "rules": {"merge_pr": true, "install_packages": true, "shell": false},
     "buildings": [
       {"id": "mailbox", "type": "mailbox", "name": "Mailbox", "x": 4, "y": 15, "resident": "jun"}
     ],
@@ -64,6 +67,9 @@ The client should rebuild its view from scratch when it gets one.
 }
 ```
 
+- `branch`: what residents branch off from. `plan`: the town plan the island
+  was founded with. `rules`: house rules from the island creator (`true` = ask
+  me before doing this); stored only for now.
 - `buildings[].x / y`: the building's lot on a grid. The 3D client currently
   places buildings itself (`island_3d.tscn`); x/y are for build mode later.
 - `buildings[].resident`: the resident who works there.

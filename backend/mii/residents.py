@@ -11,11 +11,13 @@ import uuid
 from sqlmodel import Session
 
 from mii.agents.acp import BRAINS
-from mii.models import DEFAULT_KEYS, Resident
+from sqlmodel import select
+
+from mii.models import DEFAULT_KEYS, Building, Resident
 from mii.personality import JOBS
 
-# Where a new resident lives, by job.
-JOB_HOMES = {"planner": "mailbox", "coder": "workshop", "reviewer": "courthouse"}
+# The building types each job works in (as in the seed island), first = home.
+JOB_BUILDINGS = {"planner": ["mailbox", "post_office"], "coder": ["workshop", "lab"], "reviewer": ["courthouse"]}
 SLIDERS = ("bluntness", "caution", "chattiness", "creativity")
 KEY_VALUES = ("yes", "ask", "no")
 GIFTS = ("browser", "github", "docs", "database", "terminal")  # TODO(mvp): an MCP server table, like BRAINS
@@ -78,13 +80,19 @@ def create_resident(session: Session, island_id: str, data: dict) -> Resident:
     fields = clean_fields(data, partial=False)
     job = fields.setdefault("job", "coder")
     slug = re.sub(r"[^a-z0-9]+", "_", fields["name"].lower()).strip("_") or "resident"
-    resident = Resident(
-        id=f"{slug}_{uuid.uuid4().hex[:4]}",
-        island_id=island_id,
-        building_id=JOB_HOMES[job],
-        **fields,
-    )
+    resident = Resident(id=f"{slug}_{uuid.uuid4().hex[:4]}", island_id=island_id, **fields)
+
+    # Move in: home is this island's first building of the job's types. Any of
+    # those buildings nobody works at yet become theirs, so a new island's
+    # workflow has someone at each stop.
+    buildings = session.exec(select(Building).where(Building.island_id == island_id)).all()
+    mine = [b for t in JOB_BUILDINGS[job] for b in buildings if b.type == t]
+    resident.building_id = mine[0].id if mine else (buildings[0].id if buildings else None)
     session.add(resident)
+    for b in mine:
+        if b.resident_id is None:
+            b.resident_id = resident.id
+            session.add(b)
     session.commit()
     session.refresh(resident)
     return resident

@@ -930,6 +930,47 @@ corner_radius_bottom_right = 14
 corner_radius_bottom_left = 14
 corner_detail = 12
 
+[sub_resource type="StyleBoxFlat" id="plan_card"]
+content_margin_left = 14.0
+content_margin_top = 12.0
+content_margin_right = 14.0
+content_margin_bottom = 12.0
+bg_color = Color(1, 1, 1, 1)
+corner_radius_top_left = 14
+corner_radius_top_right = 14
+corner_radius_bottom_right = 14
+corner_radius_bottom_left = 14
+corner_detail = 12
+
+[sub_resource type="StyleBoxFlat" id="plan_card_hover"]
+content_margin_left = 14.0
+content_margin_top = 12.0
+content_margin_right = 14.0
+content_margin_bottom = 12.0
+bg_color = Color(0.965, 0.965, 0.98, 1)
+corner_radius_top_left = 14
+corner_radius_top_right = 14
+corner_radius_bottom_right = 14
+corner_radius_bottom_left = 14
+corner_detail = 12
+
+[sub_resource type="StyleBoxFlat" id="plan_card_on"]
+content_margin_left = 14.0
+content_margin_top = 12.0
+content_margin_right = 14.0
+content_margin_bottom = 12.0
+bg_color = Color(0.941, 0.925, 1, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.459, 0.325, 0.875, 1)
+corner_radius_top_left = 14
+corner_radius_top_right = 14
+corner_radius_bottom_right = 14
+corner_radius_bottom_left = 14
+corner_detail = 12
+
 [resource]
 default_font = SubResource("font_regular")
 default_font_size = 14
@@ -1345,3 +1386,10 @@ IslandRowHere/styles/hover = SubResource("island_row_here")
 IslandRowHere/styles/pressed = SubResource("island_row_here")
 IslandRowHere/styles/hover_pressed = SubResource("island_row_here")
 IslandRowHere/styles/focus = SubResource("focus_none")
+PlanCard/base_type = &"Button"
+PlanCard/styles/normal = SubResource("plan_card")
+PlanCard/styles/hover = SubResource("plan_card_hover")
+PlanCard/styles/pressed = SubResource("plan_card_on")
+PlanCard/styles/hover_pressed = SubResource("plan_card_on")
+PlanCard/styles/disabled = SubResource("plan_card")
+PlanCard/styles/focus = SubResource("focus_none")

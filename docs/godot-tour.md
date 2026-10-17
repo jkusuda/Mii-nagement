@@ -152,7 +152,17 @@ tilt the camera. Click **Preview** at the top of the 3D view to look through the
   name in the top bar opens `island_dropdown.gd`, a **PopupPanel** (a small
   window that closes when you click outside it).
 
-### 12. `ui/theme.tres` and `shaders/water.gdshader`
+### 12. `scenes/sea/` and the island creator
+- `sea_view.gd` is a **SubViewportContainer** that borrows island_3d.tscn's sky,
+  sun, and water, then places any number of islands in it. The water shader
+  takes up to 8 island centers (`island_centers`) so every island gets its own
+  shallows and foam. The camera backs off until every island fits.
+- `scenes/home/island_creator.gd` is the two-step "Found a new island" screen.
+  It asks the backend for your repos and branches (`gh`), and "Make your own"
+  borrows the resident creator; those residents are sent once the new island
+  exists (`game.gd` `_move_residents_in`).
+
+### 13. `ui/theme.tres` and `shaders/water.gdshader`
 - **Theme:** every color, font, and pill/button style. Each look is a named
   *type variation* (`PillWhite`, `NavButton`, …) that nodes pick with
   `theme_type_variation`. Double-click the file to open the theme editor.

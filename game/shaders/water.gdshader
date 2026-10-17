@@ -20,6 +20,11 @@ uniform vec3 foam_color : source_color = vec3(1.0, 1.0, 1.0);
 // --- Island outline (world units, matches island_3d.tscn) --------------------
 uniform vec2 island_half_size = vec2(18.6, 12.4);
 uniform float island_corner_radius = 5.0;
+// Several islands in one sea (the Archipelago screen): their centers (x, z).
+// island_count = 0 means one island at the origin (the island view);
+// -1 means no islands at all, just open sea.
+uniform int island_count = 0;
+uniform vec2 island_centers[8];
 
 // --- Look -------------------------------------------------------------------
 uniform float shallow_width = 7.0;   // how far the light shallow water reaches
@@ -58,8 +63,13 @@ void fragment() {
 	float breakup = texture(foam_noise, p * 0.06 + vec2(t, t * 0.6)).r;
 	float breakup_fine = texture(foam_noise, p * 0.2 - vec2(t * 1.5, 0.0)).r;
 
-	// Wobble the distance a little so the shore lines aren't perfectly smooth.
-	float d = rounded_rect_distance(p, island_half_size, island_corner_radius);
+	// Distance to the nearest island's shore. Wobble it a little so the shore
+	// lines aren't perfectly smooth.
+	float d = island_count < 0 ? 1000.0 : rounded_rect_distance(p, island_half_size, island_corner_radius);
+	for (int i = 0; i < island_count; i++) {
+		float di = rounded_rect_distance(p - island_centers[i], island_half_size, island_corner_radius);
+		d = (i == 0) ? di : min(d, di);
+	}
 	d += (breakup - 0.5) * 0.6;
 
 	// 1. Shallow -> deep color.

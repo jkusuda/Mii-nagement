@@ -36,13 +36,21 @@ const BUILDINGS := [
 @onready var insights: InsightsScreen = %InsightsScreen
 @onready var news: NewsScreen = %NewsScreen
 @onready var home: Home = %Home
+@onready var island_creator: IslandCreator = %IslandCreator
 var dropdown := IslandDropdown.new()
 
-## Which screen is showing: "home" (the archipelago), "island", "residents",
-## "creator", "insights", or "news".
+## Which screen is showing: "home" (the archipelago), "island_creator",
+## "island", "residents", "creator", "insights", or "news".
 var screen := "island"
 ## True while the creator waits for the server to accept a resident.
 var _saving_resident := false
+## The resident creator is making a draft for the island creator (not sent yet),
+## and which of its residents it replaces (-1 = a new one).
+var _drafting := false
+var _draft_index := -1
+## Residents to move in once the newly founded island's snapshot arrives.
+var _move_in_island := ""
+var _move_in: Array = []
 var _labels := {}  # building type -> BuildingLabel
 
 
@@ -74,6 +82,17 @@ func _ready() -> void:
 
 	# The archipelago and the island switcher.
 	home.visit.connect(_visit_island)
+	home.new_island_requested.connect(func():
+		island_creator.open()
+		show_screen("island_creator"))
+	island_creator.closed.connect(show_screen.bind("home"))
+	island_creator.resident_requested.connect(func(resident: Dictionary, index: int):
+		_drafting = true
+		_draft_index = index
+		creator.open(resident, island_creator.island_name())
+		show_screen("creator"))
+	island_creator.founded.connect(_on_island_founded)
+	Net.snapshot_received.connect(_move_residents_in)
 	add_child(dropdown)
 	dropdown.visit.connect(_visit_island)
 	dropdown.go_home.connect(show_screen.bind("home"))
@@ -83,7 +102,7 @@ func _ready() -> void:
 	residents_screen.new_resident_requested.connect(_open_creator)
 	residents_screen.edit_requested.connect(_open_creator)
 	residents_screen.action_requested.connect(_on_card_action)
-	creator.cancelled.connect(show_screen.bind("residents"))
+	creator.cancelled.connect(func(): show_screen("island_creator" if _drafting else "residents"))
 	creator.saved.connect(_save_resident)
 
 	# Island data from the backend. Net keeps Net.island current and announces
@@ -100,7 +119,8 @@ func _ready() -> void:
 func show_screen(which: String) -> void:
 	screen = which
 	home.visible = which == "home"
-	%Margin.visible = which != "home"
+	island_creator.visible = which == "island_creator"
+	%Margin.visible = which not in ["home", "island_creator"]
 	%IslandFrame.visible = which == "island"
 	residents_screen.visible = which == "residents"
 	creator.visible = which == "creator"
@@ -118,6 +138,11 @@ func show_screen(which: String) -> void:
 ## answers with a `resident` event (or an `error`). Offline, it's only added here,
 ## so the screens still work without a backend.
 func _save_resident(resident: Dictionary) -> void:
+	if _drafting:  # for the island creator: hand it back, nothing is sent yet
+		_drafting = false
+		island_creator.put_resident(resident, _draft_index)
+		show_screen("island_creator")
+		return
 	if Net.send_resident(resident):
 		_saving_resident = true
 		return
@@ -187,9 +212,28 @@ func _show_resident_summary(residents: Array) -> void:
 ## The back button: creator -> Residents, island -> archipelago, others -> island.
 func _go_back() -> void:
 	match screen:
-		"creator": show_screen("residents")
+		"creator": show_screen("island_creator" if _drafting else "residents")
 		"island": show_screen("home")
 		_: show_screen("island")
+
+
+## A new island exists: go there, and move its residents in when it's ready.
+func _on_island_founded(island: Dictionary, residents: Array) -> void:
+	_move_in_island = str(island["id"])
+	_move_in = residents
+	Islands.refresh()
+	_visit_island(_move_in_island)
+
+
+## Send the founded island's residents, once we're connected to it (the server
+## creates residents on the island this connection watches).
+func _move_residents_in(island: Dictionary) -> void:
+	if island.get("id") != _move_in_island:
+		return
+	for resident in _move_in:
+		Net.send_resident(resident)
+	_move_in = []
+	_move_in_island = ""
 
 
 ## Go to an island (from the archipelago or the switcher). Net reconnects to it;

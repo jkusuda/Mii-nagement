@@ -1,14 +1,15 @@
 class_name Home
 extends Control
-## The Archipelago: the home screen. Every island on the backend as a little
-## picture of its 3D model with its status, plus "Waiting on you": the open
-## bubbles of *every* island, grouped by island. Click an island (or "Visit")
-## to go there.
+## The Archipelago: the home screen. Every island on the backend sits in one 3D
+## sea (SeaView: the island view's water, sun and shadows), with a name plate
+## and status at its shore. "Waiting on you" lists the open bubbles of *every*
+## island, grouped by island. Click an island, its plate, or "Visit" to go there.
 ##
 ## Everything comes from the Islands autoload (GET /islands + each island's
-## snapshot). New island / Caretaker / Settings aren't built yet.
+## snapshot). Caretaker / Settings aren't built yet.
 
 signal visit(island_id: String)
+signal new_island_requested
 
 const AnswerButtonScript := preload("res://scenes/ui/answer_button.gd")
 
@@ -18,10 +19,15 @@ const ASKS := {
 	"ready": "%s finished something", "tired": "%s needs a nap",
 }
 
-var _cards := {}  # island id -> IslandCard
+var _plates := {}  # island id -> IslandPlate
+
+@onready var sea: SeaView = %Sea
 
 
 func _ready() -> void:
+	sea.island_clicked.connect(visit.emit)
+	%NewIsland.pressed.connect(new_island_requested.emit)
+	%NewIslandNav.pressed.connect(new_island_requested.emit)
 	Islands.changed.connect(func(): if is_visible_in_tree(): _show())
 	Net.connected.connect(_show_connection)
 	Net.disconnected.connect(_show_connection)
@@ -36,7 +42,7 @@ func _show() -> void:
 	_show_connection()
 	var islands := Islands.islands
 	%Count.text = "%d island%s" % [islands.size(), "" if islands.size() == 1 else "s"]
-	_show_cards(islands)
+	_show_islands(islands)
 	_show_waiting(islands)
 
 
@@ -50,22 +56,42 @@ func _show_connection() -> void:
 	%StatusDot.add_theme_stylebox_override("panel", dot)
 
 
-func _show_cards(islands: Array) -> void:
-	var ids := islands.map(func(i): return str(i["id"]))
-	for id in _cards.keys():
+func _show_islands(islands: Array) -> void:
+	var entries := islands.map(func(i): return {
+		"id": str(i["id"]), "types": i.get("buildings", []).map(func(b): return str(b["type"]))})
+	sea.show_islands(entries, true)
+
+	var ids := entries.map(func(e): return e["id"])
+	for id in _plates.keys():
 		if id not in ids:
-			_cards[id].queue_free()
-			_cards.erase(id)
+			_plates[id].sign_panel.queue_free()
+			_plates[id].queue_free()
+			_plates.erase(id)
 	for island in islands:
 		var id := str(island["id"])
-		if not _cards.has(id):
-			var card := IslandCard.new()
-			card.visit.connect(visit.emit)
-			%Grid.add_child(card)
-			_cards[id] = card
-		_cards[id].setup(island)
-		%Grid.move_child(_cards[id], ids.find(id))
-	%Grid.move_child(%NewIsland, -1)
+		if not _plates.has(id):
+			var plate := IslandPlate.new()
+			plate.visit.connect(visit.emit)
+			%Overlay.add_child(plate)
+			%Overlay.add_child(plate.sign_panel)
+			_plates[id] = plate
+		_plates[id].setup(island)
+
+
+## Keep each plate at its island's front shore and each sign above the island,
+## as the sea view resizes.
+func _process(_delta: float) -> void:
+	if not is_visible_in_tree():
+		return
+	for id in _plates:
+		var plate: IslandPlate = _plates[id]
+		var shore := sea.screen_point(id, Vector3(0, 0, SeaView.ISLAND_HALF.y - 1.0))
+		plate.position = (shore - Vector2(plate.size.x / 2.0, plate.size.y * 0.35)).round()
+		var sign := plate.sign_panel
+		var top := sea.screen_point(id, Vector3(SeaView.ISLAND_HALF.x * 0.55, 7.0, -SeaView.ISLAND_HALF.y * 0.4))
+		sign.position = (top - sign.size / 2.0).round()
+	var slot := sea.screen_point("slot:new")
+	%NewIsland.position = (slot - %NewIsland.size / 2.0).round()
 
 
 ## "Waiting on you": one card per island with open bubbles.

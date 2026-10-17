@@ -51,7 +51,9 @@ Backend design: [docs/architecture.md](docs/architecture.md).
       ([docs/architecture.md](docs/architecture.md), "Events history"); `prs_merged`
       and `keys_lent` in the insights payload for News' "This week"
 - [x] Archipelago home screen + island switcher (GET /islands, per-island events)
-- [ ] Island creation (New island: name + linked repo), Caretaker, Settings
+- [x] Island creator: name, repo (via gh), branch, town plan, residents, house rules
+- [ ] Island looks (seasons), Caretaker, Settings
+- [ ] ACP runner honours island `branch` and house `rules`
 - [ ] "Celebrating" island status (needs recent shipped tasks: the events endpoint)
 - [ ] Run several tasks at once (one per free resident)
 - [ ] Friendship meter between residents who hand off to each other

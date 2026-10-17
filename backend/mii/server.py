@@ -6,6 +6,9 @@ Run from backend/:  uv run uvicorn mii.server:app --reload --port 8000
     GET  /health                       is the server up? which mode?
     GET  /brains                       which agent CLIs are installed
     GET  /islands                      every island: id, name, repo
+    POST /islands                      found an island {"name", "repo", "branch", "plan", "rules"}
+    GET  /github/repos?q=              the user's repos (via gh), for the island creator
+    GET  /github/branches?repo=        a repo's branches (via gh)
     GET  /islands/{id}                 the island snapshot
     POST /islands/{id}/tasks           {"title": "...", "description": "..."} or {"issue": 42}
     GET  /islands/{id}/insights        stats for the Insights screen
@@ -21,7 +24,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
-from mii import events, github, residents, seed
+from mii import events, github, islands, residents, seed
 from mii.agents import make_runner
 from mii.agents.acp import available_brains
 from mii.config import settings
@@ -89,6 +92,32 @@ def list_islands() -> dict:
     with Session(db_engine) as session:
         islands = session.exec(select(Island).order_by(Island.name)).all()
         return {"islands": [{"id": i.id, "name": i.name, "repo": i.repo} for i in islands]}
+
+
+@app.post("/islands")
+def found_island(body: dict) -> dict:
+    with Session(db_engine) as session:
+        try:
+            island = islands.create_island(session, body)
+        except islands.IslandError as e:
+            raise HTTPException(400, str(e))
+        return island_snapshot(session, island.id, [])
+
+
+@app.get("/github/repos")
+def github_repos(q: str = "") -> dict:
+    try:
+        return {"repos": github.list_repos(q)}
+    except github.GitHubError as e:
+        raise HTTPException(503, str(e))
+
+
+@app.get("/github/branches")
+def github_branches(repo: str) -> dict:
+    try:
+        return {"branches": github.list_branches(repo)}
+    except github.GitHubError as e:
+        raise HTTPException(503, str(e))
 
 
 @app.get("/islands/{island_id}")

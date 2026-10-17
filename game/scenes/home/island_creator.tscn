@@ -1,0 +1,331 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://scenes/home/island_creator.gd" id="1_creator"]
+[ext_resource type="Script" path="res://scenes/sea/sea_view.gd" id="2_sea"]
+[ext_resource type="Texture2D" path="res://assets/icons/x.svg" id="3_x"]
+[ext_resource type="Texture2D" path="res://assets/icons/shuffle.svg" id="4_shuffle"]
+[ext_resource type="Texture2D" path="res://assets/icons/search.svg" id="5_search"]
+[ext_resource type="Script" path="res://scenes/ui/answer_button.gd" id="6_answer"]
+[ext_resource type="Texture2D" path="res://assets/icons/chevron-right.svg" id="7_chevron"]
+
+[node name="IslandCreator" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_creator")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.412, 0.831, 0.922, 1)
+
+[node name="Center" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="PanelContainer" parent="Center"]
+custom_minimum_size = Vector2(1120, 640)
+layout_mode = 2
+theme_type_variation = &"ScreenPanel"
+
+[node name="Rows" type="VBoxContainer" parent="Center/Panel"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="Header" type="HBoxContainer" parent="Center/Panel/Rows"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Title" type="Label" parent="Center/Panel/Rows/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"ScreenTitle"
+text = "Found a new island"
+
+[node name="Steps" type="HBoxContainer" parent="Center/Panel/Rows/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_constants/separation = 6
+
+[node name="Close" type="Button" parent="Center/Panel/Rows/Header"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(32, 32)
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "Back to the archipelago"
+theme_type_variation = &"OutlineButton"
+theme_override_constants/icon_max_width = 14
+icon = ExtResource("3_x")
+icon_alignment = 1
+
+[node name="Step1" type="HBoxContainer" parent="Center/Panel/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 22
+
+[node name="Left" type="VBoxContainer" parent="Center/Panel/Rows/Step1"]
+custom_minimum_size = Vector2(380, 0)
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="PreviewFrame" type="Control" parent="Center/Panel/Rows/Step1/Left"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 280)
+layout_mode = 2
+
+[node name="Mask" type="Panel" parent="Center/Panel/Rows/Step1/Left/PreviewFrame"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_type_variation = &"FrameMask"
+clip_children = 1
+
+[node name="Preview" type="SubViewportContainer" parent="Center/Panel/Rows/Step1/Left/PreviewFrame/Mask"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("2_sea")
+
+[node name="Border" type="Panel" parent="Center/Panel/Rows/Step1/Left/PreviewFrame"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_type_variation = &"FrameBorder"
+
+[node name="PreviewTag" type="PanelContainer" parent="Center/Panel/Rows/Step1/Left/PreviewFrame"]
+layout_mode = 0
+offset_left = 12.0
+offset_top = 12.0
+mouse_filter = 2
+theme_type_variation = &"PillWhite"
+
+[node name="PreviewText" type="Label" parent="Center/Panel/Rows/Step1/Left/PreviewFrame/PreviewTag"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"LabelStrong"
+theme_override_font_sizes/font_size = 12
+text = "Preview · classic town"
+
+[node name="NamePlate" type="PanelContainer" parent="Center/Panel/Rows/Step1/Left/PreviewFrame"]
+unique_name_in_owner = true
+layout_mode = 0
+mouse_filter = 2
+theme_type_variation = &"PillWhite"
+
+[node name="PlateName" type="Label" parent="Center/Panel/Rows/Step1/Left/PreviewFrame/NamePlate"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"LabelStrong"
+theme_override_font_sizes/font_size = 13
+text = "New island"
+
+[node name="LookLabel" type="Label" parent="Center/Panel/Rows/Step1/Left"]
+layout_mode = 2
+theme_type_variation = &"FieldLabel"
+text = "Island look"
+
+[node name="Looks" type="HBoxContainer" parent="Center/Panel/Rows/Step1/Left"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Right" type="VBoxContainer" parent="Center/Panel/Rows/Step1"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="NameLabel" type="Label" parent="Center/Panel/Rows/Step1/Right"]
+layout_mode = 2
+theme_type_variation = &"FieldLabel"
+text = "Island name"
+
+[node name="NameRow" type="HBoxContainer" parent="Center/Panel/Rows/Step1/Right"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="NameEdit" type="LineEdit" parent="Center/Panel/Rows/Step1/Right/NameRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Name your island"
+max_length = 30
+
+[node name="Shuffle" type="Button" parent="Center/Panel/Rows/Step1/Right/NameRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+focus_mode = 0
+theme_type_variation = &"OutlineButton"
+theme_override_constants/icon_max_width = 14
+text = "Shuffle"
+icon = ExtResource("4_shuffle")
+
+[node name="RepoHeader" type="HBoxContainer" parent="Center/Panel/Rows/Step1/Right"]
+layout_mode = 2
+
+[node name="RepoLabel" type="Label" parent="Center/Panel/Rows/Step1/Right/RepoHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"FieldLabel"
+text = "Link a GitHub repo"
+
+[node name="GhStatus" type="Label" parent="Center/Panel/Rows/Step1/Right/RepoHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"LabelMuted"
+theme_override_font_sizes/font_size = 11
+text = "Asking GitHub…"
+
+[node name="SearchEdit" type="LineEdit" parent="Center/Panel/Rows/Step1/Right"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "Search your repos, or type owner/name"
+right_icon = ExtResource("5_search")
+clear_button_enabled = true
+
+[node name="RepoScroll" type="ScrollContainer" parent="Center/Panel/Rows/Step1/Right"]
+custom_minimum_size = Vector2(0, 190)
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="Repos" type="VBoxContainer" parent="Center/Panel/Rows/Step1/Right/RepoScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="BranchLabel" type="Label" parent="Center/Panel/Rows/Step1/Right"]
+layout_mode = 2
+theme_type_variation = &"FieldLabel"
+text = "Residents branch off from"
+
+[node name="BranchRow" type="HBoxContainer" parent="Center/Panel/Rows/Step1/Right"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Branches" type="HBoxContainer" parent="Center/Panel/Rows/Step1/Right/BranchRow"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="BranchEdit" type="LineEdit" parent="Center/Panel/Rows/Step1/Right/BranchRow"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(180, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+placeholder_text = "branch name"
+
+[node name="Step2" type="VBoxContainer" parent="Center/Panel/Rows"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 10
+
+[node name="PlanLabel" type="Label" parent="Center/Panel/Rows/Step2"]
+layout_mode = 2
+theme_type_variation = &"FieldLabel"
+text = "Pick a town plan"
+
+[node name="Plans" type="HBoxContainer" parent="Center/Panel/Rows/Step2"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="ResHeader" type="HBoxContainer" parent="Center/Panel/Rows/Step2"]
+layout_mode = 2
+
+[node name="ResLabel" type="Label" parent="Center/Panel/Rows/Step2/ResHeader"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"FieldLabel"
+text = "Residents"
+
+[node name="ResNote" type="Label" parent="Center/Panel/Rows/Step2/ResHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"LabelMuted"
+theme_override_font_sizes/font_size = 11
+text = "Nobody yet · you can invite more later"
+
+[node name="Residents" type="HBoxContainer" parent="Center/Panel/Rows/Step2"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 150)
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Spacer" type="Control" parent="Center/Panel/Rows/Step2"]
+layout_mode = 2
+size_flags_vertical = 3
+mouse_filter = 2
+
+[node name="RulesLabel" type="Label" parent="Center/Panel/Rows/Step2"]
+layout_mode = 2
+theme_type_variation = &"FieldLabel"
+text = "House rules · ask me before…"
+
+[node name="Rules" type="HBoxContainer" parent="Center/Panel/Rows/Step2"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Footer" type="HBoxContainer" parent="Center/Panel/Rows"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Note" type="Label" parent="Center/Panel/Rows/Footer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"LabelMuted"
+text = "Residents only read and push to the repo you link here."
+autowrap_mode = 3
+
+[node name="Cancel" type="Button" parent="Center/Panel/Rows/Footer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(96, 40)
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"OutlineButton"
+theme_override_font_sizes/font_size = 15
+text = "Cancel"
+
+[node name="Next" type="Button" parent="Center/Panel/Rows/Footer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(210, 40)
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"AnswerButton"
+text = "Next: town plan"
+icon = ExtResource("7_chevron")
+icon_alignment = 2
+script = ExtResource("6_answer")

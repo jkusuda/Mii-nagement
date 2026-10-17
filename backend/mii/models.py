@@ -30,6 +30,11 @@ class Island(SQLModel, table=True):
     id: str = Field(primary_key=True)
     name: str
     repo: str | None = None  # GitHub "owner/name"
+    branch: str = "main"  # residents branch off from here
+    plan: str = "classic"  # town plan it was founded with (islands.py TOWN_PLANS)
+    # House rules from the island creator: True = ask me before doing this.
+    # Stored only for now (merge_pr, install_packages, shell).
+    rules: dict = Field(default_factory=dict, sa_column=Column(JSON))
 
 
 class Resident(SQLModel, table=True):
@@ -184,6 +189,9 @@ def island_snapshot(session: Session, island_id: str, open_bubbles: list[dict]) 
         "id": island.id,
         "name": island.name,
         "repo": island.repo,
+        "branch": island.branch,
+        "plan": island.plan,
+        "rules": island.rules,
         "buildings": [
             {"id": b.id, "type": b.type, "name": b.name, "x": b.x, "y": b.y, "resident": b.resident_id}
             for b in rows(Building)

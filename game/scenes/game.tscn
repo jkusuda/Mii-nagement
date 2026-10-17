@@ -22,6 +22,7 @@
 [ext_resource type="PackedScene" path="res://scenes/insights/insights_screen.tscn" id="24_insights"]
 [ext_resource type="PackedScene" path="res://scenes/news/news_screen.tscn" id="25_news"]
 [ext_resource type="PackedScene" path="res://scenes/home/home.tscn" id="26_home"]
+[ext_resource type="PackedScene" path="res://scenes/home/island_creator.tscn" id="27_island_creator"]
 
 [node name="Game" type="Control" unique_id=146576168]
 layout_mode = 3
@@ -702,6 +703,11 @@ theme_override_font_sizes/font_size = 14
 text = "4 happy · 1 sleepy"
 
 [node name="Home" parent="." instance=ExtResource("26_home")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+
+[node name="IslandCreator" parent="." instance=ExtResource("27_island_creator")]
 unique_name_in_owner = true
 visible = false
 layout_mode = 1
