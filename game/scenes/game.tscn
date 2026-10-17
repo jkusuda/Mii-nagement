@@ -4,11 +4,9 @@
 [ext_resource type="Script" uid="uid://c6ktv16khi0rb" path="res://scenes/game.gd" id="2_game"]
 [ext_resource type="PackedScene" path="res://scenes/island/island_3d.tscn" id="3_island_3d"]
 [ext_resource type="Texture2D" uid="uid://dnqxung6wr1fd" path="res://assets/icons/chevron-left.svg" id="5_chevron_left"]
-[ext_resource type="Texture2D" uid="uid://bori8153c8i6o" path="res://assets/icons/sprout.svg" id="6_sprout"]
 [ext_resource type="Texture2D" uid="uid://dh2msv6gtqfyn" path="res://assets/icons/chevron-down.svg" id="7_chevron_down"]
 [ext_resource type="Texture2D" uid="uid://drcx4gsxmhixw" path="res://assets/icons/sun.svg" id="8_sun"]
 [ext_resource type="Texture2D" uid="uid://dln87rkn741qb" path="res://assets/icons/map-pin.svg" id="9_map_pin"]
-[ext_resource type="Texture2D" uid="uid://dpv66qf3j25uv" path="res://assets/icons/mouse-pointer-2.svg" id="10_mouse_pointer_2"]
 [ext_resource type="Texture2D" uid="uid://p3jnhguossq0" path="res://assets/icons/minus.svg" id="11_minus"]
 [ext_resource type="Texture2D" uid="uid://dgb0c6e86m3c2" path="res://assets/icons/plus.svg" id="12_plus"]
 [ext_resource type="Texture2D" uid="uid://c7udmisivtks1" path="res://assets/ui/build.png" id="13_build"]
@@ -72,7 +70,7 @@ theme_override_constants/separation = 12
 [node name="TopBar" type="HBoxContainer" parent="Margin/Columns/Left" unique_id=1776107704]
 custom_minimum_size = Vector2(0, 48)
 layout_mode = 2
-theme_override_constants/separation = 10
+theme_override_constants/separation = 14
 
 [node name="BackButton" type="Button" parent="Margin/Columns/Left/TopBar" unique_id=1080400251]
 unique_name_in_owner = true
@@ -93,22 +91,6 @@ theme_type_variation = &"PillYellowOutline"
 [node name="Row" type="HBoxContainer" parent="Margin/Columns/Left/TopBar/IslandSelector" unique_id=1876659198]
 layout_mode = 2
 theme_override_constants/separation = 10
-
-[node name="Sprout" type="PanelContainer" parent="Margin/Columns/Left/TopBar/IslandSelector/Row" unique_id=141873460]
-layout_mode = 2
-size_flags_vertical = 4
-mouse_filter = 2
-theme_type_variation = &"SproutCircle"
-
-[node name="Icon" type="TextureRect" parent="Margin/Columns/Left/TopBar/IslandSelector/Row/Sprout" unique_id=377819810]
-modulate = Color(0.298, 0.576, 0.384, 1)
-custom_minimum_size = Vector2(20, 20)
-layout_mode = 2
-size_flags_vertical = 4
-mouse_filter = 2
-texture = ExtResource("6_sprout")
-expand_mode = 1
-stretch_mode = 5
 
 [node name="Names" type="VBoxContainer" parent="Margin/Columns/Left/TopBar/IslandSelector/Row" unique_id=659621804]
 custom_minimum_size = Vector2(190, 0)
@@ -302,71 +284,6 @@ unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"LabelMuted"
 text = "5 residents"
-
-[node name="WeatherPill" type="PanelContainer" parent="Margin/Columns/Left/IslandFrame" unique_id=568145019]
-layout_mode = 1
-anchors_preset = 1
-anchor_left = 1.0
-anchor_right = 1.0
-offset_top = 14.0
-offset_right = -14.0
-grow_horizontal = 0
-mouse_filter = 2
-theme_type_variation = &"PillWhite"
-
-[node name="Row" type="HBoxContainer" parent="Margin/Columns/Left/IslandFrame/WeatherPill" unique_id=651940323]
-layout_mode = 2
-mouse_filter = 2
-theme_override_constants/separation = 7
-
-[node name="WeatherIcon" type="TextureRect" parent="Margin/Columns/Left/IslandFrame/WeatherPill/Row" unique_id=120342872]
-unique_name_in_owner = true
-modulate = Color(0.949, 0.702, 0.239, 1)
-custom_minimum_size = Vector2(17, 17)
-layout_mode = 2
-size_flags_vertical = 4
-mouse_filter = 2
-texture = ExtResource("8_sun")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="Weather" type="Label" parent="Margin/Columns/Left/IslandFrame/WeatherPill/Row" unique_id=629339716]
-unique_name_in_owner = true
-layout_mode = 2
-theme_type_variation = &"LabelStrong"
-text = "Sunny"
-
-[node name="HintPill" type="PanelContainer" parent="Margin/Columns/Left/IslandFrame" unique_id=1784169824]
-layout_mode = 1
-anchors_preset = 2
-anchor_top = 1.0
-anchor_bottom = 1.0
-offset_left = 14.0
-offset_bottom = -14.0
-grow_vertical = 0
-mouse_filter = 2
-theme_type_variation = &"PillWhite"
-
-[node name="Row" type="HBoxContainer" parent="Margin/Columns/Left/IslandFrame/HintPill" unique_id=1172884523]
-layout_mode = 2
-mouse_filter = 2
-theme_override_constants/separation = 8
-
-[node name="Pointer" type="TextureRect" parent="Margin/Columns/Left/IslandFrame/HintPill/Row" unique_id=470566466]
-modulate = Color(0.29, 0.329, 0.447, 1)
-custom_minimum_size = Vector2(16, 16)
-layout_mode = 2
-size_flags_vertical = 4
-mouse_filter = 2
-texture = ExtResource("10_mouse_pointer_2")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="Hint" type="Label" parent="Margin/Columns/Left/IslandFrame/HintPill/Row" unique_id=777697498]
-layout_mode = 2
-theme_type_variation = &"LabelMuted"
-theme_override_colors/font_color = Color(0.29, 0.329, 0.447, 1)
-text = "A little check-in goes a long way. Tap a bubble!"
 
 [node name="ZoomPill" type="PanelContainer" parent="Margin/Columns/Left/IslandFrame" unique_id=891613315]
 layout_mode = 1
@@ -596,7 +513,7 @@ script = ExtResource("23_sidebar")
 
 [node name="Rows" type="VBoxContainer" parent="Margin/Columns/Sidebar" unique_id=1711384343]
 layout_mode = 2
-theme_override_constants/separation = 12
+theme_override_constants/separation = 10
 
 [node name="Header" type="HBoxContainer" parent="Margin/Columns/Sidebar/Rows" unique_id=1095308016]
 layout_mode = 2

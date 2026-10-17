@@ -14,7 +14,7 @@ extends Control
 ## the screen". That's what lets the 3D world sit in a rounded frame next to
 ## normal 2D UI instead of filling the whole window.
 ##
-## The day pill and weather pill follow the Clock autoload (real time, the
+## The day pill follows the Clock autoload (real time, the
 ## island's founding day); 3D lighting follows it too (scenes/island/day_night.gd).
 ##
 ## Click a building (or its name pill) and the camera glides to it while a
@@ -28,16 +28,6 @@ const BuildingLabelScene := preload("res://scenes/ui/building_label.tscn")
 
 const SUN_ICON := preload("res://assets/icons/sun.svg")
 const MOON_ICON := preload("res://assets/icons/moon.svg")
-const CLOUD_ICON := preload("res://assets/icons/cloud.svg")
-const RAIN_ICON := preload("res://assets/icons/cloud-rain.svg")
-## Weather kind (Clock.WEATHER) -> [day icon, night icon, color, night name].
-const WEATHER_LOOKS := {
-	"sunny": [SUN_ICON, MOON_ICON, Color("F2B33D"), "Clear"],
-	"partly_cloudy":
-	[preload("res://assets/icons/cloud-sun.svg"), preload("res://assets/icons/cloud-moon.svg"), Color("F2B33D"), ""],
-	"cloudy": [CLOUD_ICON, CLOUD_ICON, Color("8C9EB5"), ""],
-	"rainy": [RAIN_ICON, RAIN_ICON, Color("4E9BE6"), ""],
-}
 const NIGHT_COLOR := Color("8E9BF0")
 
 ## Opening a building: zoom to at least this much, with the building this far
@@ -419,7 +409,7 @@ func _show_connection(online: bool) -> void:
 	%StatusDot.add_theme_stylebox_override("panel", dot)
 
 
-## The top bar's "Day 12 · 10:42" and the island view's weather pill.
+## The top bar's "Day 12 · 10:42".
 func _show_time() -> void:
 	var night := Clock.is_night()
 	var time := Clock.time_text()
@@ -429,16 +419,6 @@ func _show_time() -> void:
 		%Day.text = "Day %d · %s" % [Clock.day_number(str(Net.island.get("created_at", ""))), time]
 	%DayIcon.texture = MOON_ICON if night else SUN_ICON
 	%DayIcon.modulate = NIGHT_COLOR if night else Color("FDC902")
-
-	# The backend's weather (read off the island's recent work) wins; the clock's daily roll
-	# fills in before a snapshot arrives or when the server says "night" (everyone asleep).
-	var kind := str(Net.island.get("weather", ""))
-	if not WEATHER_LOOKS.has(kind):
-		kind = Clock.weather(str(Net.island.get("id", "")))
-	var look: Array = WEATHER_LOOKS[kind]
-	%WeatherIcon.texture = look[1] if night else look[0]
-	%WeatherIcon.modulate = NIGHT_COLOR if night and kind in ["sunny", "partly_cloudy"] else look[2]
-	%Weather.text = look[3] if night and look[3] != "" else Clock.WEATHER_NAMES[kind]
 
 
 ## Build mode (scenes/build/build_mode.gd): its node goes in the 3D world, after
@@ -457,13 +437,11 @@ func _open_build_mode() -> void:
 	build_mode.open()
 
 
-## While building, the toolbar takes the bottom of the frame (so the hint pill
-## hides) and the building name pills hide, for a cleaner view.
+## While building, the building name pills hide, for a cleaner view.
 func _on_build_mode_toggled(building: bool) -> void:
 	if building:
 		building_panel.close()
 		talk_popup.close()
-	%IslandFrame.get_node("HintPill").visible = not building
 	%Labels.visible = not building
 	if _dev_pill:
 		_dev_pill.visible = not building

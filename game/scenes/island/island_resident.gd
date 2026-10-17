@@ -52,11 +52,13 @@ var _speech: SpeechBubble
 func _ready() -> void:
 	mii.scale = Vector3.ONE * MII_SCALE
 	# Built in code, not in the .tscn: two more Label3Ds like NameTag.
-	# The mood tag is a small symbol beside the name.
+	# The mood tag is an emoji beside the name (drawn by the system emoji font).
 	_mood_tag = _make_label(Vector3(0, 3.0, 0), 28, 0.016)
-	# The speech bubble's tail tip sits just above the mood tag.
+	_mood_tag.modulate = Color.WHITE  # keep the emoji's own colours
+	_mood_tag.outline_size = 0
+	# The speech bubble's tail tip sits just above the name tag (see say).
 	_speech = SpeechBubble.new()
-	_speech.position = Vector3(0, 3.7, 0)
+	_speech.position = Vector3(0, 3.4, 0)
 	add_child(_speech)
 
 
@@ -86,7 +88,6 @@ func show_resident(resident: Dictionary, open_bubble: Dictionary) -> void:
 		mii.appearance = look
 	name_tag.text = str(resident.get("name", "?"))
 	_mood_tag.text = ResidentData.vibe_symbol(resident)
-	_mood_tag.modulate = ResidentData.vibe_color(resident)
 	# Sit just right of the name; get_aabb() is the name's size in world units.
 	_mood_tag.position.x = name_tag.get_aabb().size.x / 2.0 + 0.2
 	bubble.visible = not open_bubble.is_empty()
@@ -215,6 +216,8 @@ func settle(route: Array[Vector3], new_state: String, look_at_point: Vector3) ->
 ## Say something out loud for a few seconds (a chat line, a help request, a thought),
 ## in a speech bubble over their head.
 func say(text: String, seconds := 4.0) -> void:
+	# Just above the name tag, or above the request bubble when one is showing.
+	_speech.position.y = 4.9 if bubble.visible else 3.4
 	_speech.say(short_line(text), seconds)
 
 

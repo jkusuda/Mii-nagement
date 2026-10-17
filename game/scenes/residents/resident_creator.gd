@@ -424,6 +424,9 @@ func _build_brains() -> void:
 	_model_picker.custom_minimum_size = Vector2(0, 34)
 	_model_picker.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_model_picker.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	# By default an OptionButton grows to fit its longest item; this keeps it at the panel width.
+	_model_picker.fit_to_longest_item = false
+	_model_picker.clip_text = true
 	_model_picker.focus_mode = Control.FOCUS_NONE
 	_model_picker.tooltip_text = "Pick one of the models this brain offers (or type an id)"
 	_model_picker.visible = false
