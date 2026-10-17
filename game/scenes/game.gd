@@ -215,7 +215,7 @@ func _show_island() -> void:
 
 	# Rebuild the 3D island when its layout or buildings changed (build mode, or
 	# another island). Other events (moods, tasks...) leave it alone.
-	var key := JSON.stringify([data.get("id"), data.get("layout"), data.get("buildings", []).map(
+	var key := JSON.stringify([data.get("id"), data.get("map"), data.get("buildings", []).map(
 		func(b): return [b["type"], b.get("x"), b.get("y"), b.get("facing")])])
 	if key != _layout_key:
 		_layout_key = key

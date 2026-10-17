@@ -5,8 +5,8 @@ extends RefCounted
 ## those: the sand paths between the doors and (when the owner hasn't placed any
 ## by hand) where trees and bushes grow.
 ##
-## The data comes from the backend (snapshot `layout` + `buildings`, see
-## docs/protocol.md "Island layout"); IslandBuilder turns it into 3D nodes.
+## The data comes from the backend (snapshot `map` + `buildings`, see
+## docs/protocol.md "Island map"); IslandBuilder turns it into 3D nodes.
 ##
 ## Coordinates: the island is a GRID_W x GRID_H grid of tiles, TILE world units
 ## each, centered on the origin. Tile (c, r) covers x from (c - 10) * 2 to
@@ -109,7 +109,7 @@ var shown_plants: Array = []  # the plants to draw (auto, or the hand-placed one
 
 ## A layout from a snapshot's island dictionary (falls back to the classic island).
 static func from_snapshot(island: Dictionary) -> IslandLayout:
-	var data: Dictionary = island.get("layout", {}) if island.get("layout") is Dictionary else {}
+	var data: Dictionary = island.get("map", {}) if island.get("map") is Dictionary else {}
 	var layout := from_shape(str(data.get("shape", "classic")) if SHAPES.has(data.get("shape")) else "classic", [])
 	layout.seed_text = str(island.get("id", ""))
 	if data.get("land") is Array and data["land"].size() == GRID_H:
@@ -156,10 +156,10 @@ func copy() -> IslandLayout:
 	return other
 
 
-## The body for PUT /islands/{id}/layout.
+## The body for PUT /islands/{id}/layout (the "map" form).
 func to_request() -> Dictionary:
 	return {
-		"layout": {"version": 1, "shape": shape, "land": Array(land), "pond": pond if not pond.is_empty() else null,
+		"map": {"version": 1, "shape": shape, "land": Array(land), "pond": pond if not pond.is_empty() else null,
 			"plants": plants, "season": season},
 		"buildings": buildings.duplicate(true),
 	}

@@ -1,8 +1,10 @@
 """Islands are repositories: founding an island creates (or adopts) a local git
 repo and lays out its buildings and roads on an island shape.
 
-The island's look (land tiles, pond, plants, season) is `Island.layout`; see
-"Island layout" below. Build mode in the game edits it with set_layout().
+The island's map (land tiles, pond, plants, season) is `Island.map`; see
+"Island map" below. Build mode in the game saves it with set_map() (PUT
+/islands/{id}/layout with a "map"; layout.py handles the plain buildings + roads
+form of that request).
 
 Where repos go, by default:
     macOS / Windows   ~/Documents/Mii-nagement/<island-id>
@@ -48,8 +50,8 @@ class IslandError(ValueError):
     """The request can't make an island. The message goes back as a 400."""
 
 
-class LayoutBusy(IslandError):
-    """The layout can't change right now (a task is on the road). Goes back as a 409."""
+class MapBusy(IslandError):
+    """The steps can't change right now (a task is on the road). Goes back as a 409."""
 
 
 def build_roads(types) -> list[tuple[str, str, str]]:
@@ -69,9 +71,9 @@ def build_roads(types) -> list[tuple[str, str, str]]:
     return roads
 
 
-# --- Island layout --------------------------------------------------------------
+# --- Island map -----------------------------------------------------------------
 # An island is a GRID_W x GRID_H grid of tiles (one tile = 2 world units in the
-# game). Island.layout is:
+# game). Island.map is:
 #   {"version": 1, "shape": "classic",
 #    "land": [GRID_H strings of GRID_W chars, "#" = land, "." = sea],
 #    "pond": {"x", "y", "w", "h"} in tiles, or None,
@@ -201,7 +203,7 @@ def door_tile(x: int, y: int, facing: int) -> tuple[int, int]:
     return [(x + 1, y + LOT), (x + LOT, y + 1), (x + 1, y - 1), (x - 1, y + 1)][facing]
 
 
-def default_layout(shape: str = "classic", season: str = "summer") -> dict:
+def default_map(shape: str = "classic", season: str = "summer") -> dict:
     preset = SHAPES[shape]
     pond = dict(preset["pond"]) if preset["pond"] else None
     return {"version": 1, "shape": shape, "land": list(preset["land"]), "pond": pond, "plants": None, "season": season}
@@ -236,17 +238,17 @@ def _number(value, what: str) -> float:
     return float(value)
 
 
-def validate_layout(layout, buildings) -> tuple[dict, list[dict]]:
-    """Check a layout and its buildings (see "Island layout" above); return clean copies.
+def validate_map(island_map, buildings) -> tuple[dict, list[dict]]:
+    """Check a map and its buildings (see "Island map" above); return clean copies.
 
     Rules: the land is one piece with sea all round the grid's edge; the pond sits on
     land; every lot and the ring of tiles around it is land; lots don't overlap each
     other or the pond; every door opens onto free land, and all doors can reach each
     other over free land (so the game can draw a path between them).
     """
-    if not isinstance(layout, dict):
-        raise IslandError("layout must be an object")
-    land = layout.get("land")
+    if not isinstance(island_map, dict):
+        raise IslandError("map must be an object")
+    land = island_map.get("land")
     if not (isinstance(land, list) and len(land) == GRID_H
             and all(isinstance(row, str) and len(row) == GRID_W and set(row) <= {"#", "."} for row in land)):
         raise IslandError(f"land must be {GRID_H} rows of {GRID_W} '#' / '.' characters")
@@ -262,7 +264,7 @@ def validate_layout(layout, buildings) -> tuple[dict, list[dict]]:
     if len(_reachable(next(iter(tiles)), tiles)) != len(tiles):
         raise IslandError("the land must be one piece")
 
-    pond = layout.get("pond")
+    pond = island_map.get("pond")
     pond_tiles: set[tuple[int, int]] = set()
     if pond is not None:
         if not isinstance(pond, dict):
@@ -275,11 +277,11 @@ def validate_layout(layout, buildings) -> tuple[dict, list[dict]]:
         if not pond_tiles <= tiles:
             raise IslandError("the pond must be on land")
 
-    season = layout.get("season", "summer")
+    season = island_map.get("season", "summer")
     if season not in SEASONS:
         raise IslandError(f"season must be one of {', '.join(SEASONS)}")
 
-    plants = layout.get("plants")
+    plants = island_map.get("plants")
     if plants is not None:
         if not isinstance(plants, list) or len(plants) > MAX_PLANTS:
             raise IslandError(f"plants must be null or a list of up to {MAX_PLANTS}")
@@ -327,7 +329,7 @@ def validate_layout(layout, buildings) -> tuple[dict, list[dict]]:
         if door not in reach:
             raise IslandError(f"no path can reach the {STEP_NAMES[t]}")
 
-    shape = str(layout.get("shape") or "custom")[:20]
+    shape = str(island_map.get("shape") or "custom")[:20]
     return ({"version": 1, "shape": shape, "land": list(land), "pond": pond, "plants": plants, "season": season},
             clean_buildings)
 
@@ -344,22 +346,23 @@ def _reachable(start: tuple[int, int], tiles: set[tuple[int, int]]) -> set[tuple
     return seen
 
 
-def set_layout(island_id: str, data: dict) -> Island:
-    """Build mode's save: a new layout and building positions (and maybe other steps).
+def set_map(island_id: str, data: dict) -> Island:
+    """Build mode's save: a new map and building lots (and maybe other steps).
 
+    `data` is {"map": {...}, "buildings": [{"type", "x", "y", "facing"}]}.
     Sync (ORM), so async callers use asyncio.to_thread. Raises Island.DoesNotExist,
-    IslandError, or LayoutBusy when the steps would change while a task is running.
+    IslandError, or MapBusy when the steps would change while a task is running.
     Building ids are kept, so residents, tasks, and history stay attached; a new step
     gets a resident of the right job, and residents of a removed step move home.
     """
     island = Island.objects.get(pk=island_id)
-    layout, buildings = validate_layout(data.get("layout"), data.get("buildings"))
+    island_map, buildings = validate_map(data.get("map"), data.get("buildings"))
     with transaction.atomic():
         current = {b.type: b for b in Building.objects.filter(island_id=island_id)}
         new_types = [b["type"] for b in buildings]
         steps_changed = set(new_types) != set(current)
         if steps_changed and Task.objects.filter(island_id=island_id, status="in_progress").exists():
-            raise LayoutBusy("a task is on the road: add or remove buildings once it's done")
+            raise MapBusy("a task is on the road: add or remove buildings once it's done")
         for t, b in current.items():
             if t not in new_types:
                 b.delete()  # its roads go with it; residents and tasks there lose their building
@@ -376,9 +379,9 @@ def set_layout(island_id: str, data: dict) -> Island:
             for a, b, condition in build_roads(new_types):
                 Road.objects.create(island_id=island_id, from_building_id=ids[a], to_building_id=ids[b], condition=condition)
             _rehome_residents(island_id)
-        island.layout = layout
+        island.map = island_map
         island.plan = _plan_name(new_types)
-        island.save(update_fields=["layout", "plan"])
+        island.save(update_fields=["map", "plan"])
     return island
 
 
@@ -479,7 +482,7 @@ def create_island(data: dict) -> Island:
             link_remote(path, repo)  # so the post office can push branches and open PRs
         island = Island.objects.create(
             id=island_id, name=name, repo=repo, repo_path=str(path), branch=branch, plan=_plan_name(steps),
-            rules={rule: bool(rules.get(rule, False)) for rule in RULES}, layout=default_layout(shape, season),
+            rules={rule: bool(rules.get(rule, False)) for rule in RULES}, map=default_map(shape, season),
         )
         for b in default_buildings(shape, steps):  # building ids are unique across islands
             Building.objects.create(id=f"{island_id}_{b['type']}", island_id=island_id, type=b["type"],
@@ -531,3 +534,18 @@ def _git(cwd: Path, *args: str) -> None:
         raise IslandError("git is not installed")
     if result.returncode != 0:
         raise IslandError(f"git {args[0]} failed: {result.stderr.strip()}")
+
+
+async def delete_island(island_id: str) -> str | None:
+    """Abandon an island: its rows go, its git repository stays on disk (returned, for the message).
+
+    Raises Island.DoesNotExist, or IslandError while a task is running there or
+    when it is the last island (the game needs one to connect to).
+    """
+    island = await Island.objects.aget(pk=island_id)
+    if await Task.objects.filter(island_id=island_id, status="in_progress").aexists():
+        raise IslandError("a task is running on this island; cancel it first")
+    if await Island.objects.acount() == 1:
+        raise IslandError("this is the last island; found another one first")
+    await island.adelete()  # residents, buildings, roads, tasks, friendships cascade; Step/Event rows stay
+    return island.repo_path

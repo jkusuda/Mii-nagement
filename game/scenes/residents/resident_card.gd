@@ -29,10 +29,10 @@ func setup(data: Dictionary) -> void:
 	else:
 		%Doing.text = "Taking it easy." if data.get("state") != "working" else "Busy at work."
 
-	# The notebook is how full the agent's context window is. The protocol doesn't
-	# send it yet, so it's hidden for residents that come from the backend.
-	# TODO(mvp): a `notebook` field (0-1) on residents, from ACP usage updates.
-	var has_notebook := data.has("notebook")
+	# The notebook is how full the agent's context window is (0-1). The backend
+	# sends it (`notebook` in the snapshot and the `notebook` event) once the
+	# agent reports usage; it's null until then, so the row stays hidden.
+	var has_notebook := data.get("notebook") != null
 	%NotebookRow.visible = has_notebook
 	%Notebook.visible = has_notebook
 	if has_notebook:

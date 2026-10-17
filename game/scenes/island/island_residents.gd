@@ -13,7 +13,7 @@ extends Node3D
 ## until they're clear of the building. Residents at the same building line up
 ## along the path from the stop.
 ##
-## The paths come from the island's layout (Island.layout, IslandBuilder); when
+## The paths come from the island's map (Island.map, IslandBuilder); when
 ## it changes (build mode), everyone is placed again.
 
 const ResidentScene := preload("res://scenes/island/island_resident.tscn")

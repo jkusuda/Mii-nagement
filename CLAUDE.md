@@ -35,21 +35,25 @@ backend/mii/      one package = Django project + app
   prefs.py        user settings (Setting table) + API keys (OS keychain via `keyring`); env > saved > default
   asgi.py         ASGI entry: HTTP + WebSocket + lifespan (starts the engine worker)
   urls.py / views.py   async JSON endpoints: /health, /brains, /models, /islands/{id}, tasks, insights, replay
+  tasks.py        submit_task: a request ({"title"} or {"issue"}) -> a queued task (HTTP POST + `create_task`)
   consumers.py    the /ws WebSocket consumer (Channels, no channel layer)
   runtime.py      one sandbox / event bus / bubbles / engine per process (get_runtime())
   models.py       tables (Island, Resident, Building, Road, Task, Step, Event) + snapshot
   migrations/     Django migrations (checked in)
-  islands.py      an island = a git repo: create_island(), default_folder(), ensure_repo()
+  islands.py      an island = a git repo + its map: create_island() (shape + steps), SHAPES,
+                  build_roads (steps -> roads), validate_map / set_map (the game's build mode),
+                  default_folder(), ensure_repo(), delete_island()
   personality.py  Resident -> prompt preamble
   events.py       event bus (persist to SQLite + broadcast) + bubbles
   engine.py       island graph + building handlers (commit, test run, PR) + task loop
-  residents.py    create_resident / update_resident (the resident creator)
-  islands.py      found an island: town plan + a git repo per island (POST /islands)
+  residents.py    create_resident / update_resident / delete_resident (the resident creator; `buildings` = works at)
+  layout.py       workflow editing by hand: validate + save buildings/roads (set_layout,
+                  PUT /islands/{id}/layout without a "map")
   sandbox.py      Sandboxes (one per island repo) + worktree per task + commit_all/diff_stat + is_inside()
-  agents/         __init__ (AgentJob, BrainRunner, make_runner, parse_verdict), mock.py,
-                  acp.py (AcpRunner + BRAINS table), openrouter.py (OpenRouterRunner)
+  agents/         __init__ (AgentJob, BrainRunner, make_runner, parse_verdict, permission_for), mock.py,
+                  acp.py (AcpRunner + BRAINS + GIFTS tables), openrouter.py (OpenRouterRunner)
   github.py       repo + branch lists via `gh`; issue in / PR out
-  insights.py     stats from the Step table
+  insights.py     the Insights payload: Step + Task tables + stored bubble events, per range
   replay.py       replay a recorded task into the game
   seed.py         seed island + simulator (via `manage.py seed`)
   watch.py        tiny WebSocket client that prints events (via `manage.py watch`)
@@ -181,8 +185,8 @@ env var) and `git config --global http.sslBackend schannel` make uv and git trus
   async ORM (`aget`/`asave`/`async for`), and `asyncio.to_thread` for subprocesses.
 - Keep `.tscn` files simple. Put logic in `.gd` files and build nodes in code
   where that's clearer.
-- Islands are data (`Island.layout` + building lots, docs/protocol.md "Island
-  layout"); the game builds the 3D island from it (`scenes/island/`). Keep the
+- Islands are data (`Island.map` + building lots, docs/protocol.md "Island
+  map"); the game builds the 3D island from it (`scenes/island/`). Keep the
   shape presets and rules in `IslandLayout` (GDScript) and `islands.py` in step.
 - Residents walk along the roads in `scenes/island/` (`island_residents.gd` picks
   the route, `island_paths.gd` follows the sand path). The owner asked for it to

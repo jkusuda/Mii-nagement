@@ -42,7 +42,7 @@ The client should rebuild its view from scratch when it gets one.
     "plan": "classic",
     "rules": {"merge_pr": true, "install_packages": true, "shell": false},
     "created_at": "2026-10-04T09:12:00+00:00",
-    "layout": {
+    "map": {
       "version": 1, "shape": "classic",
       "land": ["....................", ".##################.", "...", "...................."],
       "pond": {"x": 7, "y": 6, "w": 5, "h": 2},
@@ -63,7 +63,7 @@ The client should rebuild its view from scratch when it gets one.
         "bluntness": 0.3, "caution": 0.7, "chattiness": 0.6, "creativity": 0.5,
         "keys": {"read": "yes", "edit": "ask", "execute": "ask", "fetch": "no"},
         "gifts": [],
-        "state": "idle", "building": "mailbox", "mood": "happy"
+        "state": "idle", "building": "mailbox", "mood": "happy", "notebook": null
       }
     ],
     "bubbles": [
@@ -71,6 +71,9 @@ The client should rebuild its view from scratch when it gets one.
     ],
     "tasks": [
       {"id": "t_12", "title": "Fix login typo", "status": "in_progress", "building": "lab", "agent": "carlos", "pr_url": null}
+    ],
+    "friendships": [
+      {"a": "carlos", "b": "jun", "handoffs": 7, "score": 0.679}
     ]
   }
 }
@@ -80,10 +83,13 @@ The client should rebuild its view from scratch when it gets one.
   local git repository (every island is a repository; see `GET /islands` and
   `POST /islands` in architecture.md). `branch`: what residents branch off from.
   `plan`: the town plan its steps match (`classic`, `quick_fixes`) or `custom`. `rules`: house rules from
-  the island creator (`true` = ask me before doing this); stored only for now.
+  the island creator (`true` = ask me before doing this). `shell` and
+  `install_packages` turn a resident's `execute` key from `yes` into `ask` (for
+  every command, or for commands that look like a package install); `merge_pr`
+  is stored only: the post office opens PRs and never merges them.
 - `created_at`: when the island was founded (ISO-8601 UTC). The game counts
   days from it ("Day 1" is the founding day, in the player's local time).
-- `layout`: how the island looks (see "Island layout" below).
+- `map`: how the island looks: land, pond, plants, season (see "Island map" below).
 - `buildings[].x / y`: the top-left tile of the building's 3×3-tile lot.
   `facing`: where its door looks: `0` south (toward the camera), `1` east,
   `2` north, `3` west.
@@ -100,9 +106,16 @@ The client should rebuild its view from scratch when it gets one.
   or `no`. The ACP runner honours them: `yes` answers the agent's own
   "allow once" option, `ask` shows a ✋ bubble, `no` rejects.
 - `residents[].gifts`: ids of extra MCP servers (`browser`, `github`, `docs`,
-  `database`, `terminal`). Stored only for now.
+  `database`, `terminal`) the resident brings to every ACP session (the `GIFTS`
+  table in `backend/mii/agents/acp.py`). `GET /gifts` says which ones work on
+  this machine. The `openrouter` brain has no MCP client, so it ignores them.
+- `residents[].notebook`: how full the agent's context window is, 0.0-1.0, or
+  `null` until the agent reports it (see the `notebook` event).
 - `bubbles`: bubbles still waiting for an answer.
-- `tasks[].status`: `queued`, `in_progress`, `done`, or `failed`.
+- `tasks[].status`: `queued`, `in_progress`, `done`, `failed`, or `cancelled`.
+- `friendships`: the friendship meter, one entry per pair of residents who have
+  handed packages to each other (`a` < `b` by id). `handoffs` counts them,
+  `score` is 0.0-1.0 and grows with every handoff (5 → 0.56, 10 → 0.80).
 
 ### `agent_state`
 A resident's activity changed.
@@ -146,8 +159,10 @@ one back as the `response`. Agents' permission requests use it:
 ### `bubble_resolved`
 A bubble was answered (by any client) or timed out. Remove it.
 ```json
-{"type": "bubble_resolved", "id": "b_3f2a"}
+{"type": "bubble_resolved", "id": "b_3f2a", "answered": true, "response": "Use tests/test_login.py"}
 ```
+`answered` is `false` (and `response` `null`) when the bubble timed out. The
+insights endpoint counts answers and answer times from these.
 
 ### `handoff`
 A task package passed from one resident to another.
@@ -195,6 +210,35 @@ resident with the same `id`. Same shape as `snapshot.island.residents[]`.
 {"type": "resident", "resident": {"id": "mo_3f2a", "name": "Mo", "job": "coder", "...": "..."}}
 ```
 
+### `resident_removed`
+A resident moved away (any client asked). Remove them from the island.
+```json
+{"type": "resident_removed", "id": "mo_3f2a"}
+```
+
+### `friendship`
+Two residents handed a package between them; their friendship grew. Same
+shape as `snapshot.island.friendships[]`: replace the entry for that pair.
+```json
+{"type": "friendship", "a": "carlos", "b": "jun", "handoffs": 8, "score": 0.728}
+```
+
+### `notebook`
+How full a resident's context window is (their notebook), from the agent's
+usage updates. `value` is 0.0-1.0.
+```json
+{"type": "notebook", "agent": "carlos", "value": 0.42}
+```
+
+### `layout`
+The island's buildings or roads changed: build mode (`set_layout`), or a
+resident was given a building. Replace `buildings` and `roads` wholesale; the
+shapes are the snapshot's.
+```json
+{"type": "layout", "buildings": [{"id": "mailbox", "type": "mailbox", "name": "Mailbox", "x": 4, "y": 15, "resident": "jun"}],
+ "roads": [{"from": "mailbox", "to": "workshop", "condition": "always"}]}
+```
+
 ### `error`
 The server couldn't handle something the client sent.
 ```json
@@ -234,20 +278,74 @@ client.
 default. `brain` is one of `mock`, `claude-code`, `codex`, `gemini`, `openrouter`.
 Unknown `job`, `brain`, key values, or gifts are rejected with `error`.
 
-New residents are placeholders for now: they live on the island and show up in
-the game, but the workflow keeps using the residents assigned to buildings.
+A new resident takes over the buildings of their job that nobody works at yet.
+To put them to work outright, add `"buildings": ["workshop", "lab"]` (building
+ids): they become the worker at those buildings, taking over from whoever was
+there, and the server follows the `resident` event with a `layout` event. The
+engine always runs the resident each building points at.
 
 ### `update_resident`
 Edit a resident (the creator's "Save"). Same fields as `create_resident` plus
 `id`; only the fields you send change. The server replies with a `resident`
 event to every client, or `error` if the id is unknown.
 ```json
-{"type": "update_resident", "resident": {"id": "mo_3f2a", "caution": 0.9, "gifts": []}}
+{"type": "update_resident", "resident": {"id": "mo_3f2a", "caution": 0.9, "gifts": [], "buildings": ["lab"]}}
 ```
+
+### `delete_resident`
+The resident moves away. The server replies with `resident_removed` to every
+client, or `error` if the id is unknown, if they are carrying a package, or if a
+building still counts on them (send `update_resident` with `buildings` for
+someone else first).
+```json
+{"type": "delete_resident", "id": "mo_3f2a"}
+```
+
+### `create_task`
+Drop a package in the mailbox (same as `POST /islands/{id}/tasks`). Either a
+`title` (with an optional `description`) or an `issue` number of the island's
+GitHub repo. The server replies with a `task` event (status `queued`) to every
+client, or `error`.
+```json
+{"type": "create_task", "task": {"title": "Fix login typo", "description": "The button says 'Log im'."}}
+```
+
+### `cancel_task`
+Take a package back. A queued task is cancelled on the spot; a running one is
+stopped mid-step (its agent process is ended and the resident puts the package
+down). Every client gets a `task` event with status `cancelled`; a finished or
+unknown task answers `error`.
+```json
+{"type": "cancel_task", "id": "t_12"}
+```
+
+### `set_layout`
+Build mode: replace the island's buildings and roads. Send the whole layout.
+```json
+{
+  "type": "set_layout",
+  "buildings": [
+    {"id": "mailbox", "type": "mailbox", "name": "Mailbox", "x": 4, "y": 15, "resident": "jun"},
+    {"type": "lab", "name": "Lab", "x": 20, "y": 15}
+  ],
+  "roads": [{"from": "mailbox", "to": "workshop", "condition": "always"}]
+}
+```
+- A building with an `id` that already exists is updated in place (its history
+  and worker survive); one without an `id` is created (the server picks the id,
+  which is why the server's `layout` event is the one to redraw from);
+  buildings left out are removed, and residents living there move to the mailbox.
+- Rules: exactly one `mailbox`; `type` is one of `mailbox`, `workshop`, `lab`,
+  `courthouse`, `post_office`; roads join buildings in the list with
+  `condition` `always` / `pass` / `fail`; `resident` must live on the island.
+  A building a package is sitting in right now can't be removed.
+- The server replies with `error`, or a `layout` event to every client. The
+  change applies to the next package (a running one keeps its graph).
+  Same thing over HTTP: `PUT /islands/{id}/layout` with `{"buildings", "roads"}`.
 
 ---
 
-## Island layout
+## Island map
 
 An island is a grid of 20 × 14 tiles. The game draws one tile as 2 × 2 world
 units, centered on the origin: tile `(c, r)` is centered at
@@ -263,7 +361,7 @@ units, centered on the origin: tile `(c, r)` is centered at
 - `shape`: the preset it started from (informational).
 
 Buildings stand on a 3 × 3-tile lot. Its door opens onto the tile just outside
-the middle of the side it faces. Rules the server checks (`validate_layout` in
+the middle of the side it faces. Rules the server checks (`validate_map` in
 `backend/mii/islands.py`): every lot plus the ring of tiles around it is land;
 lots don't overlap each other or the pond; every door opens onto free land; and
 all doors can reach each other over free land. The **paths** are not stored: the
@@ -277,10 +375,14 @@ order mailbox → workshop → lab → courthouse → post_office over the steps
 island has: a check step (`lab`, `courthouse`) goes on with `pass` and back to
 the `workshop` with `fail`; the others go on with `always`.
 
-### Build mode: `PUT /islands/{id}/layout`
+### Build mode: `PUT /islands/{id}/layout` with a `map`
+
+This is what the game's build mode sends: the island's map and where each
+workflow step stands. (Without `map`, the same URL takes the whole workflow
+graph by hand, `{"buildings", "roads"}`, like `set_layout` above.)
 
 ```json
-{"layout": {...}, "buildings": [{"type": "workshop", "x": 8, "y": 2, "facing": 0}]}
+{"map": {...}, "buildings": [{"type": "workshop", "x": 8, "y": 2, "facing": 0}]}
 ```
 
 The server validates, saves, and answers with the new snapshot, which it also
@@ -347,7 +449,7 @@ Roads:
 
 With `MOCK_AGENTS=1` (the default), every resident runs on the mock brain anyway.
 
-In the 3D client, the island is built from the snapshot's `layout` and
+In the 3D client, the island is built from the snapshot's `map` and
 `buildings` (`game/scenes/island/island_builder.gd`); each building **type** becomes
 a node under `Island/Buildings/` (`mailbox` → `Mailbox`, `post_office` →
 `PostOffice`). Building ids are unique across all islands, so other islands use

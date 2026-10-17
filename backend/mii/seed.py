@@ -14,7 +14,7 @@ import random
 import httpx
 from django.db import transaction
 
-from mii.islands import SHAPES, STEP_NAMES, STEP_ORDER, default_layout
+from mii.islands import SHAPES, STEP_NAMES, STEP_ORDER, default_map
 from mii.models import Building, Event, Island, Resident, Road, Step, Task
 
 ISLAND_ID = "sunny"
@@ -73,7 +73,7 @@ def seed(reset: bool = False) -> str:
             for model in (Event, Step, Task, Road, Building, Resident, Island):
                 model.objects.all().delete()
         if not Island.objects.filter(pk=ISLAND_ID).exists():
-            Island.objects.create(id=ISLAND_ID, name="Sunny Isle", repo=None, layout=default_layout("classic"))
+            Island.objects.create(id=ISLAND_ID, name="Sunny Isle", repo=None, map=default_map("classic"))
             # Residents point at buildings and buildings at residents: SQLite checks
             # foreign keys when the transaction commits, so the order doesn't matter.
             Resident.objects.bulk_create(residents())

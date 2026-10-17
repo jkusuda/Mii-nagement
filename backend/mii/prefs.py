@@ -35,6 +35,7 @@ SETTINGS = {
     "test_command": ("TEST_COMMAND", None, str),
     "openrouter_model": ("OPENROUTER_MODEL", "anthropic/claude-sonnet-4.5", str),
     "keep_worktrees": ("KEEP_WORKTREES", False, bool),
+    "database_url": ("DATABASE_URL", None, str),  # for the `database` gift (agents/acp.py GIFTS)
 }
 
 # secret -> environment variable (what the agent processes expect)
@@ -77,6 +78,16 @@ def get(key: str):
         return _parse(_env(env_name), kind)
     row = Setting.objects.filter(pk=key).first()
     return _parse(row.value, kind) if row is not None else default
+
+
+def extra_env(env_name: str) -> str | None:
+    """A value an MCP server needs, by its environment variable name: the environment, else the matching setting."""
+    if _env(env_name) is not None:
+        return _env(env_name)
+    for key, (name, _, _) in SETTINGS.items():
+        if name == env_name:
+            return get(key)
+    return None
 
 
 def set_many(values: dict) -> None:

@@ -6,7 +6,7 @@ extends Node3D
 ##
 ## Everything happens on a *draft* copy of the island's layout, rebuilt live so
 ## you see each change. Save sends it to the backend (PUT /islands/{id}/layout,
-## see docs/protocol.md "Island layout"), which checks it again and tells every
+## see docs/protocol.md "Island map"), which checks it again and tells every
 ## client. Cancel puts the island back the way it was.
 ##
 ## This node lives in the 3D world (island_3d.tscn, added by game.gd), so it

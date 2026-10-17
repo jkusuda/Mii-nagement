@@ -41,8 +41,8 @@ class Island(models.Model):
     # Stored only for now (merge_pr, install_packages, shell).
     rules = models.JSONField(default=dict)
     created_at = models.DateTimeField(default=utcnow)  # "Day 1" in the game
-    # Land tiles, pond, plants, season: see "Island layout" in islands.py. {} = the classic island.
-    layout = models.JSONField(default=dict)
+    # Land tiles, pond, plants, season: see "Island map" in islands.py. {} = the classic island.
+    map = models.JSONField(default=dict)
 
 
 class Resident(models.Model):
@@ -71,6 +71,8 @@ class Resident(models.Model):
     state = models.CharField(max_length=20, default="idle")  # idle | walking | working | sleeping
     building = models.ForeignKey("Building", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     mood = models.CharField(max_length=20, default="happy")
+    # How full the agent's context window is, 0.0-1.0 (from ACP usage updates). None = unknown.
+    notebook = models.FloatField(null=True, blank=True)
 
 
 class Building(models.Model):
@@ -96,13 +98,15 @@ class Task(models.Model):
     island = models.ForeignKey(Island, on_delete=models.CASCADE, related_name="tasks")
     title = models.CharField(max_length=500)
     description = models.TextField(blank=True, default="")
-    status = models.CharField(max_length=20, default="queued")  # queued | in_progress | done | failed
+    status = models.CharField(max_length=20, default="queued")  # queued | in_progress | done | failed | cancelled
     building = models.ForeignKey(Building, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")  # where the package is now
     agent = models.ForeignKey(Resident, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")  # who is carrying it
     issue_number = models.IntegerField(null=True, blank=True)  # the GitHub issue it came from
     branch = models.CharField(max_length=200, null=True, blank=True)  # mii/<task_id>, in the task's worktree
     pr_url = models.CharField(max_length=500, null=True, blank=True)  # set by the post office
+    merged_at = models.DateTimeField(null=True, blank=True)  # when the PR was merged (insights.py asks `gh`)
     created_at = models.DateTimeField(default=utcnow)
+    finished_at = models.DateTimeField(null=True, blank=True)  # when it became done / failed
 
 
 class Step(models.Model):
@@ -119,6 +123,7 @@ class Step(models.Model):
     resident_id = models.CharField(max_length=64)
     brain = models.CharField(max_length=50)
     outcome = models.CharField(max_length=10, blank=True, default="")  # pass | fail
+    summary = models.TextField(blank=True, default="")  # what the resident reported (the plan, the commit, the review...)
     timed_out = models.BooleanField(default=False)
     bubbles_raised = models.IntegerField(default=0)
     started_at = models.DateTimeField(default=utcnow)
@@ -129,6 +134,28 @@ class Step(models.Model):
         if self.finished_at is None:
             return None
         return (self.finished_at - self.started_at).total_seconds()
+
+
+class Friendship(models.Model):
+    """The friendship meter: how often two residents hand packages to each other.
+
+    One row per pair, with the two ids sorted so (a, b) and (b, a) are the same
+    row. Plain strings, like Step, so history survives a resident leaving.
+    """
+
+    island = models.ForeignKey(Island, on_delete=models.CASCADE, related_name="friendships")
+    a = models.CharField(max_length=64)
+    b = models.CharField(max_length=64)
+    handoffs = models.IntegerField(default=0)
+    updated_at = models.DateTimeField(default=utcnow)
+
+    class Meta:
+        unique_together = [("island", "a", "b")]
+
+    @property
+    def score(self) -> float:
+        """0.0-1.0: grows with every handoff, fast at first (5 → 0.56, 10 → 0.80, 20 → 0.96)."""
+        return round(1 - 0.85**self.handoffs, 3)
 
 
 class Setting(models.Model):
@@ -168,7 +195,12 @@ def resident_to_dict(r: Resident) -> dict:
         "state": r.state,
         "building": r.building_id,
         "mood": r.mood,
+        "notebook": r.notebook,
     }
+
+
+def friendship_to_dict(f: Friendship) -> dict:
+    return {"a": f.a, "b": f.b, "handoffs": f.handoffs, "score": f.score}
 
 
 def task_to_dict(t: Task) -> dict:
@@ -182,9 +214,55 @@ def task_to_dict(t: Task) -> dict:
     }
 
 
+def task_detail_dict(t: Task, steps: list[Step]) -> dict:
+    """A task for `GET /islands/{id}/tasks`: the protocol shape plus what only HTTP clients need."""
+    return {
+        **task_to_dict(t),
+        "description": t.description,
+        "issue": t.issue_number,
+        "branch": t.branch,
+        "created_at": t.created_at.isoformat(),
+        "finished_at": t.finished_at.isoformat() if t.finished_at else None,
+        "steps": [step_to_dict(s) for s in steps],
+    }
+
+
+def step_to_dict(s: Step) -> dict:
+    return {
+        "building": s.building_id,
+        "building_type": s.building_type,
+        "resident": s.resident_id,
+        "brain": s.brain,
+        "outcome": s.outcome or None,  # None while the step is still running
+        "summary": s.summary,
+        "timed_out": s.timed_out,
+        "bubbles_raised": s.bubbles_raised,
+        "started_at": s.started_at.isoformat(),
+        "finished_at": s.finished_at.isoformat() if s.finished_at else None,
+        "seconds": s.seconds,
+    }
+
+
+def building_to_dict(b: Building) -> dict:
+    return {"id": b.id, "type": b.type, "name": b.name, "x": b.x, "y": b.y, "facing": b.facing,
+            "resident": b.resident_id}
+
+
+def road_to_dict(r: Road) -> dict:
+    return {"from": r.from_building_id, "to": r.to_building_id, "condition": r.condition}
+
+
+async def island_layout(island_id: str) -> dict:
+    """The island's buildings and roads (the `layout` event, and part of the snapshot)."""
+    return {
+        "buildings": [building_to_dict(b) async for b in Building.objects.filter(island_id=island_id).order_by("id")],
+        "roads": [road_to_dict(r) async for r in Road.objects.filter(island_id=island_id).order_by("id")],
+    }
+
+
 async def island_snapshot(island_id: str, open_bubbles: list[dict]) -> dict:
     """Full island state for the `snapshot` event. Raises Island.DoesNotExist."""
-    from mii.islands import default_layout  # here, not at the top: islands.py imports this module
+    from mii.islands import default_map  # here, not at the top: islands.py imports this module
 
     island = await Island.objects.aget(pk=island_id)
     return {
@@ -196,20 +274,15 @@ async def island_snapshot(island_id: str, open_bubbles: list[dict]) -> dict:
         "plan": island.plan,
         "rules": island.rules,
         "created_at": island.created_at.isoformat(),
-        "layout": island.layout or default_layout(),
-        "buildings": [
-            {"id": b.id, "type": b.type, "name": b.name, "x": b.x, "y": b.y, "facing": b.facing,
-             "resident": b.resident_id}
-            async for b in Building.objects.filter(island_id=island_id).order_by("id")
-        ],
-        "roads": [
-            {"from": r.from_building_id, "to": r.to_building_id, "condition": r.condition}
-            async for r in Road.objects.filter(island_id=island_id).order_by("id")
-        ],
+        "map": island.map or default_map(),
+        **await island_layout(island_id),
         "residents": [resident_to_dict(r) async for r in Resident.objects.filter(island_id=island_id).order_by("id")],
         "bubbles": open_bubbles,
         "tasks": [
             task_to_dict(t)
             async for t in Task.objects.filter(island_id=island_id, status__in=["queued", "in_progress"]).order_by("created_at")
+        ],
+        "friendships": [
+            friendship_to_dict(f) async for f in Friendship.objects.filter(island_id=island_id).order_by("a", "b")
         ],
     }

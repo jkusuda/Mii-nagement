@@ -4,7 +4,8 @@
     branches:  gh api repos/<owner/name>/branches --jq '.[].name'                (island creator)
     issue in:  gh issue view <number> --repo <owner/name> --json title,body
     PR out:    git push -u origin mii/<task_id>   (from the task's worktree)
-               gh pr create --repo <owner/name> --head mii/<task_id> --title ... --body ...
+               gh pr create --repo <owner/name> --head mii/<task_id> --base <island branch> --title ... --body ...
+    PR state:  gh pr view <url> --json state,mergedAt   (insights.py: "PRs merged")
 
 Both functions block on subprocesses; async callers wrap them in asyncio.to_thread.
 """
@@ -60,11 +61,24 @@ def fetch_issue(repo: str, number: int) -> tuple[str, str]:
     return data.get("title", f"Issue #{number}"), data.get("body") or ""
 
 
-def open_pull_request(repo: str, worktree: Path, branch: str, title: str, body: str) -> str:
-    """Push the task branch and open a PR. Returns the PR URL. Called by the post office."""
+def open_pull_request(repo: str, worktree: Path, branch: str, title: str, body: str, base: str | None = None) -> str:
+    """Push the task branch and open a PR against `base` (the island's branch). Returns the PR URL."""
     _run(["git", "push", "-u", "origin", branch], cwd=worktree)
-    out = _run(["gh", "pr", "create", "--repo", repo, "--head", branch, "--title", title, "--body", body], cwd=worktree)
+    args = ["gh", "pr", "create", "--repo", repo, "--head", branch, "--title", title, "--body", body]
+    if base:
+        args += ["--base", base]
+    out = _run(args, cwd=worktree)
     lines = [line.strip() for line in out.splitlines() if line.strip()]
     if not lines or not lines[-1].startswith("http"):
         raise GitHubError(f"gh did not print a PR URL: {out.strip()[:200]}")
     return lines[-1]
+
+
+def pr_merged_at(pr_url: str) -> str | None:
+    """When the PR was merged (ISO-8601), or None while it's open or closed unmerged."""
+    raw = _run(["gh", "pr", "view", pr_url, "--json", "state,mergedAt"])
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        raise GitHubError("gh returned something that isn't JSON")
+    return data.get("mergedAt") or None

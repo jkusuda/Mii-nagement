@@ -5,7 +5,8 @@ import pytest
 from conftest import ScriptedRunner, db_test, make_workflow
 from django.test import AsyncClient
 
-from mii import views
+from mii import residents, views
+from mii.models import Island
 
 pytestmark = db_test
 
@@ -52,10 +53,89 @@ async def test_create_task_validates_and_queues(island, fake_runtime):
     assert fake_runtime.workflow.queue.qsize() == 1
 
 
+async def test_list_and_get_tasks_with_steps_and_events(island, fake_runtime):
+    client = AsyncClient()
+    assert (await client.get("/islands/sunny/tasks")).json() == {"tasks": []}
+    task = await fake_runtime.workflow.submit("sunny", "Hi", "do it")
+    listed = (await client.get("/islands/sunny/tasks")).json()["tasks"]
+    assert [t["id"] for t in listed] == [task.id] and listed[0]["description"] == "do it" and listed[0]["steps"] == []
+    detail = (await client.get(f"/islands/sunny/tasks/{task.id}")).json()
+    assert detail["status"] == "queued" and detail["events"] == []  # nothing happened yet
+
+    await fake_runtime.workflow.run_task(task.id)
+    detail = (await client.get(f"/islands/sunny/tasks/{task.id}")).json()
+    assert detail["status"] == "done"
+    assert [s["building_type"] for s in detail["steps"]] == ["mailbox", "workshop", "lab", "courthouse", "post_office"]
+    assert detail["steps"][0] | {"outcome": "pass", "summary": "scripted", "resident": "jun"} == detail["steps"][0]
+    assert detail["events"][0]["type"] == "task" and detail["events"][0]["status"] == "in_progress"
+    assert detail["events"][-1]["type"] == "task" and detail["events"][-1]["status"] == "done"
+    assert {"agent_state", "mood", "handoff"} <= {e["type"] for e in detail["events"]}
+    assert (await client.get("/islands/sunny/tasks?status=queued,in_progress")).json()["tasks"] == []
+    assert (await client.get("/islands/sunny/tasks?limit=x")).status_code == 400
+    assert (await client.get("/islands/sunny/tasks/t_nope")).status_code == 404
+    assert (await client.get("/islands/nowhere/tasks")).status_code == 404
+
+
+async def test_cancel_and_delete_endpoints(island, fake_runtime):
+    client = AsyncClient()
+    task = await fake_runtime.workflow.submit("sunny", "Hi")
+    assert (await client.post(f"/islands/sunny/tasks/{task.id}/cancel")).json()["status"] == "cancelled"
+    assert (await client.post(f"/islands/sunny/tasks/{task.id}/cancel")).status_code == 409
+    assert (await client.post("/islands/sunny/tasks/t_nope/cancel")).status_code == 404
+
+    assert (await client.delete("/islands/sunny/residents/carlos")).status_code == 409  # works at the workshop
+    mo = await residents.create_resident("sunny", {"name": "Mo", "job": "coder"})
+    assert (await client.delete(f"/islands/sunny/residents/{mo.id}")).json() == {"deleted": mo.id}
+    assert (await client.delete(f"/islands/sunny/residents/{mo.id}")).status_code == 404
+
+    assert (await client.delete("/islands/sunny")).status_code == 409  # the last island stays
+    await Island.objects.acreate(id="rock", name="Rocky Cove")
+    assert (await client.delete("/islands/rock")).json() == {"deleted": "rock", "repo_kept": None}
+    assert (await client.get("/islands/rock")).status_code == 404
+    assert (await client.delete("/islands/rock")).status_code == 404
+
+
 async def test_insights_and_replay_endpoints(island, fake_runtime):
     client = AsyncClient()
-    assert set((await client.get("/islands/sunny/insights")).json()) == {"island", "residents", "brains", "buildings"}
+    data = (await client.get("/islands/sunny/insights")).json()
+    assert {"island", "per_day", "tip", "residents", "brains", "buildings"} <= set(data) and data["range"] == "week"
+    assert (await client.get("/islands/sunny/insights?range=today")).json()["range"] == "today"
+    assert (await client.get("/islands/sunny/insights?range=year")).status_code == 400
     assert (await client.post("/replay/t_nope")).status_code == 404
+
+
+async def test_events_history_endpoint(island, fake_runtime):
+    client = AsyncClient()
+    assert (await client.get("/islands/sunny/events")).json() == {"events": []}
+    task = await fake_runtime.workflow.submit("sunny", "Hi")
+    await fake_runtime.workflow.run_task(task.id)
+    history = (await client.get("/islands/sunny/events")).json()["events"]
+    assert history[0]["type"] == "task" and history[0]["status"] == "queued" and history[0]["event_id"] < history[1]["event_id"]
+    assert history[-1]["status"] == "done" and all("ts" in e for e in history)
+    last_two = (await client.get("/islands/sunny/events?limit=2")).json()["events"]
+    assert last_two == history[-2:]
+    assert (await client.get("/islands/sunny/events?limit=x")).status_code == 400
+    assert (await client.get("/islands/nowhere/events")).status_code == 404
+
+
+async def test_gifts_endpoint():
+    data = (await AsyncClient().get("/gifts")).json()
+    assert set(data) == {"browser", "github", "docs", "database", "terminal"}
+    assert {"ok", "label", "hint"} <= set(data["docs"]) and isinstance(data["docs"]["ok"], bool)
+
+
+async def test_layout_endpoint(island, fake_runtime):
+    client = AsyncClient()
+    body = {"buildings": [{"id": "mailbox", "type": "mailbox", "name": "Mailbox", "x": 1, "y": 1, "resident": "jun"},
+                          {"id": "workshop", "type": "workshop", "name": "Shed", "x": 5, "y": 5, "resident": "carlos"}],
+            "roads": [{"from": "mailbox", "to": "workshop", "condition": "always"}]}
+    saved = await client.put("/islands/sunny/layout", data=json.dumps(body), content_type="application/json")
+    assert saved.status_code == 200, saved.content
+    assert [b["id"] for b in saved.json()["buildings"]] == ["mailbox", "workshop"] and len(saved.json()["roads"]) == 1
+    assert (await client.get("/islands/sunny")).json()["buildings"][1]["name"] == "Shed"
+    bad = await client.put("/islands/sunny/layout", data=json.dumps({"buildings": []}), content_type="application/json")
+    assert bad.status_code == 400 and "mailbox" in bad.json()["error"]
+    assert (await client.post("/islands/sunny/layout")).status_code == 405
 
 
 async def test_list_and_found_islands(island, fake_runtime, tmp_path, monkeypatch):

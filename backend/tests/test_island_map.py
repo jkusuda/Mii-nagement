@@ -1,4 +1,4 @@
-"""Island layouts: workflow steps -> roads, shape presets, validation, build mode saves."""
+"""Island maps: workflow steps -> roads, shape presets, validation, build mode saves."""
 
 import copy
 import json
@@ -21,7 +21,7 @@ CLASSIC_ROADS = [
 
 
 def classic(steps=islands.STEP_ORDER):
-    return islands.default_layout("classic"), islands.default_buildings("classic", steps)
+    return islands.default_map("classic"), islands.default_buildings("classic", steps)
 
 
 # --- Steps and roads ------------------------------------------------------------
@@ -54,7 +54,7 @@ def test_required_steps():
 @pytest.mark.parametrize("shape", list(islands.SHAPES))
 @pytest.mark.parametrize("plan", list(islands.PLANS))
 def test_every_shape_preset_is_valid(shape, plan):
-    layout, buildings = islands.validate_layout(islands.default_layout(shape), islands.default_buildings(shape, islands.PLANS[plan]))
+    layout, buildings = islands.validate_map(islands.default_map(shape), islands.default_buildings(shape, islands.PLANS[plan]))
     assert layout["shape"] == shape and [b["type"] for b in buildings] == list(islands.PLANS[plan])
 
 
@@ -63,7 +63,7 @@ def test_validation_rules():
 
     def rejects(layout, buildings, words):
         with pytest.raises(islands.IslandError, match=words):
-            islands.validate_layout(layout, buildings)
+            islands.validate_map(layout, buildings)
 
     bad = copy.deepcopy(layout)
     bad["land"][0] = "#" + bad["land"][0][1:]
@@ -89,10 +89,10 @@ def test_validation_rules():
     walled = copy.deepcopy(buildings)
     walled[2].update(x=14, y=4, facing=2)  # the lab's door opens into the workshop's lot? no: into free land
     walled[0]["facing"] = 3  # mailbox door at (2, 3): free land, fine
-    islands.validate_layout(layout, walled)
+    islands.validate_map(layout, walled)
     boxed = copy.deepcopy(buildings)
     boxed[0]["facing"] = 1  # mailbox door at (6, 3): the gap between mailbox and workshop lots
-    islands.validate_layout(layout, boxed)
+    islands.validate_map(layout, boxed)
     blocked = copy.deepcopy(buildings)
     blocked[1].update(x=6, y=2)  # workshop right next to the mailbox ...
     blocked[0]["facing"] = 1     # ... so the mailbox's east door opens into it
@@ -102,7 +102,7 @@ def test_validation_rules():
 def test_validation_keeps_explicit_plants_and_cleans_them():
     layout, buildings = classic()
     layout["plants"] = [{"kind": "tree", "x": 2, "y": 2.5, "rot": 400, "scale": 1.2}]
-    clean, _ = islands.validate_layout(layout, buildings)
+    clean, _ = islands.validate_map(layout, buildings)
     assert clean["plants"] == [{"kind": "tree", "x": 2.0, "y": 2.5, "rot": 40.0, "scale": 1.2}]
 
 
@@ -112,7 +112,7 @@ async def test_found_island_with_shape_and_steps(island, tmp_path, monkeypatch):
     monkeypatch.setenv("ISLANDS_ROOT", str(tmp_path))
     new = await sync_to_async(islands.create_island)(
         {"name": "Twin Peaks", "shape": "twin", "steps": ["post_office", "mailbox", "workshop", "lab"], "season": "winter"})
-    assert new.plan == "custom" and new.layout["shape"] == "twin" and new.layout["season"] == "winter"
+    assert new.plan == "custom" and new.map["shape"] == "twin" and new.map["season"] == "winter"
     types = await sync_to_async(lambda: sorted(Building.objects.filter(island=new).values_list("type", flat=True)))()
     assert types == ["lab", "mailbox", "post_office", "workshop"]
     roads = await sync_to_async(lambda: [(r.from_building.type, r.to_building.type, r.condition)
@@ -120,7 +120,7 @@ async def test_found_island_with_shape_and_steps(island, tmp_path, monkeypatch):
     assert roads == islands.build_roads(types)
 
     quick = await sync_to_async(islands.create_island)({"name": "Quick", "plan": "quick_fixes"})
-    assert quick.plan == "quick_fixes" and quick.layout["shape"] == "classic"
+    assert quick.plan == "quick_fixes" and quick.map["shape"] == "classic"
     with pytest.raises(islands.IslandError, match="shape"):
         await sync_to_async(islands.create_island)({"name": "Nope", "shape": "square"})
 
@@ -129,23 +129,23 @@ async def test_found_island_with_shape_and_steps(island, tmp_path, monkeypatch):
 
 def _body(**changes):
     layout, buildings = classic()
-    return {"layout": {**layout, **changes.pop("layout", {})}, "buildings": changes.pop("buildings", buildings)}
+    return {"map": {**layout, **changes.pop("map", {})}, "buildings": changes.pop("buildings", buildings)}
 
 
 async def test_set_layout_moves_buildings_and_keeps_ids(island):
-    body = _body(layout={"season": "autumn"})
+    body = _body(map={"season": "autumn"})
     body["buildings"][1].update(x=8, y=9, facing=2)  # the workshop moves to the south
-    await sync_to_async(islands.set_layout)("sunny", body)
+    await sync_to_async(islands.set_map)("sunny", body)
     workshop = await Building.objects.aget(pk="workshop")
     assert (workshop.x, workshop.y, workshop.facing) == (8, 9, 2)
     sunny = await Island.objects.aget(pk="sunny")
-    assert sunny.layout["season"] == "autumn" and sunny.plan == "classic"
+    assert sunny.map["season"] == "autumn" and sunny.plan == "classic"
     assert await Road.objects.filter(island_id="sunny").acount() == 6  # same steps: roads untouched
 
 
 async def test_set_layout_adds_and_removes_steps(island):
     layout, buildings = classic(islands.PLANS["quick_fixes"])
-    await sync_to_async(islands.set_layout)("sunny", {"layout": layout, "buildings": buildings})
+    await sync_to_async(islands.set_map)("sunny", {"map": layout, "buildings": buildings})
     assert sorted([b.type async for b in Building.objects.filter(island_id="sunny")]) == ["mailbox", "post_office", "workshop"]
     roads = [(r.from_building_id, r.to_building_id, r.condition) async for r in Road.objects.filter(island_id="sunny").order_by("id")]
     assert roads == [("mailbox", "workshop", "always"), ("workshop", "post_office", "always")]
@@ -155,7 +155,7 @@ async def test_set_layout_adds_and_removes_steps(island):
 
     # Bring the courthouse back: the reviewer gets it again.
     layout, buildings = classic()
-    await sync_to_async(islands.set_layout)("sunny", {"layout": layout, "buildings": buildings})
+    await sync_to_async(islands.set_map)("sunny", {"map": layout, "buildings": buildings})
     courthouse = await Building.objects.aget(island_id="sunny", type="courthouse")
     assert courthouse.resident_id == "sydney"
     assert (await Resident.objects.aget(pk="sydney")).building_id == courthouse.id
@@ -165,10 +165,10 @@ async def test_set_layout_adds_and_removes_steps(island):
 async def test_set_layout_refuses_new_steps_while_a_task_runs(island):
     await Task.objects.acreate(id="t1", island_id="sunny", title="busy", status="in_progress")
     layout, buildings = classic(islands.PLANS["quick_fixes"])
-    with pytest.raises(islands.LayoutBusy):
-        await sync_to_async(islands.set_layout)("sunny", {"layout": layout, "buildings": buildings})
+    with pytest.raises(islands.MapBusy):
+        await sync_to_async(islands.set_map)("sunny", {"map": layout, "buildings": buildings})
     # Moving things around is still fine.
-    await sync_to_async(islands.set_layout)("sunny", _body(layout={"season": "spring"}))
+    await sync_to_async(islands.set_map)("sunny", _body(map={"season": "spring"}))
 
 
 # --- The endpoint ---------------------------------------------------------------
@@ -181,13 +181,13 @@ def fake_runtime(monkeypatch):
     return client
 
 
-async def test_put_layout_endpoint(island, fake_runtime):
+async def test_put_map_endpoint(island, fake_runtime):
     client = AsyncClient()
-    body = _body(layout={"season": "winter"})
+    body = _body(map={"season": "winter"})
     response = await client.put("/islands/sunny/layout", json.dumps(body), content_type="application/json")
     assert response.status_code == 200
     data = response.json()
-    assert data["layout"]["season"] == "winter" and all("facing" in b for b in data["buildings"])
+    assert data["map"]["season"] == "winter" and all("facing" in b for b in data["buildings"])
 
     bad = _body(buildings=[])
     response = await client.put("/islands/sunny/layout", json.dumps(bad), content_type="application/json")
