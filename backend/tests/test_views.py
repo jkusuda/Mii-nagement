@@ -1,10 +1,12 @@
 import base64
 import json
+from dataclasses import replace
 
 from conftest import db_test
 from django.test import AsyncClient
 
-from mii import residents
+from mii import islands, residents, views
+from mii.config import config
 from mii.models import Attachment, Island
 
 pytestmark = db_test
@@ -346,3 +348,17 @@ async def test_brain_models(fake_runtime, monkeypatch):
     assert (await client.get("/brains/gemini/models")).status_code == 503
     assert (await client.get("/brains/mock/models")).status_code == 404
     assert (await client.get("/brains/nope/models")).status_code == 404
+
+
+# --- Public demo lock (config.public_demo) ----------------------------------------------
+
+
+async def test_public_demo_locks_settings_paths_and_abandoning(island, fake_runtime, monkeypatch):
+    demo = replace(config, public_demo=True)
+    monkeypatch.setattr(views, "config", demo)
+    monkeypatch.setattr(islands, "config", demo)
+    client = AsyncClient()
+    assert (await client.put("/settings", data="{}", content_type="application/json")).status_code == 403
+    body = json.dumps({"name": "Mine", "folder": "/tmp"})
+    assert (await client.post("/islands", data=body, content_type="application/json")).status_code == 400
+    assert (await client.delete("/islands/sunny")).status_code == 403

@@ -87,7 +87,8 @@ func live_look() -> void:
 	await wait(2.0)
 	if w.has(id):
 		var mii: Mii = w[id].mii
-		check("island Mii shows the new look live", int(mii.appearance["hair"]) == 33 and int(mii.appearance["eyes"]) == 44, str(mii.appearance))
+		var new_look: bool = int(mii.appearance["hair"]) == 33 and int(mii.appearance["eyes"]) == 44
+		check("island Mii shows the new look live", new_look, str(mii.appearance))
 	game.show_screen("residents")
 	await wait(1.5)
 	var card_tex: Texture2D = null

@@ -21,6 +21,7 @@ from pathlib import Path
 from django.db import transaction
 
 from mii import prefs, repos
+from mii.config import config
 from mii.island_map import (
     SHAPES,
     IslandError,
@@ -65,14 +66,17 @@ def unique_island_id(name: str) -> str:
     return island_id
 
 
-def create_island(data: dict) -> Island:
+def create_island(data: dict, owner: str | None = None) -> Island:
     """Found an island: validate, create its repository, lay out the town plan. Sync.
 
     Fields: name (required), repo ("owner/name" on GitHub), branch (default: the repo's
     own, else main), shape (a SHAPES key), steps (see STEP_ORDER) or plan (a PLANS key),
     season, rules ({rule: bool}), folder (where the repo goes; default: default_folder()),
     existing_repo (adopt this git folder instead of creating or cloning one).
+    `owner`: the logged-in founder's id (auth.py); None makes a public island.
     """
+    if config.public_demo and (data.get("folder") or data.get("existing_repo")):
+        raise IslandError("the public demo picks where islands live: leave out folder and existing_repo")
     name = _clean_name(data.get("name"))
     repo = _clean_repo(data.get("repo"))
     branch = str(data.get("branch") or "").strip() or None
@@ -110,6 +114,7 @@ def create_island(data: dict) -> Island:
             plan=plan_name(steps),
             rules={rule: bool(rules.get(rule, False)) for rule in RULES},
             map=default_map(shape, season),
+            owner=owner,
         )
         _create_buildings(island_id, default_buildings(shape, steps))
     return island
@@ -209,11 +214,12 @@ def _rehome_residents(island_id: str) -> None:
 # --- After founding -----------------------------------------------------------------
 
 
-def update_island(island_id: str, data: dict) -> Island:
-    """Rename an island, or link / change its GitHub repo, branch, or house rules. Sync (git).
+def update_island(island_id: str, data: dict, sub: str | None = None) -> Island:
+    """Rename an island, or link / change its GitHub repo, branch, house rules or members. Sync (git).
 
     Only the fields sent change. Linking a repo also points the repository's `origin` at
-    it, so the post office can push. Raises Island.DoesNotExist or IslandError.
+    it, so the post office can push. `members` (a list of user ids) is the owner's to change:
+    `sub` is the caller (auth.py). Raises Island.DoesNotExist or IslandError.
     """
     island = Island.objects.get(pk=island_id)
     changes: list[str] = []
@@ -228,8 +234,17 @@ def update_island(island_id: str, data: dict) -> Island:
         island.branch, changes = branch, [*changes, "branch"]
     if "rules" in data:
         island.rules, changes = {**island.rules, **_clean_rules(data.get("rules"))}, [*changes, "rules"]
+    if "members" in data:
+        if not island.owner:
+            raise IslandError("a public island has no members")
+        if sub != island.owner:
+            raise IslandError("only the island's owner can change its members")
+        members = data.get("members")
+        if not isinstance(members, list) or not all(isinstance(m, str) and m.strip() for m in members):
+            raise IslandError("members must be a list of user ids")
+        island.members, changes = sorted({m.strip() for m in members}), [*changes, "members"]
     if not changes:
-        raise IslandError("nothing to change: send name, repo, branch, or rules")
+        raise IslandError("nothing to change: send name, repo, branch, rules, or members")
     if island.repo and "repo" in changes and repos.is_git_repo(island.repo_path):
         repos.link_remote(Path(island.repo_path), island.repo)
     island.save(update_fields=changes)

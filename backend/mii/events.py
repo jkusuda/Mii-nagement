@@ -144,6 +144,11 @@ class EventBus:
 
     def __init__(self):
         self.clients: dict = {}  # client -> island id it watches (None = all)
+        self.hooks: list = []  # fn(island_id, event), called after each saved event (hooks.py)
+
+    def add_hook(self, fn) -> None:
+        """`fn` must be quick and synchronous (enqueue only): it runs inside emit()."""
+        self.hooks.append(fn)
 
     def add_client(self, client, island_id: str | None = None) -> None:
         self.clients[client] = island_id
@@ -154,6 +159,11 @@ class EventBus:
     async def emit(self, island_id: str | None, event: dict) -> None:
         event = {**event, "ts": datetime.now(UTC).isoformat()}
         await Event.objects.acreate(island_id=island_id, type=event["type"], payload=event)
+        for hook in self.hooks:
+            try:
+                hook(island_id, event)
+            except Exception:
+                log.exception("event hook failed")
         await self.broadcast(event, island_id)
 
     async def broadcast(self, event: dict, island_id: str | None = None) -> None:

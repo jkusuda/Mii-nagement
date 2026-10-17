@@ -1,14 +1,16 @@
 """The judge: the rules reproduce the old engine behaviour; Jev is asked over HTTP and falls back."""
 
+import asyncio
 import json
 import logging
+from types import SimpleNamespace
 
 import httpx
 from conftest import make_job
 
 from mii import judge
 from mii.agents import StepResult
-from mii.judge import HelpRequest, JevJudge, RuleJudge
+from mii.judge import GeminiJudge, HelpRequest, JevJudge, RuleJudge
 from mii.models import Building, Resident, Task
 
 
@@ -139,3 +141,85 @@ async def test_jev_judge_falls_back_to_the_rules(caplog):
     await j5.flaky("a", "")
     await j5.flaky("b", "")
     assert sum(1 for r in caplog.records if r.levelno == logging.WARNING) == 1
+
+
+# --- Gemini -------------------------------------------------------------------------
+
+
+class FakeModels:
+    """Stands in for client.aio.models: records each call, answers with `text` (or misbehaves)."""
+
+    def __init__(self, text: str = "{}", raise_error: Exception | None = None, delay: float = 0.0):
+        self.text, self.raise_error, self.delay = text, raise_error, delay
+        self.calls: list[dict] = []
+
+    async def generate_content(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.delay:
+            await asyncio.sleep(self.delay)
+        if self.raise_error:
+            raise self.raise_error
+        return SimpleNamespace(text=self.text)
+
+
+def gemini(answers: dict | str | None = None, **kwargs) -> tuple[GeminiJudge, FakeModels]:
+    """A GeminiJudge with a fake client. Returns (judge, the fake that records the calls)."""
+    text = answers if isinstance(answers, str) else json.dumps(answers or {})
+    models = FakeModels(text, **kwargs)
+    return GeminiJudge("g-key", "gemini-test", client=SimpleNamespace(aio=SimpleNamespace(models=models))), models
+
+
+async def test_gemini_judge_asks_with_a_schema_and_reads_the_answers():
+    job = make_job()
+    j, models = gemini({"mood": "proud"})
+    assert await j.mood(job.resident, job.building, StepResult("pass", "Shipped it!"), 1, False, 0) == "proud"
+    call = models.calls[0]
+    assert call["model"] == "gemini-test"
+    assert call["config"]["response_mime_type"] == "application/json" and call["config"]["temperature"] == 0
+    assert call["config"]["response_schema"]["properties"]["mood"]["enum"] == list(judge.MOODS)
+    assert "Shipped it!" in call["contents"]
+
+    j, models = gemini({"flaky": 1.7})  # out of range: clamped
+    assert await j.flaky("Error: connection refused", "") == 1.0
+    assert models.calls[0]["config"]["response_schema"]["properties"]["flaky"] == {"type": "NUMBER"}
+
+    jun, sydney = resident("jun", "planner"), resident("sydney", "reviewer")
+    j, _ = gemini({"helper": "sydney"})
+    assert await j.pick_helper(request(resident("carlos", "coder")), [jun, sydney]) is sydney
+
+
+async def test_gemini_judge_falls_back_to_the_rules(caplog, monkeypatch):
+    monkeypatch.setattr(judge, "GEMINI_TIMEOUT", 0.05)
+    job = make_job()
+    cases = [
+        gemini("not json at all")[0],
+        gemini(raise_error=RuntimeError("quota"))[0],
+        gemini({"mood": "proud"}, delay=1.0)[0],  # slower than the timeout
+    ]
+    for j in cases:
+        caplog.clear()
+        with caplog.at_level(logging.WARNING, logger="mii.judge"):
+            assert await j.mood(job.resident, job.building, StepResult("fail"), 1, False, 0) == "frustrated"
+            assert await j.flaky("boom", "") == 0.0
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING and "Gemini is unavailable" in r.message]
+        assert len(warnings) == 1  # once per judge, not once per call
+        assert "g-key" not in caplog.text
+
+
+async def test_runtime_picks_the_judge_from_the_setting(monkeypatch):
+    from mii import prefs
+    from mii.runtime import Runtime
+
+    keys = {"typesafe_api_key": "t-key", "gemini_api_key": "g-key"}
+    monkeypatch.setattr(prefs, "secret", lambda name: keys.get(name))
+
+    async def name(choice: str) -> str:
+        picked = await Runtime._pick_judge(choice, "gemini-test")
+        await picked.aclose()
+        return picked.name
+
+    assert [await name(c) for c in ("off", "jev", "gemini", "auto")] == ["rules", "jev", "gemini", "jev"]
+    del keys["typesafe_api_key"]
+    assert [await name(c) for c in ("jev", "auto")] == ["rules", "gemini"]
+    keys.clear()
+    assert await name("auto") == "rules"

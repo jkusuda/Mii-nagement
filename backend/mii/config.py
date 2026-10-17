@@ -19,6 +19,8 @@ REPO_ROOT = BACKEND_DIR.parent
 
 load_dotenv(REPO_ROOT / ".env")
 
+DEV_SECRET_KEY = "mii-nagement-local-dev-key"
+
 
 def _optional_path(name: str) -> Path | None:
     value = os.getenv(name, "").strip()
@@ -44,6 +46,17 @@ class Config:
     database_path: Path  # SQLite file
     git_author: str = DEFAULT_GIT_AUTHOR  # author of the Workshop's commits
 
+    # Hosting (the hosted demo sets these; local runs keep the defaults)
+    debug: bool = True  # DJANGO_DEBUG
+    secret_key: str = DEV_SECRET_KEY  # DJANGO_SECRET_KEY
+    public_demo: bool = False  # PUBLIC_DEMO: no PUT /settings, no repo paths on POST /islands
+    database_url: str | None = None  # MII_DATABASE_URL: Postgres/TimescaleDB instead of SQLite (settings.py)
+
+    # Auth0 login (auth.py): off unless all three are set
+    auth0_domain: str | None = None
+    auth0_audience: str | None = None
+    auth0_client_id: str | None = None
+
     # Pacing (seconds)
     walk_seconds: float = 2.0  # how long a walk between buildings takes (lets the game animate)
     bubble_timeout: float = 30.0  # how long a resident waits for your answer
@@ -66,6 +79,13 @@ def load_config() -> Config:
         permission_timeout=float(permission) if permission else None,
         sleep_after=float(os.getenv("SLEEP_AFTER", "45")),
         step_timeout=float(os.getenv("STEP_TIMEOUT", "600")),
+        debug=_flag("DJANGO_DEBUG", "1"),
+        secret_key=_optional_str("DJANGO_SECRET_KEY") or DEV_SECRET_KEY,
+        public_demo=_flag("PUBLIC_DEMO", "0"),
+        database_url=_optional_str("MII_DATABASE_URL"),
+        auth0_domain=_optional_str("AUTH0_DOMAIN"),
+        auth0_audience=_optional_str("AUTH0_AUDIENCE"),
+        auth0_client_id=_optional_str("AUTH0_CLIENT_ID"),
     )
 
 

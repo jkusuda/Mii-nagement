@@ -21,7 +21,7 @@ from pathlib import Path
 
 from django.db.models import Q
 
-from mii import events, github, weather
+from mii import events, github, metrics, weather
 from mii.agents import AgentJob, AgentRunner, StepResult, end_task
 from mii.judge import HelpRequest, RuleJudge
 from mii.models import Attachment, Building, Event, Friendship, Island, Resident, Road, Step, Task, utcnow
@@ -796,6 +796,7 @@ class WorkflowEngine:
         task = await self._update(
             Task, task.id, status="failed" if gave_up or outcome == "fail" else "done", finished_at=utcnow()
         )
+        await metrics.record_task(task)
         if previous:
             await self._set_mood(previous, "proud" if task.status == "done" else "frustrated")
             await self._rest(previous)
@@ -907,6 +908,7 @@ class WorkflowEngine:
             flaky=result.flaky,
             finished_at=utcnow(),
         )
+        await metrics.record_step(step)
         return result, step
 
     async def _messages_for(

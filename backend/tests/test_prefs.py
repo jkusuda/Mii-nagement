@@ -112,6 +112,7 @@ def test_secrets_live_in_the_keychain_not_the_database(memory_keyring, no_env):
         "anthropic_api_key": True,
         "openai_api_key": False,
         "gemini_api_key": False,
+        "spectator_secret": False,
     }
     assert "sk-" not in json.dumps(snap)  # never echoed
     assert prefs.secrets_env() == {"ANTHROPIC_API_KEY": "sk-ant-1"}  # OpenRouter's key stays with the backend

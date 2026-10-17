@@ -10,11 +10,12 @@ import logging
 from asgiref.sync import sync_to_async
 from django.core.management import call_command
 
-from mii import events, islands, prefs, seed
+from mii import events, islands, metrics, prefs, seed
 from mii.agents import make_runner
 from mii.config import config
 from mii.engine import WorkflowEngine
-from mii.judge import JevJudge, RuleJudge
+from mii.hooks import SpectatorHook
+from mii.judge import GEMINI_MODEL, GeminiJudge, JevJudge, RuleJudge
 from mii.models import Island
 from mii.sandbox import Sandboxes
 
@@ -29,7 +30,9 @@ class Runtime:
         self.sandboxes = None
         self.bus = events.EventBus()
         self.bubbles = events.Bubbles(self.bus)
-        self.judge = RuleJudge()  # reload() swaps in JevJudge when a TypeSafe key is saved
+        self.judge = RuleJudge()  # reload() swaps in Jev or Gemini (the `judge` setting)
+        self.spectator = SpectatorHook()  # off until reload() gives it a `spectator_url`
+        self.bus.add_hook(self.spectator)
         self.workflow = WorkflowEngine(
             self.bus,
             self.bubbles,
@@ -48,6 +51,7 @@ class Runtime:
     async def start(self) -> None:
         """Create/upgrade the tables, seed an empty database, apply settings, resume the queue, start the worker."""
         await sync_to_async(call_command)("migrate", interactive=False, verbosity=0)
+        await sync_to_async(metrics.detect)()  # sqlite / postgres / timescale, for /health and Insights
         await sync_to_async(seed.seed)()
         await self.reload()
         await sync_to_async(self._ensure_island_repos)()
@@ -72,14 +76,26 @@ class Runtime:
         self.workflow.keep_worktrees = settings["keep_worktrees"]
         self.workflow.parallel = settings["parallel_packages"]
         self.workflow.master_key = settings["master_key"]
-        # The judge (moods, missing verdicts, flaky re-runs, tips, help): Jev whenever a key is set
-        # (mock mode too, the calls cost a fraction of a cent), unless the `judge` setting is "off".
-        key = await sync_to_async(prefs.secret)("typesafe_api_key")
-        if isinstance(self.judge, JevJudge):
-            await self.judge.aclose()
-        self.judge = JevJudge(key) if key and str(settings.get("judge") or "auto").lower() != "off" else RuleJudge()
+        # The judge (moods, missing verdicts, flaky re-runs, tips, help), in mock mode too.
+        await self.judge.aclose()
+        self.judge = await self._pick_judge(str(settings.get("judge") or "auto").lower(), settings["judge_model"])
         self.workflow.judge = self.judge
+        # The spectator feed (hooks.py): a None url switches it off.
+        self.spectator.configure(settings["spectator_url"], await sync_to_async(prefs.secret)("spectator_secret"))
         return snap
+
+    @staticmethod
+    async def _pick_judge(choice: str, model: str | None) -> RuleJudge:
+        """off = rules; jev / gemini = that one when its key is set; auto = Jev, else Gemini, else rules."""
+        if choice == "off":
+            return RuleJudge()
+        jev_key = await sync_to_async(prefs.secret)("typesafe_api_key")
+        gemini_key = await sync_to_async(prefs.secret)("gemini_api_key")
+        if choice in ("auto", "jev") and jev_key:
+            return JevJudge(jev_key)
+        if choice in ("auto", "gemini") and gemini_key:
+            return GeminiJudge(gemini_key, model or GEMINI_MODEL)
+        return RuleJudge()
 
     @staticmethod
     def _ensure_island_repos() -> None:
@@ -94,6 +110,8 @@ class Runtime:
         if self.worker:
             self.worker.cancel()
             self.worker = None
+        await self.spectator.aclose()
+        await self.judge.aclose()
 
 
 _runtime: Runtime | None = None
