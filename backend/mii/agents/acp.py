@@ -78,6 +78,7 @@ AUTH_REQUIRED = -32000  # ACP error code: the agent wants a login first
 #                  Claude Code runs read-only steps in `acceptEdits` too: MiiClient refuses edit
 #                  permissions and file writes there instead (its `plan` and `default` modes stall).
 #   env            extra environment for the process
+#   tip            a line added to a fresh session's prompt about what this agent can do (None = nothing)
 BRAINS = {
     "claude-code": {
         "command": ["npx", "-y", "@agentclientprotocol/claude-agent-acp"],
@@ -88,6 +89,11 @@ BRAINS = {
         "edit_mode": "acceptEdits",
         "readonly_mode": "acceptEdits",
         "env": {},
+        "tip": (
+            "Work in parallel: when the job splits into independent parts (separate files, a search "
+            "through the code, writing tests next to the change), launch several subagents with your "
+            "Agent tool in one message so they run at the same time, then combine their results."
+        ),
     },
     "codex": {
         "command": ["npx", "-y", "@agentclientprotocol/codex-acp"],  # bundles its own Codex binary
@@ -98,6 +104,7 @@ BRAINS = {
         "edit_mode": "workspace-write",
         "readonly_mode": "read-only",
         "env": {"NO_BROWSER": "1"},
+        "tip": None,
     },
     "gemini": {
         "command": ["gemini", "--experimental-acp"],  # Gemini CLI speaks ACP natively
@@ -108,6 +115,7 @@ BRAINS = {
         "edit_mode": None,
         "readonly_mode": None,
         "env": {},
+        "tip": None,
     },
 }
 
@@ -309,7 +317,7 @@ class MiiClient(Client):
         self.workdir = workdir
         self.text: list[str] = []  # the agent's reply, chunk by chunk
         self.thinking = ThinkingStream(job.think)  # thoughts + reply + tool calls, for the game
-        self.pending: asyncio.Task | None = None  # a bubble we're waiting on
+        self.pending: set[asyncio.Task] = set()  # bubbles we're waiting on (parallel subagents can ask at once)
         self._tools: dict[str, dict] = {}  # tool call id -> what the game was last told about it
         self._last_report = 0.0
         self._last_text = ""
@@ -378,11 +386,12 @@ class MiiClient(Client):
             label = name if name not in labels else f"{name} [{o.option_id}]"
             labels[label] = o.option_id
         text = ask_reason(tool_call)
-        self.pending = asyncio.create_task(self.job.ask("permission", text, list(labels), _detail(tool_call)))
+        waiting = asyncio.create_task(self.job.ask("permission", text, list(labels), _detail(tool_call)))
+        self.pending.add(waiting)
         try:
-            answer = await self.pending
+            answer = await waiting
         finally:
-            self.pending = None
+            self.pending.discard(waiting)
         chosen = labels.get(answer or "") or pick("reject_once") or pick("reject_always")
         return _allow(chosen) if chosen else RequestPermissionResponse(outcome=DeniedOutcome(outcome="cancelled"))
 
@@ -748,8 +757,8 @@ class AcpRunner:
             log.warning("%s brain failed: %s", self.brain, e)
             return StepResult("fail", f"The {self.brain} brain crashed: {e}")
         finally:
-            if client.pending is not None:
-                client.pending.cancel()
+            for waiting in client.pending:
+                waiting.cancel()
             with suppress(Exception):
                 await client.thinking.flush()  # the last few words
             if agent is not None:
@@ -792,6 +801,8 @@ class AcpRunner:
             prompt = build_prompt(job, intro, diary=False)
         else:
             prompt = build_prompt(job, build_system_prompt(job.resident))
+            if self.spec.get("tip"):
+                prompt = f"{prompt}\n\n{self.spec['tip']}"
         prompt = f"{prompt}\n\n{QUESTION_RULE}"
         for asked in range(MAX_QUESTIONS + 1):
             client.text.clear()  # each turn's reply on its own: the last one carries the verdict

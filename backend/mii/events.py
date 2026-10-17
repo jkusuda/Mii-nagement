@@ -207,10 +207,14 @@ class Bubbles:
         options: list[str] | None = None,
         task: str | None = None,
         detail: str | None = None,
+        auto: str | None = None,
     ) -> str | None:
-        """Show a bubble. Returns your answer, or None if nobody answered in time."""
+        """Show a bubble. Returns your answer, or None if nobody answered in time.
+        `auto`: the answer is already decided (the master key); the bubble shows and closes at once."""
         bubble_id = "b_" + uuid.uuid4().hex[:6]
         future = asyncio.get_running_loop().create_future()
+        if auto is not None:
+            future.set_result(auto)
         asked_at = datetime.now(UTC).isoformat()
         self.open[bubble_id] = OpenBubble(
             bubble_id, island_id, agent, kind, text, options, future, task, detail, asked_at

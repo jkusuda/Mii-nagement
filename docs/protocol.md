@@ -200,6 +200,9 @@ A bubble was answered (by any client) or timed out. Remove it.
 ```
 `answered` is `false` (and `response` `null`) when the bubble timed out. The
 insights endpoint counts answers and answer times from these.
+With the `master_key` setting on, every `bubble` is followed right away by its
+`bubble_resolved`, answered by the backend: the first option that isn't a refusal,
+or "carry on" for a question.
 
 ### `handoff`
 A task package passed from one resident to another.

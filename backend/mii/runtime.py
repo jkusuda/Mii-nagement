@@ -70,6 +70,8 @@ class Runtime:
         )
         self.workflow.test_command = settings["test_command"]
         self.workflow.keep_worktrees = settings["keep_worktrees"]
+        self.workflow.parallel = settings["parallel_packages"]
+        self.workflow.master_key = settings["master_key"]
         # The judge (moods, missing verdicts, flaky re-runs, tips, help): Jev whenever a key is set
         # (mock mode too, the calls cost a fraction of a cent), unless the `judge` setting is "off".
         key = await sync_to_async(prefs.secret)("typesafe_api_key")

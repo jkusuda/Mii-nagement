@@ -21,6 +21,7 @@ from mii.insights import RANGES, island_insights
 from mii.island_map import SHAPES
 from mii.models import (
     DEFAULT_KEYS,
+    Attachment,
     Event,
     Island,
     Step,
@@ -303,7 +304,12 @@ async def get_task(request: HttpRequest, island_id: str, task_id: str) -> JsonRe
     if task is None:
         return _error(f"no task {task_id!r} on island {island_id!r}", 404)
     steps = await _steps_by_task([task.id])
-    return JsonResponse({**task_detail_dict(task, steps.get(task.id, [])), "events": await _task_events(task)})
+    files = [
+        name async for name in Attachment.objects.filter(task_id=task.id).order_by("id").values_list("name", flat=True)
+    ]
+    return JsonResponse(
+        {**task_detail_dict(task, steps.get(task.id, [])), "attachments": files, "events": await _task_events(task)}
+    )
 
 
 @csrf_exempt

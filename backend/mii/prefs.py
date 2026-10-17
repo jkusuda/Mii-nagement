@@ -39,7 +39,10 @@ SETTINGS = {
     "database_url": ("DATABASE_URL", None, str),  # for the `database` gift (agents/acp.py GIFTS)
     "godot_path": ("GODOT_PATH", None, str),  # for the `godot` gift: the Godot 4 executable
     "judge": ("JUDGE", "auto", str),  # "auto": Jev when a TypeSafe key is set; "off": rules only (judge.py)
+    "parallel_packages": ("PARALLEL_PACKAGES", 3, int),  # packages one island works on at once (engine.py)
+    "master_key": ("MASTER_KEY", False, bool),  # residents never ask: every bubble answers itself (engine.py)
 }
+MAX_PARALLEL = 8  # parallel_packages is kept between 1 and this (each real package runs its own agents)
 
 # secret -> environment variable (what the agent processes expect)
 SECRETS = {
@@ -74,6 +77,11 @@ def _parse(value, kind):
         return str(value).strip().lower() not in ("0", "", "false", "no", "off")
     if kind == "path":
         return str(Path(str(value)).expanduser())
+    if kind is int:
+        try:
+            return min(max(int(value), 1), MAX_PARALLEL)
+        except (TypeError, ValueError):
+            return 1
     return str(value)
 
 
@@ -108,6 +116,10 @@ def set_many(values: dict) -> None:
         elif kind is bool:
             if not isinstance(value, bool):
                 raise PrefsError(f"{key} must be true or false")
+            clean[key] = value
+        elif kind is int:
+            if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= MAX_PARALLEL:
+                raise PrefsError(f"{key} must be a whole number from 1 to {MAX_PARALLEL}")
             clean[key] = value
         else:
             if not isinstance(value, str):

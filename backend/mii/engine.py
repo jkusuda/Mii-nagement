@@ -48,6 +48,10 @@ BUBBLE_MOODS = {
     "ready": "proud",
     "tired": "tired",
 }
+# What the master key says to a question bubble (a free-text one, with no options).
+MASTER_KEY_ANSWER = "No need to ask: use your best judgement and carry on."
+# Permission buttons that refuse; the master key picks the first button that isn't one.
+REFUSALS = ("not now", "never", "deny", "reject", "no")
 
 
 # --- The island as a graph --------------------------------------------------------
@@ -312,6 +316,15 @@ def notes_for_prompt(history: list[Note]) -> list[str]:
     return recap + [n.text for n in full]
 
 
+def master_key_answer(options: list[str] | None) -> str:
+    """The master key's answer to a bubble: the first button that isn't a refusal (so "Approve"
+    at the Courthouse, "Just this once" for a permission), or "carry on" to a question."""
+    for option in options or []:
+        if option.strip().lower() not in REFUSALS:
+            return option
+    return (options or [MASTER_KEY_ANSWER])[0]
+
+
 def _tail(output: str) -> str:
     """The last TEST_TAIL_LINES lines of a command's output."""
     return "\n".join(output.splitlines()[-TEST_TAIL_LINES:])
@@ -352,20 +365,22 @@ def split_pr_text(text: str, fallback_title: str) -> tuple[str, str]:
 
 @dataclass
 class Lane:
-    """One island's line of packages. Islands work in parallel; within an island,
-    one package at a time (each building has one resident)."""
+    """One island's line of packages. Islands work in parallel; within an island, up to
+    `WorkflowEngine.parallel` packages at a time (residents are booked one step at a time)."""
 
     queue: asyncio.Queue = field(default_factory=asyncio.Queue)
     worker: asyncio.Task | None = None
-    current: asyncio.Task | None = None  # the task run in progress
-    current_id: str | None = None
+    running: dict[str, asyncio.Task] = field(default_factory=dict)  # task id -> its run in progress
+    wake: asyncio.Event = field(default_factory=asyncio.Event)  # set when a package arrives or finishes
 
 
 class WorkflowEngine:
-    """Runs task packages through the islands: one at a time per island, islands in parallel.
+    """Runs task packages through the islands: up to `parallel` at a time per island, islands in parallel.
 
     submit() puts a task id in `queue` (the inbox); run_forever() hands each one to
-    its island's Lane, whose worker runs that island's packages in order.
+    its island's Lane, whose worker starts that island's packages in order. Each step
+    books its resident (`_claim`): when the building's owner is busy with another
+    package, a free neighbour stands in, so a big island keeps everyone busy.
     """
 
     def __init__(
@@ -384,6 +399,8 @@ class WorkflowEngine:
         keep_worktrees: bool = False,
         git_author: str = DEFAULT_GIT_AUTHOR,
         judge: RuleJudge | None = None,  # RuleJudge (default) or JevJudge: moods, verdicts, flaky runs, help
+        parallel: int = 1,  # packages one island works on at once (the `parallel_packages` setting)
+        master_key: bool = False,  # residents never ask: every bubble answers itself (master_key_answer)
     ):
         self.bus = bus
         self.bubbles = bubbles
@@ -398,12 +415,17 @@ class WorkflowEngine:
         self.keep_worktrees = keep_worktrees
         self.git_author = git_author
         self.judge = judge or RuleJudge()
+        self.parallel = parallel
+        self.master_key = master_key
         self.queue: asyncio.Queue[str] = asyncio.Queue()  # the inbox: every island's new task ids
         self.lanes: dict[str, Lane] = {}  # island id -> its line of packages (run_forever)
         self._cancelling: set[str] = set()  # task ids that cancel() is stopping
         self._approved: set[str] = set()  # task ids you approved at the Courthouse (merge at the Post Office)
         self._weather: dict[str, str] = {}  # island id -> the last weather we announced
         self._activity: dict[str, str] = {}  # resident id -> the last activity line we saved
+        self._claimed: dict[str, str] = {}  # resident id -> the task they are doing a step for right now
+        self._freed = asyncio.Event()  # set (and replaced) whenever a resident is released
+        self._git = asyncio.Lock()  # one `git worktree add/remove` at a time (they share the repo's files)
 
     # --- Public API -----------------------------------------------------------
 
@@ -443,10 +465,11 @@ class WorkflowEngine:
             await self._emit(task, events.task(task))  # run_forever skips it when it comes off the queue
             return task
         lane = self.lanes.get(task.island_id)
-        if task.status == "in_progress" and lane and lane.current_id == task_id and not lane.current.done():
+        run = lane.running.get(task_id) if lane else None
+        if task.status == "in_progress" and run and not run.done():
             self._cancelling.add(task_id)
-            lane.current.cancel()
-            await asyncio.wait([lane.current])
+            run.cancel()
+            await asyncio.wait([run])
             return await self._get(Task, task_id)
         raise ValueError(f"task {task_id} is already {task.status}")
 
@@ -459,7 +482,7 @@ class WorkflowEngine:
 
     def busy_islands(self) -> set[str]:
         """Islands with a package being worked on right now."""
-        return {island for island, lane in self.lanes.items() if lane.current_id}
+        return {island for island, lane in self.lanes.items() if lane.running}
 
     async def run_forever(self) -> None:
         """Dispatcher: hand each new task to its island's lane (starting the lane's worker)."""
@@ -475,44 +498,57 @@ class WorkflowEngine:
                     continue  # cancelled while waiting, or its island was deleted
                 lane = self.lanes.setdefault(task.island_id, Lane())
                 lane.queue.put_nowait(task_id)
+                lane.wake.set()
                 if lane.worker is None or lane.worker.done():
                     lane.worker = asyncio.create_task(self._work_lane(lane))
-        finally:  # the server is shutting down: stop every island's worker too
-            workers = [lane.worker for lane in self.lanes.values() if lane.worker]
-            for worker in workers:
-                worker.cancel()
-            await asyncio.gather(*workers, return_exceptions=True)
+        finally:  # the server is shutting down: stop every island's worker and package too
+            runs = [run for lane in self.lanes.values() for run in [lane.worker, *lane.running.values()] if run]
+            for run in runs:
+                run.cancel()
+            await asyncio.gather(*runs, return_exceptions=True)
 
     async def _work_lane(self, lane: Lane) -> None:
-        """One island's worker: run its packages in order, until its queue is empty."""
-        while not lane.queue.empty():
-            task_id = lane.queue.get_nowait()
-            if not await Task.objects.filter(pk=task_id, status="queued").aexists():
-                continue  # cancelled while waiting in line
-            lane.current_id = task_id
-            lane.current = asyncio.create_task(self.run_task(task_id))
+        """One island's worker: start its packages in order, up to `parallel` at once, until none are left."""
+        while lane.running or not lane.queue.empty():
+            while len(lane.running) < max(1, self.parallel) and not lane.queue.empty():
+                task_id = lane.queue.get_nowait()
+                if await Task.objects.filter(pk=task_id, status="queued").aexists():  # else cancelled in line
+                    lane.running[task_id] = asyncio.create_task(self._run_in_lane(lane, task_id))
+            # Wait until a package finishes or a new one arrives (cleared first: only news from now on counts).
+            lane.wake.clear()
+            woken = asyncio.create_task(lane.wake.wait())
             try:
-                await lane.current
-            except asyncio.CancelledError:
-                if task_id not in self._cancelling:
-                    raise  # the server is shutting down
-            except Exception:
-                log.exception("task %s crashed", task_id)
-                task = await self._update(Task, task_id, status="failed", finished_at=utcnow())
-                await self._emit(task, events.task(task))
+                await asyncio.wait([woken, *lane.running.values()], return_when=asyncio.FIRST_COMPLETED)
             finally:
-                lane.current = lane.current_id = None
-                self._cancelling.discard(task_id)
-                self._approved.discard(task_id)
+                woken.cancel()
+
+    async def _run_in_lane(self, lane: Lane, task_id: str) -> None:
+        """Run one package of the lane; a crash fails the task instead of the worker."""
+        try:
+            await self.run_task(task_id)
+        except asyncio.CancelledError:
+            if task_id not in self._cancelling:
+                raise  # the server is shutting down
+        except Exception:
+            log.exception("task %s crashed", task_id)
+            task = await self._update(Task, task_id, status="failed", finished_at=utcnow())
+            await self._emit(task, events.task(task))
+        finally:
+            lane.running.pop(task_id, None)
+            lane.wake.set()
+            self._cancelling.discard(task_id)
+            self._approved.discard(task_id)
 
     async def recover(self) -> None:
-        """After a restart: re-queue waiting tasks, fail half-done ones, wake everyone."""
-        async for t in Task.objects.filter(status__in=["queued", "in_progress"]):
-            if t.status == "in_progress":
-                t.status, t.finished_at = "failed", utcnow()
-                await t.asave(update_fields=["status", "finished_at"])
-            else:
-                self.queue.put_nowait(t.id)
+        """After a restart: re-queue every unfinished task, oldest first, with the half-done ones
+        at the front of their island's line (run_task resumes them where they stopped). Wake everyone."""
+        half_done = [t async for t in Task.objects.filter(status="in_progress").order_by("created_at")]
+        waiting = [t async for t in Task.objects.filter(status="queued").order_by("created_at")]
+        for t in half_done:
+            t.status = "queued"
+            await t.asave(update_fields=["status"])
+        for t in half_done + waiting:
+            self.queue.put_nowait(t.id)
         await Resident.objects.all().aupdate(state="idle")
 
     async def set_pr_url(self, task: Task, url: str) -> Task:
@@ -525,19 +561,23 @@ class WorkflowEngine:
         await self._emit(task, events.task(task))
         sandbox = await self._sandbox_for(task)
         runner = self.runner  # one runner for the whole task, even if settings swap self.runner meanwhile
+        shutting_down = False
         try:
             return await self._run_task(task, sandbox, runner)
         except asyncio.CancelledError:
             if task_id not in self._cancelling:
-                raise  # the server is shutting down, not a cancel request
+                shutting_down = True
+                raise  # the server is shutting down, not a cancel request: recover() resumes the task
             return await self._drop_package(task_id)
         finally:
             # Agents kept alive between visits go now. Shielded: a second cancel can't leave one running.
             with suppress(Exception):
                 await asyncio.shield(end_task(runner, task.id))
-            if sandbox and not self.keep_worktrees:
+            # On shutdown the worktree stays, so the resumed task finds its uncommitted work.
+            if sandbox and not self.keep_worktrees and not shutting_down:
                 try:
-                    await asyncio.to_thread(sandbox.remove_worktree, task.id)
+                    async with self._git:
+                        await asyncio.to_thread(sandbox.remove_worktree, task.id)
                 except SandboxError as e:
                     log.warning("could not remove worktree for %s: %s", task.id, e)
 
@@ -547,7 +587,7 @@ class WorkflowEngine:
         if task.agent_id:
             resident = await self._get(Resident, task.agent_id)
             await self._set_mood(resident, "confused")
-            await self._set_state(resident, "idle")
+            await self._rest(resident)
         await self._emit(task, events.task(task))
         return task
 
@@ -562,7 +602,10 @@ class WorkflowEngine:
         island = await Island.objects.aget(pk=task.island_id)
         graph = await IslandGraph.load(task.island_id)
         # The task branch starts from the island's branch (`main` unless the creator chose another).
-        workdir = await asyncio.to_thread(sandbox.create_worktree, task.id, island.branch) if sandbox else None
+        workdir = None
+        if sandbox:
+            async with self._git:
+                workdir = await asyncio.to_thread(sandbox.create_worktree, task.id, island.branch)
         if workdir:
             task = await self._update(Task, task.id, branch=f"mii/{task.id}")
             files = [(a.name, bytes(a.data)) async for a in Attachment.objects.filter(task_id=task.id).order_by("id")]
@@ -581,6 +624,37 @@ class WorkflowEngine:
         previous: Resident | None = None
         outcome = "pass"
         building_id: str | None = graph.start()
+
+        # Resumed after a restart: rebuild the trip so far from its Step rows, and go back to
+        # the building it was at (the visit cut short is redone; its unfinished row goes).
+        steps = [s async for s in Step.objects.filter(task_id=task.id).order_by("id")]
+        if steps:
+            names = {r.id: r async for r in Resident.objects.filter(island_id=task.island_id)}
+            cut_short = steps[-1] if steps[-1].finished_at is None else None
+            for s in steps:
+                if s is cut_short:
+                    continue
+                building = graph.buildings.get(s.building_id)
+                where = building.name if building else s.building_type
+                who = names[s.resident_id].name if s.resident_id in names else s.resident_id
+                did = f"helped {names[s.helped].name if s.helped in names else s.helped} at" if s.helped else "at"
+                line = f"{who} {did} the {where}: {s.outcome.upper()}"
+                history.append(Note(line, f"{line}. {s.summary}", s.outcome, s.building_type))
+                visits[s.building_id] = visits.get(s.building_id, 0) + 1
+                helps += bool(s.helped)
+                outcome, previous = s.outcome, names.get(s.resident_id)
+                if s.outcome == "fail":
+                    last_failure = s.summary
+                if s.building_type == "workshop":
+                    coder = s.building_id
+            if cut_short:
+                building_id = cut_short.building_id
+                await cut_short.adelete()
+            else:
+                building_id = graph.next_building(steps[-1].building_id, outcome)
+            if building_id is not None and building_id not in graph.buildings:
+                building_id = graph.start()  # the island was rebuilt meanwhile: start over at the mailbox
+            log.info("task %s resumes after %d steps, at %s", task.id, len(history), building_id)
 
         while building_id is not None:
             building = graph.buildings[building_id]
@@ -620,40 +694,53 @@ class WorkflowEngine:
                         f"The package came back to the {building.name} {again}. "
                         f"{_first_words(history[-1].text, CHAT_CHARS)} Can you take this one?",
                     )
-            resident, request, helped = owner, None, None
+            wanted, request, helped = owner, None, None
             if takeover is not None:
-                resident, request = takeover
+                wanted, request = takeover
                 takeover, helps, helped = None, helps + 1, owner.id
+
+            # Book whoever does this step. Busy on another package? A free neighbour stands in
+            # (or the package waits for the first one to come free).
+            resident = await self._claim(task, building, wanted)
+            if resident.id != wanted.id:
+                request = f"I'm busy with another package. Can you take the {building.name} for '{task.title}'?"
+                helped = owner.id
+            if helped and resident.id != owner.id:
                 await self._emit(task, events.chat(owner.id, resident.id, task.id, request))
+            elif resident.id == owner.id:
+                helped = request = None  # nobody stood in after all
 
-            # 1. Hand the package over, if someone else takes it.
-            if previous and previous.id != resident.id:
-                await self._set_state(previous, "idle")
-                result_word = "success" if outcome == "pass" else "fail"
-                await self._emit(task, events.handoff(previous.id, resident.id, task.id, result_word))
-                await self._befriend(task.island_id, previous.id, resident.id)
+            try:
+                # 1. Hand the package over, if someone else takes it.
+                if previous and previous.id != resident.id:
+                    await self._rest(previous)
+                    result_word = "success" if outcome == "pass" else "fail"
+                    await self._emit(task, events.handoff(previous.id, resident.id, task.id, result_word))
+                    await self._befriend(task.island_id, previous.id, resident.id)
 
-            # 2. Walk over, then 3. work.
-            resident = await self._walk(resident, building_id)
-            resident = await self._set_state(resident, "working")
-            resident = await self._set_mood(resident, "focused")
-            task = await self._update(Task, task.id, building_id=building_id, agent_id=resident.id)
-            await self._emit(task, events.task(task))
+                # 2. Walk over, then 3. work.
+                resident = await self._walk(resident, building_id)
+                resident = await self._set_state(resident, "working")
+                resident = await self._set_mood(resident, "focused")
+                task = await self._update(Task, task.id, building_id=building_id, agent_id=resident.id)
+                await self._emit(task, events.task(task))
 
-            result, step = await self._run_step(
-                runner,
-                task,
-                island,
-                building,
-                resident,
-                attempt,
-                history,
-                workdir,
-                sandbox,
-                request=request,
-                helped=helped,
-                feedback=feedback,
-            )
+                result, step = await self._run_step(
+                    runner,
+                    task,
+                    island,
+                    building,
+                    resident,
+                    attempt,
+                    history,
+                    workdir,
+                    sandbox,
+                    request=request,
+                    helped=helped,
+                    feedback=feedback,
+                )
+            finally:
+                self._release(resident)
             feedback = None
             if building.type == "workshop":
                 coder = building_id
@@ -703,7 +790,7 @@ class WorkflowEngine:
         )
         if previous:
             await self._set_mood(previous, "proud" if task.status == "done" else "frustrated")
-            await self._set_state(previous, "idle")
+            await self._rest(previous)
         await self._emit(task, events.task(task))  # last event of the task (replay.py relies on this)
         return task
 
@@ -744,6 +831,11 @@ class WorkflowEngine:
 
         async def ask(kind: str, text: str, options: list[str] | None = None, detail: str | None = None) -> str | None:
             nonlocal bubbles_raised
+            if self.master_key:  # shown and closed at once, so News still tells the story
+                auto = master_key_answer(options)
+                return await self.bubbles.ask(
+                    task.island_id, resident.id, kind, text, 0, options, task.id, detail, auto
+                )
             bubbles_raised += 1
             # Permission and review bubbles are you approving something: they can wait longer.
             timeout = self.permission_timeout if kind in ("permission", "ready") else self.bubble_timeout
@@ -778,6 +870,7 @@ class WorkflowEngine:
             sandbox=sandbox,
             read_only=handler.read_only,
             rules=island.rules or {},
+            master_key=self.master_key,
             notebook=partial(self._set_notebook, resident),
             messages=messages,
             notes=resident.notes,
@@ -859,6 +952,7 @@ class WorkflowEngine:
             r
             async for r in Resident.objects.filter(island_id=task.island_id, state__in=["idle", "sleeping"])
             .exclude(pk=asker.id)
+            .exclude(pk__in=list(self._claimed))
             .order_by("id")
         ]
         if building.type in CHECK_STEPS:
@@ -872,6 +966,49 @@ class WorkflowEngine:
             asker, building, task, text or f"Can someone take the {building.name} for '{task.title}'?", scores
         )
         return await self.judge.pick_helper(request, others)
+
+    # --- Booking residents (several packages on one island) -------------------------
+
+    async def _claim(self, task: Task, building: Building, wanted: Resident) -> Resident:
+        """Book a resident for this task's next step: `wanted` when free, else a free neighbour
+        who may stand in, else wait until someone comes free."""
+        while True:
+            freed = self._freed  # taken before looking, so a release while we look still wakes us
+            if self._claimed.get(wanted.id, task.id) == task.id:
+                pick = wanted
+            else:
+                pick = await self._stand_in(task, building, wanted)
+            if pick is not None and self._claimed.get(pick.id, task.id) == task.id:
+                self._claimed[pick.id] = task.id
+                return pick
+            await freed.wait()
+
+    async def _stand_in(self, task: Task, building: Building, busy: Resident) -> Resident | None:
+        """A free neighbour for a building whose resident is busy: the same job first, and
+        among them (then among anyone) those without a building of their own, so owners stay
+        free for their own buildings. At the Lab and the Courthouse only the same job checks the work."""
+        owners = {b.resident_id async for b in Building.objects.filter(island_id=task.island_id)}
+        free = [
+            r
+            async for r in Resident.objects.filter(island_id=task.island_id)
+            .exclude(pk__in=list(self._claimed))
+            .order_by("id")
+        ]
+        free.sort(key=lambda r: (r.job != busy.job, r.id in owners))  # stable: keeps the id order within a group
+        if building.type in CHECK_STEPS:
+            free = [r for r in free if r.job == busy.job]
+        return free[0] if free else None
+
+    def _release(self, resident: Resident) -> None:
+        """The step is over: the resident may work on another package."""
+        self._claimed.pop(resident.id, None)
+        self._freed.set()
+        self._freed = asyncio.Event()
+
+    async def _rest(self, resident: Resident) -> None:
+        """Go idle, unless another package has booked them in the meantime."""
+        if resident.id not in self._claimed:
+            await self._set_state(resident, "idle")
 
     # --- Helpers -------------------------------------------------------------------
 

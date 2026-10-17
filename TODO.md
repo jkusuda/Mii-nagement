@@ -83,7 +83,7 @@ Backend design: [docs/architecture.md](docs/architecture.md).
 - [ ] Caretaker (the home screen's button is a placeholder)
 - [x] ACP runner honours island `branch` (worktrees + PRs) and house `rules` (`shell`, `install_packages`)
 - [ ] "Celebrating" island status (the events endpoint exists now; game side to do)
-- [x] Islands work in parallel (one package at a time per island)
+- [x] Islands work in parallel, and each island on up to `parallel_packages` packages at once
 - [x] Approve & merge: the Courthouse asks (`merge_pr` rule), the Post Office merges via `gh`
 - [x] ACP residents ask questions (`QUESTION:` line -> ❓ bubble -> answer in the same session)
 - [ ] Several packages at once on one island

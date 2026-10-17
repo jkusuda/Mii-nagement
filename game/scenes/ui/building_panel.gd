@@ -4,6 +4,7 @@ extends Control
 ##
 ## - Mailbox: every open package ("Current issues") with where it is and who
 ##   carries it, and "Send a new issue" (PackageForm) to drop a new one.
+##   "▸ Details" on a package shows the whole issue and every step so far.
 ## - Other buildings: the packages at that stage, the residents there and what
 ##   they're doing right now (their latest `activity`), and where packages go next.
 ##
@@ -54,6 +55,11 @@ var _thinking_details := {}
 var _thinking_views := {}
 var _thinking_scroll := {}  # task id -> [scroll value, was at the bottom]
 var _thinking_loaded := {}  # task ids whose stored history we've asked for
+## "▸ Details" per task id: open or not, the GET /islands/{id}/tasks/{task} reply, and
+## the task's status/building/carrier when we fetched it (fetched again when that changes).
+var _details_open := {}
+var _details := {}
+var _details_seen := {}
 var _action := Button.new()
 
 
@@ -283,6 +289,7 @@ func _task_card(task: Dictionary, with_activity: bool) -> Control:
 	texts.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	texts.add_child(_text(str(task.get("title", "A package")), 17, true))
 	texts.add_child(_detail(" · ".join(parts), 13))
+	texts.add_child(_details_box(task))
 	if with_activity and resident.get("activity"):
 		texts.add_child(_activity(str(resident["activity"])))
 	if task.get("status") == "in_progress":
@@ -460,6 +467,104 @@ static func _tool_summary(tools: Array) -> String:
 			var verb_noun: Array = Protocol.TOOL_WORDS[sort]
 			words.append("%s %d %ss" % [verb_noun[0], calls.size(), verb_noun[1]])
 	return " · ".join(words)
+
+
+## "▸ Details": the issue as it was sent (its text, GitHub number, attached files),
+## its branch and PR, and every step so far with what the resident reported.
+func _details_box(task: Dictionary) -> Control:
+	var task_id := str(task["id"])
+	var opened: bool = _details_open.get(task_id, false)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 6)
+	var toggle := LinkButton.new()
+	toggle.text = ("▾ " if opened else "▸ ") + "Details"
+	toggle.add_theme_color_override("font_color", Color("4D5BD6"))
+	toggle.add_theme_font_size_override("font_size", 13)
+	toggle.pressed.connect(
+		func():
+			_details_open[task_id] = not _details_open.get(task_id, false)
+			_refresh()
+	)
+	box.add_child(toggle)
+	if not opened:
+		return box
+	_load_details(task)
+	var view := RichTextLabel.new()
+	view.bbcode_enabled = true
+	view.selection_enabled = true
+	view.scroll_active = true
+	view.custom_minimum_size = Vector2(0, 170)
+	for font in ["normal", "bold", "italics"]:
+		view.add_theme_font_size_override(font + "_font_size", 13)
+	view.add_theme_color_override("default_color", INK)
+	# Godot concept: [url] text in a RichTextLabel emits meta_clicked with the link when clicked.
+	view.meta_clicked.connect(func(meta): OS.shell_open(str(meta)))
+	view.append_text(_details_text(task_id))
+	var frame := PanelContainer.new()
+	frame.add_theme_stylebox_override("panel", _box(CREAM, 12, LINE, 2, 0, false, Vector4(12, 10, 12, 10)))
+	frame.add_child(view)
+	box.add_child(frame)
+	return box
+
+
+## Fetch a package's details, once per change of where it is (not on every mood change).
+func _load_details(task: Dictionary) -> void:
+	var task_id := str(task["id"])
+	var seen := "%s/%s/%s" % [task.get("status"), task.get("building"), task.get("agent")]
+	if _details_seen.get(task_id) == seen or Net.island.is_empty():
+		return
+	_details_seen[task_id] = seen
+	var path := "/islands/%s/tasks/%s" % [str(Net.island["id"]).uri_encode(), task_id.uri_encode()]
+	Net.request_json(
+		path,
+		func(ok: bool, data: Dictionary):
+			if not ok:
+				_details_seen.erase(task_id)  # try again on the next redraw
+				return
+			_details[task_id] = data
+			if visible and not _composing:
+				_refresh()
+	)
+
+
+func _details_text(task_id: String) -> String:
+	var data: Dictionary = _details.get(task_id, {})
+	if data.is_empty():
+		return "[color=#68738B]Loading…[/color]"
+	var parts := PackedStringArray()
+	var text := str(data.get("description", "")).strip_edges()
+	parts.append(_escape(text) if text else "[color=#68738B]No description, just the title.[/color]")
+	parts.append("")
+	var repo = Net.island.get("repo")
+	if data.get("issue") != null:
+		var number := int(data["issue"])
+		parts.append(
+			(
+				"[b]GitHub issue:[/b] [url=https://github.com/%s/issues/%d]#%d[/url]" % [repo, number, number]
+				if repo
+				else "[b]GitHub issue:[/b] #%d" % number
+			)
+		)
+	var files: Array = data.get("attachments", [])
+	if files:
+		parts.append("[b]Attached:[/b] " + _escape(", ".join(files)))
+	if data.get("branch"):
+		parts.append("[b]Branch:[/b] " + _escape(str(data["branch"])))
+	if data.get("pr_url"):
+		parts.append("[b]Pull request:[/b] [url]%s[/url]" % str(data["pr_url"]))
+	var steps: Array = data.get("steps", [])
+	if steps:
+		parts.append("\n[b]Steps so far[/b]")
+	for step in steps:
+		var who := str(Net.find_resident(str(step.get("resident", ""))).get("name", step.get("resident", "?")))
+		var place := str(Net.find_building(str(step.get("building", ""))).get("name", step.get("building_type", "")))
+		var outcome = step.get("outcome")
+		var word := "working…" if outcome == null else str(outcome).to_upper()
+		parts.append("• %s at the %s: [b]%s[/b]" % [_escape(who), _escape(place), word])
+		var summary := str(step.get("summary", "")).strip_edges()
+		if summary:
+			parts.append("[color=#68738B]%s[/color]" % _escape(summary))
+	return "\n".join(parts).strip_edges()
 
 
 ## Opened mid-task: fetch what was thought before the game started listening.
