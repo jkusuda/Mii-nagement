@@ -4,19 +4,23 @@ extends PanelContainer
 ##
 ## - Stories: every event from Net (`event_received`) goes through NewsStories,
 ##   which keeps the newsworthy ones. On connect we also ask the backend for
-##   older events (GET /islands/{id}/events, see docs/architecture.md). Until
-##   the backend has that endpoint, the paper starts from this game session.
+##   older events (GET /islands/{id}/events, see docs/architecture.md).
 ## - Headline: the latest shipped package (or the latest story).
 ## - This week: from the insights endpoint, like the Insights tab.
 ## - Unread: stories newer than the last time you opened News. game.gd shows the
 ##   count on the nav button (`unread_changed`). Remembered in user://news.cfg.
 ## - Daily digest: when on, the game opens on News the first time you start it
 ##   each day.
+## - Replay: a shipped story's ↻ button plays that package's recorded run
+##   again on the island (POST /replay/{task_id}), the demo safety net. Nothing
+##   is redone or saved; game.gd switches to the island view to watch it.
 ##
 ## This node lives in game.tscn all the time (hidden when another tab is open),
 ## so it keeps reading the news and counting unread stories in the background.
 
 signal unread_changed(count: int)
+## A recorded run started playing (game.gd shows the island).
+signal replay_started
 
 const SETTINGS := "user://news.cfg"
 const MAX_FEED := 40
@@ -27,6 +31,8 @@ const WEEK := [
 	["bubbles_answered", "Bubbles answered", "EEEAFE"], ["keys_lent", "Keys lent", "FFF0DD"],
 ]
 const WEEKDAYS := ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+const REPLAY_SPEED := 4  # recorded runs play back this many times faster
+const REPLAY_ICON := preload("res://assets/icons/rotate-ccw.svg")
 
 var _desk := NewsStories.new()
 var _live_events: Array[Dictionary] = []  # this session's events, to replay over the history
@@ -94,7 +100,7 @@ func _on_event(event: Dictionary) -> void:
 func _on_history(result: int, code: int, _headers, body: PackedByteArray) -> void:
 	var data = JSON.parse_string(body.get_string_from_utf8()) if code == 200 else null
 	if result != HTTPRequest.RESULT_SUCCESS or typeof(data) != TYPE_DICTIONARY:
-		return  # no events endpoint yet: keep the live-only paper
+		return  # backend unreachable: keep the live-only paper
 	var desk := NewsStories.new()
 	for event in data.get("events", []):
 		desk.add(event)
@@ -215,7 +221,10 @@ func _story_row(story: Dictionary) -> Control:
 	var tag := _label(story["tag"], 12, true)
 	tag.add_theme_color_override("font_color", story["color"])
 
-	for part in [time, avatar, text, tag]:
+	var parts: Array[Control] = [time, avatar, text, tag]
+	if story.has("task"):
+		parts.append(_replay_button(str(story["task"])))
+	for part in parts:
 		part.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		row.add_child(part)
 	rows.add_child(row)
@@ -225,6 +234,24 @@ func _story_row(story: Dictionary) -> Control:
 	line.add_theme_stylebox_override("separator", style)
 	rows.add_child(line)
 	return rows
+
+
+func _replay_button(task_id: String) -> Button:
+	var button := Button.new()
+	button.icon = REPLAY_ICON
+	button.theme_type_variation = &"FlatIconButton"
+	button.focus_mode = Control.FOCUS_NONE
+	button.tooltip_text = "Replay this package's run on the island (%dx speed, nothing is redone)" % REPLAY_SPEED
+	button.pressed.connect(func():
+		button.disabled = true
+		# The backend answers when the replay is over; the events stream in meanwhile.
+		Net.request_json("/replay/%s?speed=%d" % [task_id.uri_encode(), REPLAY_SPEED], func(ok: bool, data: Dictionary):
+			if is_instance_valid(button):
+				button.disabled = false
+			if not ok:
+				push_warning("Replay failed: %s" % data["error"]), HTTPClient.METHOD_POST)
+		replay_started.emit())
+	return button
 
 
 func _show_week() -> void:

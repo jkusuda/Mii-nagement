@@ -16,7 +16,12 @@ extends Control
 ## The day pill and weather pill follow the Clock autoload (real time, the
 ## island's founding day); 3D lighting follows it too (scenes/day_night.gd).
 ##
-## TODO(mvp): Build mode, island creation.
+## Click a building (or its name pill) and the camera glides to it while a
+## BuildingPanel opens: the Mailbox lists open issues and sends new ones ("Send
+## a package" in the top bar opens it too), the other buildings show what's at
+## that stage. The Archipelago's Settings button opens SettingsPopup.
+##
+## The Build button opens build mode (scenes/build/build_mode.gd).
 
 const BuildingLabelScene := preload("res://scenes/ui/building_label.tscn")
 
@@ -31,15 +36,10 @@ const WEATHER_LOOKS := {
 }
 const NIGHT_COLOR := Color("8E9BF0")
 
-## Building type (backend), default label, icon, color. The 3D node is
-## Island/Buildings/<type in PascalCase> ("post_office" -> PostOffice).
-const BUILDINGS := [
-	["mailbox", "Mailbox", preload("res://assets/icons/mail.svg"), Color("F5708F")],
-	["workshop", "Workshop", preload("res://assets/icons/code.svg"), Color("E39537")],
-	["lab", "Lab", preload("res://assets/icons/flask-conical.svg"), Color("00B8A0")],
-	["post_office", "Post Office", preload("res://assets/icons/git-pull-request.svg"), Color("D9A321")],
-	["courthouse", "Courthouse", preload("res://assets/icons/scale.svg"), Color("7553DF")],
-]
+## Opening a building: zoom to at least this much, with the building this far
+## left of the middle (a fraction of the view's width) so it peeks out beside the panel.
+const FOCUS_ZOOM := 1.35
+const FOCUS_SHIFT := -0.36
 
 @onready var island: Node3D = %Island3D
 @onready var island_builder: IslandBuilder = %Island3D.get_node("Island")
@@ -52,7 +52,11 @@ const BUILDINGS := [
 @onready var home: Home = %Home
 @onready var island_creator: IslandCreator = %IslandCreator
 var dropdown := IslandDropdown.new()
+var building_panel := BuildingPanel.new()
+var picker: BuildingPicker
+var settings_popup := SettingsPopup.new()
 var build_mode := BuildMode.new()
+var toast := Toast.new()  # server errors no screen handled itself
 
 ## Which screen is showing: "home" (the archipelago), "island_creator",
 ## "island", "residents", "creator", "insights", or "news".
@@ -60,6 +64,8 @@ var screen := "island"
 ## True while the creator waits for the server to accept a resident.
 var _saving_resident := false
 var _saving_look := false  # the resident being saved carries an appearance
+## The resident the creator asked to move away, until the server answers.
+var _removing_resident := ""
 ## The resident creator is making a draft for the island creator (not sent yet),
 ## and which of its residents it replaces (-1 = a new one).
 var _drafting := false
@@ -73,11 +79,27 @@ var _dev_pill: Control  # the debug-only time slider (hidden while building)  # 
 
 
 func _ready() -> void:
-	for info in BUILDINGS:
+	for type in BuildingData.TYPES:
+		var info: Dictionary = BuildingData.TYPES[type]
 		var label: BuildingLabel = BuildingLabelScene.instantiate()
 		labels_root.add_child(label)
-		label.setup(island_builder.building_node(info[0]), rig.camera, info[1], info[2], info[3], 0)
-		_labels[info[0]] = label
+		label.setup(island_builder.building_node(type), rig.camera, info["name"], info["icon"], info["color"], 0)
+		label.pressed.connect(open_building.bind(type))
+		_labels[type] = label
+
+	# Clicking buildings on the island (see building_picker.gd and camera_rig.gd).
+	picker = BuildingPicker.new(island_builder.buildings, rig.camera)
+	rig.clicked.connect(func(at: Vector2):
+		if build_mode.is_open:
+			return  # build mode handles its own clicks
+		var type := BuildingData.type_of_node(picker.building_at(at))
+		if type:
+			open_building(type))
+	rig.hovered.connect(func(at: Vector2):
+		if build_mode.is_open:
+			return
+		var container := rig.get_viewport().get_parent() as Control  # the SubViewportContainer
+		container.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND if picker.building_at(at) else Control.CURSOR_ARROW)
 
 	%ZoomIn.pressed.connect(func(): rig.zoom_by(CameraRig.ZOOM_STEP))
 	%ZoomOut.pressed.connect(func(): rig.zoom_by(-CameraRig.ZOOM_STEP))
@@ -95,25 +117,28 @@ func _ready() -> void:
 	insights.see_residents.connect(show_screen.bind("residents"))
 	%News.pressed.connect(func(): show_screen("island" if screen == "news" else "news"))
 	news.unread_changed.connect(_show_unread)
+	news.replay_started.connect(show_screen.bind("island"))
 	_show_unread(news.unread())
 	%BackButton.pressed.connect(_go_back)
 
 	# The archipelago and the island switcher.
 	home.visit.connect(_visit_island)
-	home.new_island_requested.connect(func():
-		island_creator.open()
-		show_screen("island_creator"))
+	home.new_island_requested.connect(_open_island_creator)
+	home.settings_requested.connect(settings_popup.open)
+	add_child(settings_popup)
 	island_creator.closed.connect(show_screen.bind("home"))
 	island_creator.resident_requested.connect(func(resident: Dictionary, index: int):
 		_drafting = true
 		_draft_index = index
-		creator.open(resident, island_creator.island_name())
+		creator.open(resident, island_creator.island_name(), false)
 		show_screen("creator"))
 	island_creator.founded.connect(_on_island_founded)
 	Net.snapshot_received.connect(_move_residents_in)
 	add_child(dropdown)
 	dropdown.visit.connect(_visit_island)
 	dropdown.go_home.connect(show_screen.bind("home"))
+	dropdown.new_island.connect(_open_island_creator)
+	%SendPackage.pressed.connect(open_building.bind("mailbox", true))
 	%IslandSelector.gui_input.connect(func(event: InputEvent):
 		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 			dropdown.open_below(%IslandSelector))
@@ -122,6 +147,15 @@ func _ready() -> void:
 	residents_screen.action_requested.connect(_on_card_action)
 	creator.cancelled.connect(func(): show_screen("island_creator" if _drafting else "residents"))
 	creator.saved.connect(_save_resident)
+	creator.move_away_requested.connect(func(id: String):
+		if Net.send_delete_resident(id):
+			_removing_resident = id)
+	Net.resident_removed.connect(func(id: String):
+		if id == _removing_resident:
+			_removing_resident = ""
+			show_screen("residents"))
+	dropdown.abandoned.connect(_on_island_abandoned)
+	dropdown.failed.connect(toast.show_message)
 
 	# Island data from the backend. Net keeps Net.island current and announces
 	# every change; until the first snapshot the Residents screen shows mock data.
@@ -130,6 +164,14 @@ func _ready() -> void:
 	Net.server_error.connect(_on_server_error)
 	_show_island()
 	show_screen("home")
+
+	# Added last, so it's drawn over everything else.
+	add_child(building_panel)
+	building_panel.closed.connect(rig.unfocus)
+	building_panel.answer_requested.connect(%Sidebar.open_reply)
+	Net.snapshot_received.connect(func(_island): building_panel.close())  # another island
+
+	add_child(toast)
 
 	Clock.ticked.connect(_show_time)
 	_show_time()
@@ -144,6 +186,8 @@ func show_screen(which: String) -> void:
 	if which != "island":
 		build_mode.cancel()  # leaving the island throws away unsaved edits
 	screen = which
+	if which != "island":
+		building_panel.close()
 	home.visible = which == "home"
 	island_creator.visible = which == "island_creator"
 	%Margin.visible = which not in ["home", "island_creator"]
@@ -197,6 +241,26 @@ func _on_server_error(message: String) -> void:
 	if _saving_resident:
 		_saving_resident = false
 		creator.show_error(message)
+	elif _removing_resident:
+		_removing_resident = ""
+		creator.show_error(message)
+	else:
+		toast.show_message(message)
+
+
+## An island was abandoned from the switcher. If we were on it, go to another
+## island (Net needs one to watch) and show the Archipelago.
+func _on_island_abandoned(id: String, repo_path: String) -> void:
+	var island_name := str(Islands.find(id).get("name", id))
+	toast.show_message("%s was abandoned. Its git repository stays on disk (…/%s)." % [island_name, repo_path.get_file()] if repo_path
+		else "%s was abandoned." % island_name)
+	if id != str(Net.island.get("id", "")):
+		return
+	for island in Islands.islands:
+		if str(island["id"]) != id:
+			Net.visit_island(str(island["id"]))
+			break
+	show_screen("home")
 
 
 ## A card's Answer / Review / Tuck in opens that bubble's reply in the sidebar;
@@ -217,6 +281,8 @@ func _show_island() -> void:
 	%IslandName.text = str(data.get("name", ""))
 	_show_time()
 	%Repo.text = str(data["repo"]) if data.get("repo") else "no repo linked"
+	# Long names get "…" (the top bar has a fixed width); the tooltip has them in full.
+	%IslandSelector.tooltip_text = "%s\n%s\nSwitch island" % [%IslandName.text, %Repo.text]
 	residents_screen.show_snapshot(data)
 	_show_resident_summary(data.get("residents", []))
 
@@ -255,6 +321,24 @@ func _go_back() -> void:
 		"creator": show_screen("island_creator" if _drafting else "residents")
 		"island": show_screen("home")
 		_: show_screen("island")
+
+
+## Open a building's panel ("mailbox", "lab", ...) and glide the camera to it.
+## `compose`: open the Mailbox on its "Send a new issue" form.
+func open_building(type: String, compose := false) -> void:
+	if Net.island.is_empty():
+		return
+	if screen != "island":
+		show_screen("island")
+	if build_mode.is_open:
+		build_mode.cancel()  # a building's panel and build mode don't mix
+	rig.focus_on(island_builder.building_node(type).global_position, maxf(rig.zoom, FOCUS_ZOOM), FOCUS_SHIFT)
+	building_panel.open(type, compose)
+
+
+func _open_island_creator() -> void:
+	island_creator.open()
+	show_screen("island_creator")
 
 
 ## A new island exists: go there, and move its residents in when it's ready.
@@ -298,6 +382,7 @@ func _open_creator(resident: Dictionary = {}) -> void:
 func _show_connection(online: bool) -> void:
 	%StatusLabel.text = "Connected" if online else "Reconnecting…"
 	%SyncedLabel.text = "synced just now" if online else "backend offline"
+	%SendPackage.disabled = not online
 	var dot: StyleBoxFlat = get_theme_stylebox("panel", "StatusDot").duplicate()
 	dot.bg_color = Color("39C16F") if online else Color("F2994A")
 	%StatusDot.add_theme_stylebox_override("panel", dot)
@@ -340,6 +425,8 @@ func _open_build_mode() -> void:
 ## While building, the toolbar takes the bottom of the frame (so the hint pill
 ## hides) and the building name pills hide, for a cleaner view.
 func _on_build_mode_toggled(building: bool) -> void:
+	if building:
+		building_panel.close()
 	%IslandFrame.get_node("HintPill").visible = not building
 	%Labels.visible = not building
 	if _dev_pill:

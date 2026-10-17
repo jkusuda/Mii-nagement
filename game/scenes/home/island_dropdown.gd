@@ -2,17 +2,25 @@ class_name IslandDropdown
 extends PopupPanel
 ## The island switcher that drops down from the island name in the top bar.
 ## Lists every island (Islands autoload) with its picture and status; click one
-## to go there, or "Archipelago" for the home screen.
+## to go there, or "Archipelago" for the home screen. The small ✕ on a row
+## abandons that island (DELETE /islands/{id}, after asking): its rows go, its
+## git repository stays on disk.
 ##
 ## Godot concept: a PopupPanel is a small window that closes by itself when you
 ## click outside it. popup() shows it at a rectangle on screen.
 
 signal visit(island_id: String)
 signal go_home
+signal new_island
+## An island was abandoned; `repo_path` is where its git repository stays.
+signal abandoned(island_id: String, repo_path: String)
+## Abandoning didn't work (a task is running there, or it's the last island).
+signal failed(message: String)
 
 const CHECK := preload("res://assets/icons/check.svg")
 const MAP := preload("res://assets/icons/map.svg")
 const PLUS := preload("res://assets/icons/plus.svg")
+const REMOVE := preload("res://assets/icons/x.svg")
 
 var _rows := VBoxContainer.new()
 var _summary := Label.new()
@@ -42,14 +50,15 @@ func _init() -> void:
 
 	var buttons := HBoxContainer.new()
 	buttons.add_theme_constant_override("separation", 8)
-	var new_island := _button("New island", PLUS, &"SelectorButton")
-	new_island.disabled = true
-	new_island.tooltip_text = "Island creation is coming next"
+	var found := _button("New island", PLUS, &"SelectorButton")
+	found.pressed.connect(func():
+		hide()
+		new_island.emit())
 	var home := _button("Archipelago", MAP, &"OutlineButton")
 	home.pressed.connect(func():
 		hide()
 		go_home.emit())
-	buttons.add_child(new_island)
+	buttons.add_child(found)
 	buttons.add_child(home)
 	box.add_child(buttons)
 
@@ -133,10 +142,35 @@ func _row(island: Dictionary) -> Control:
 		label.add_theme_color_override("font_color", status["color"])
 		tag.add_child(label)
 
-	for part in [picture, names, tag]:
+	var remove := Button.new()
+	remove.icon = REMOVE
+	remove.theme_type_variation = &"FlatIconButton"
+	remove.add_theme_constant_override("icon_max_width", 12)
+	remove.focus_mode = Control.FOCUS_NONE
+	remove.tooltip_text = "Abandon %s" % island.get("name", id)
+	remove.pressed.connect(_abandon.bind(island))
+
+	for part in [picture, names, tag, remove]:
 		part.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		line.add_child(part)
 	return row
+
+
+## Ask first, then DELETE /islands/{id}. The backend refuses while a task runs
+## there, or if it's the last island.
+func _abandon(island: Dictionary) -> void:
+	var id := str(island["id"])
+	var island_name := str(island.get("name", id))
+	hide()
+	ConfirmPopup.ask(self, "Abandon %s?" % island_name,
+		"Its residents, buildings and history leave the archipelago. The git repository stays on your disk.",
+		"Abandon island", func():
+			Net.request_json("/islands/%s" % id.uri_encode(), func(ok: bool, data: Dictionary):
+				if not ok:
+					failed.emit("Couldn't abandon %s: %s" % [island_name, data["error"]])
+					return
+				abandoned.emit(id, str(data.get("repo_kept", "")))
+				Islands.refresh(), HTTPClient.METHOD_DELETE))
 
 
 ## "2 need you" / "Busy · 4 working" / "Napping": short enough for the row.

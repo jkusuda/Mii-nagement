@@ -34,7 +34,7 @@ backend/mii/      one package = Django project + app
   config.py       developer overrides from the optional root .env (`config`) + defaults
   prefs.py        user settings (Setting table) + API keys (OS keychain via `keyring`); env > saved > default
   asgi.py         ASGI entry: HTTP + WebSocket + lifespan (starts the engine worker)
-  urls.py / views.py   async JSON endpoints: /health, /brains, /models, /islands/{id}, tasks, insights, replay
+  urls.py / views.py   async JSON endpoints: /health, /brains, /models, /settings, /islands/{id}, tasks, insights, events, replay
   tasks.py        submit_task: a request ({"title"} or {"issue"}) -> a queued task (HTTP POST + `create_task`)
   consumers.py    the /ws WebSocket consumer (Channels, no channel layer)
   runtime.py      one sandbox / event bus / bubbles / engine per process (get_runtime())
@@ -60,7 +60,8 @@ backend/mii/      one package = Django project + app
   management/commands/   seed, watch
 backend/tests/    pytest (pytest-django; fake_acp_agent.py is a mini ACP agent)
 game/
-  net.gd          autoload singleton `Net`: WebSocket -> signals, send_answer(), visit_island()
+  net.gd          autoload singleton `Net`: WebSocket -> signals, send_answer(), visit_island(),
+                  http_url() + request_json() for the HTTP endpoints
   islands.gd      autoload `Islands`: every island (GET /islands + snapshots) + 3D thumbnails
   clock.gd        autoload `Clock`: real time of day (+ dev override), Day N from created_at, daily weather
   portraits.gd    autoload `Portraits`: Mii headshots (hidden SubViewport stage, cached per look)
@@ -70,7 +71,7 @@ game/
                          inside game.tscn's SubViewport
   scenes/day_night.gd    `DayNight`: the time-of-day table; moves the sun, recolors light and water in
                          every copy of island_3d.tscn (island view, home sea, the window background)
-  scenes/camera_rig.gd   zoom (wheel/trackpad/buttons) + drag-to-pan
+  scenes/camera_rig.gd   zoom (wheel/trackpad/buttons) + drag-to-pan, click vs. drag, focus_on()/unfocus()
   scenes/apple_tree.tscn, bush.tscn  plants (origin at their base), both use swaying_plant.gd
   scenes/seasons.gd      `Seasons`: per-season looks (grass, foliage, snow, weather particles, light tint)
   scenes/buildings/      one wrapper scene per building type (model on its 3x3 lot, door facing +Z,
@@ -82,8 +83,9 @@ game/
                        island_dropdown (switcher in the top bar), island_creator (found an island)
   scenes/sea/          sea_view: a 3D sea with any number of islands (water shader, sun, camera fit);
                        with none it's open sea, used as game.tscn's full-window Background
-  scenes/news/         News tab: news_stories turns Net events (+ GET /islands/{id}/events, planned)
-                       into stories; unread count drives the nav badge; daily digest setting
+  scenes/news/         News tab: news_stories turns Net events (+ GET /islands/{id}/events)
+                       into stories; unread count drives the nav badge; daily digest setting;
+                       Replay on shipped stories (POST /replay/{task_id})
   scenes/insights/     Insights tab: GET /islands/{id}/insights (shape in architecture.md) + live
                        waiting packages and moods from Net.island
   scenes/mii/          mii (the 3D Mii: face, hair on the head bone, shirt colour, idle/walk/run),
@@ -94,8 +96,14 @@ game/
                        island_terrain (ground mesh + "field" texture), island_builder (the Island
                        node: ground, pond, buildings, plants, lamps); residents: island_residents
                        (follows Net events), island_resident (one walker + tags), island_paths (walking)
+                       building_data (per-type name/icon/color/stage words), building_picker
+                       (which building is under the mouse: ray vs. bounding boxes)
   scenes/ui/           building_label (follows a 3D building, resident count), bubbles_sidebar,
-                       bubble_card (with reply box), answer_button, dashed_button
+                       bubble_card, answer_popup (answer a bubble: review, key request, question),
+                       confirm_popup ("are you sure?"), toast (server errors), answer_button, dashed_button,
+                       building_panel (click a building: Mailbox issues + send, or what's at
+                       that stage), package_form (POST /islands/{id}/tasks),
+                       settings_popup (GET/PUT /settings, /health, /brains/detail)
   ui/theme.tres        every color, font weight, and pill/button style (theme type variations)
   shaders/water.gdshader stylized water
   shaders/terrain.gdshader  grass, beach, paths, pond banks, snow (reads the island's field texture)
@@ -173,8 +181,9 @@ env var) and `git config --global http.sslBackend schannel` make uv and git trus
   Keep brain-specific details inside those runners, never in the engine,
   protocol, or game.
 - **Keep the backend small.** Out of scope on purpose: LangChain or more direct
-  API runners (OpenRouter is the one), friendship, ML router, parallel tasks.
-  Several islands share one task queue. Island News is written in the game
+  API runners (OpenRouter is the one), ML router, several packages at once on
+  one island. Islands work in parallel (one `Lane` per island in engine.py),
+  one package at a time each. Island News is written in the game
   from stored events; the backend only serves them.
 - **Migrations are Django's.** After changing a table in `models.py`, run
   `uv run python manage.py makemigrations mii` and check the migration in. The

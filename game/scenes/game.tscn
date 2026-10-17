@@ -24,6 +24,8 @@
 [ext_resource type="PackedScene" path="res://scenes/home/home.tscn" id="26_home"]
 [ext_resource type="PackedScene" path="res://scenes/home/island_creator.tscn" id="27_island_creator"]
 [ext_resource type="Script" path="res://scenes/sea/sea_view.gd" id="40_sea"]
+[ext_resource type="Texture2D" path="res://assets/icons/mail.svg" id="41_mail"]
+[ext_resource type="Script" path="res://scenes/ui/answer_button.gd" id="42_answer"]
 
 [node name="Game" type="Control" unique_id=146576168]
 layout_mode = 3
@@ -109,6 +111,7 @@ expand_mode = 1
 stretch_mode = 5
 
 [node name="Names" type="VBoxContainer" parent="Margin/Columns/Left/TopBar/IslandSelector/Row" unique_id=659621804]
+custom_minimum_size = Vector2(190, 0)
 layout_mode = 2
 size_flags_vertical = 4
 theme_override_constants/separation = 0
@@ -118,12 +121,14 @@ unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"IslandName"
 text = "Pebble Cove"
+text_overrun_behavior = 3
 
 [node name="Repo" type="Label" parent="Margin/Columns/Left/TopBar/IslandSelector/Row/Names" unique_id=1732636222]
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"LabelMuted"
 text = "your-org/pebble-api"
+text_overrun_behavior = 3
 
 [node name="Chevron" type="TextureRect" parent="Margin/Columns/Left/TopBar/IslandSelector/Row" unique_id=470373572]
 modulate = Color(0.161, 0.18, 0.314, 1)
@@ -198,6 +203,17 @@ text = "Day 12 · 10:42"
 layout_mode = 2
 size_flags_horizontal = 3
 mouse_filter = 2
+
+[node name="SendPackage" type="Button" parent="Margin/Columns/Left/TopBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(172, 40)
+layout_mode = 2
+size_flags_vertical = 4
+tooltip_text = "Open the Mailbox and send a new issue"
+theme_type_variation = &"AnswerButton"
+text = "Send a package"
+icon = ExtResource("41_mail")
+script = ExtResource("42_answer")
 
 [node name="IslandFrame" type="Control" parent="Margin/Columns/Left" unique_id=402004166]
 unique_name_in_owner = true

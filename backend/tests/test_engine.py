@@ -4,13 +4,13 @@ import random
 import subprocess
 
 import pytest
-from conftest import FakeClient, ScriptedRunner, db_test, make_workflow
+from conftest import FakeClient, RecordingAsk, ScriptedRunner, db_test, make_job, make_workflow
 
 from mii import events
 from mii.agents import StepResult
 from mii.agents.mock import MockRunner
 from mii.engine import IslandGraph, split_pr_text
-from mii.models import Event, Step, Task
+from mii.models import Event, Island, Step, Task
 from mii.sandbox import Sandbox, SandboxError, is_inside
 
 pytestmark = db_test
@@ -162,6 +162,85 @@ async def test_tasks_branch_off_the_islands_branch(island, sandbox, sandboxes):
     assert sandbox.resolve_branch("nope") == "HEAD" and sandbox.resolve_branch("develop") == "develop"
 
 
+class FakeGitHub:
+    """Stands in for `gh`: records the PRs opened and merged."""
+
+    def __init__(self, monkeypatch):
+        self.opened, self.merged = [], []
+        monkeypatch.setattr("mii.github.open_pull_request", self.open)
+        monkeypatch.setattr("mii.github.merge_pull_request", self.merge)
+
+    def open(self, repo, worktree, branch, title, body, base=None):
+        self.opened.append(branch)
+        return f"https://github.com/{repo}/pull/{len(self.opened)}"
+
+    def merge(self, url):
+        self.merged.append(url)
+        return "squash"
+
+
+async def _answer_ready(workflow, answers: list[str]):
+    """Answer each ✅ Ready bubble in turn, as the island owner would."""
+    for answer in answers:
+        while not [b for b in workflow.bubbles.open.values() if b.kind == "ready"]:
+            await asyncio.sleep(0.01)
+        bubble = next(b for b in workflow.bubbles.open.values() if b.kind == "ready")
+        assert bubble.options == ["Approve & merge", "Send back"] and bubble.task
+        workflow.bubbles.answer(bubble.id, answer)
+        while bubble.id in workflow.bubbles.open:
+            await asyncio.sleep(0.01)
+
+
+async def test_courthouse_approval_merges_at_the_post_office(island, sandbox, sandboxes, monkeypatch):
+    gh = FakeGitHub(monkeypatch)
+    await Island.objects.filter(pk="sunny").aupdate(repo="o/r", rules={"merge_pr": True})
+    workflow, _ = make_workflow(WritingRunner(), sandboxes=sandboxes, test_command="true")
+    task = await workflow.submit("sunny", "Add feature")
+    answering = asyncio.create_task(_answer_ready(workflow, ["Send back: also test IPv6", "Approve & merge"]))
+    task = await workflow.run_task(task.id)
+    await answering
+
+    assert task.status == "done" and gh.merged == [task.pr_url] and task.merged_at is not None
+    court = [s async for s in Step.objects.filter(task_id=task.id, building_type="courthouse").order_by("id")]
+    assert [s.outcome for s in court] == ["fail", "pass"]  # sent back once, then approved
+    assert "also test IPv6" in court[0].summary
+    workshop_visits = await Step.objects.filter(task_id=task.id, building_type="workshop").acount()
+    assert workshop_visits == 2  # the note went back to the coder
+
+
+async def test_unanswered_review_leaves_the_pr_open_and_rule_off_merges_without_asking(island, sandbox, sandboxes, monkeypatch):
+    gh = FakeGitHub(monkeypatch)
+    await Island.objects.filter(pk="sunny").aupdate(repo="o/r", rules={"merge_pr": True})
+    workflow, client = make_workflow(WritingRunner(), sandboxes=sandboxes, test_command="true")
+    task = await workflow.run_task((await workflow.submit("sunny", "Nobody looks")).id)
+    assert task.status == "done" and task.pr_url and gh.merged == []  # bubble timed out
+    assert [e["kind"] for e in client.of_type("bubble")] == ["ready"]
+
+    await Island.objects.filter(pk="sunny").aupdate(rules={"merge_pr": False})
+    workflow, client = make_workflow(WritingRunner(), sandboxes=sandboxes, test_command="true")
+    task = await workflow.run_task((await workflow.submit("sunny", "Trusted")).id)
+    assert gh.merged == [task.pr_url] and client.of_type("bubble") == []
+
+
+def test_merge_tries_the_methods_the_repo_allows(monkeypatch):
+    from mii import github
+
+    tried = []
+
+    def fake_run(args, cwd=None):
+        tried.append(args[-1])
+        if args[-1] == "--squash":
+            raise github.GitHubError("`gh pr merge` failed: Squash merges are not allowed on this repository")
+        return ""
+
+    monkeypatch.setattr(github, "_run", fake_run)
+    assert github.merge_pull_request("https://github.com/o/r/pull/1") == "merge" and tried == ["--squash", "--merge"]
+
+    monkeypatch.setattr(github, "_run", lambda args, cwd=None: (_ for _ in ()).throw(github.GitHubError("checks failing")))
+    with pytest.raises(github.GitHubError, match="checks failing"):
+        github.merge_pull_request("https://github.com/o/r/pull/1")
+
+
 def test_split_pr_text():
     assert split_pr_text("# Add feature\n\nAdds x.", "fallback") == ("Add feature", "Adds x.")
     assert split_pr_text("Title: Fix\nDescription: body", "fallback") == ("Fix", "body")
@@ -194,6 +273,35 @@ async def test_bubble_answer_reaches_the_waiting_resident(island):
     assert bubbles.answer(shown["id"], "again") is False  # already closed
     [resolved] = [e for e in client.sent if e["type"] == "bubble_resolved"]
     assert resolved["answered"] is True and resolved["response"] == "Allow"
+
+
+async def test_mock_residents_stream_thinking_for_their_task(island):
+    workflow, client = make_workflow(MockRunner(work_seconds=(0, 0), bubble_chance=0.0, rng=random.Random(3)))
+    task = await workflow.run_task((await workflow.submit("sunny", "Think aloud")).id)
+    thoughts = client.of_type("thinking")
+    assert thoughts and all(e["task"] == task.id for e in thoughts)
+    assert {e["kind"] for e in thoughts} == {"thought", "tool", "reply"}
+
+
+async def test_bubble_carries_its_task_and_detail(island):
+    bubbles = events.Bubbles(events.EventBus())
+    asking = asyncio.create_task(
+        bubbles.ask("sunny", "carlos", "permission", "Run npm?", 5, ["Allow", "Deny"], "t_1", "npm install zod")
+    )
+    while not bubbles.open:
+        await asyncio.sleep(0.01)
+    [shown] = bubbles.for_island("sunny")
+    assert shown["task"] == "t_1" and shown["detail"] == "npm install zod"
+    bubbles.answer(shown["id"], "Deny")
+    assert await asking == "Deny"
+
+
+async def test_mock_ready_bubble_can_send_work_back(island):
+    runner = MockRunner(work_seconds=(0, 0), bubble_chance=1.0, rng=random.Random(1))
+    job = make_job("mock", building_type="courthouse", ask=RecordingAsk("Send back: also test IPv6"))
+    result = await runner.run(job)
+    assert job.ask.asked[0][0] == "ready" and job.ask.asked[0][2] == ["Approve", "Send back"]
+    assert result.outcome == "fail" and "also test IPv6" in result.summary
 
 
 async def test_bubble_times_out_with_none(island):

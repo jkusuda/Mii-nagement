@@ -12,6 +12,7 @@ the engine runs inside the ASGI server's event loop.
 import asyncio
 import logging
 import uuid
+from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
 
@@ -132,18 +133,47 @@ class Lab(BuildingHandler):
 
 
 class Courthouse(BuildingHandler):
-    """The reviewer judges the diff. Pass goes to the post office; fail goes back."""
+    """The reviewer judges the diff. Pass goes to the post office; fail goes back.
+
+    Real mode, on an island with a GitHub repo: once the reviewer passes it, you
+    get a ✅ Ready bubble (unless the island's `merge_pr` house rule is off, which
+    approves it for you). "Approve & merge" has the Post Office merge the PR it
+    opens; "Send back: <note>" fails the step, so the package goes back to the
+    Workshop with your note. No answer: the PR is opened but left for you.
+    """
 
     read_only = True
+    APPROVE, SEND_BACK = "Approve & merge", "Send back"
 
     def instructions(self, task: Task) -> str:
         return f"Review the changes on this branch for: {task.title}. If you fail it, say exactly what to fix.\n\n{VERDICT_RULE}"
 
     async def run(self, job: AgentJob, runner, engine: "WorkflowEngine") -> StepResult:
-        if job.sandbox and job.workdir:
-            stat = await asyncio.to_thread(job.sandbox.diff_stat, job.task.id)
-            job.instructions = f"{job.instructions}\n\nWhat changed on this branch (git log + diff --stat):\n{stat}"
-        return await runner.run(job)
+        if not (job.sandbox and job.workdir):
+            return await runner.run(job)
+        stat = await asyncio.to_thread(job.sandbox.diff_stat, job.task.id)
+        job.instructions = f"{job.instructions}\n\nWhat changed on this branch (git log + diff --stat):\n{stat}"
+        result = await runner.run(job)
+        island = await Island.objects.aget(pk=job.task.island_id)
+        if result.outcome != "pass" or not island.repo:
+            return result  # nothing to merge without a GitHub repo
+        if not job.rules.get("merge_pr"):
+            engine._approved.add(job.task.id)  # house rule: merging needs no OK
+            return result
+
+        verdict = " ".join(result.summary.split())
+        verdict = verdict if len(verdict) <= 220 else verdict[:220].rsplit(" ", 1)[0] + "…"
+        answer = await job.ask("ready", verdict or "All clear! It looks good to me.",
+                               [self.APPROVE, self.SEND_BACK], "\n".join(stat.splitlines()[-12:]))
+        if answer and answer.startswith(self.SEND_BACK):
+            note = answer[len(self.SEND_BACK):].lstrip(" :").strip()
+            return StepResult("fail", f"The island owner sent it back{': ' + note if note else '.'}")
+        if answer:
+            engine._approved.add(job.task.id)
+            result.summary += " Approved: the Post Office will merge it."
+        else:
+            result.summary += " Nobody approved it in time, so the PR will stay open."
+        return result
 
 
 class PostOffice(BuildingHandler):
@@ -173,8 +203,17 @@ class PostOffice(BuildingHandler):
             )
         except github.GitHubError as e:
             return StepResult("fail", f"Could not open the PR: {e}")
-        await engine.set_pr_url(job.task, url)
-        return StepResult("pass", f"Opened {url}")
+        task = await engine.set_pr_url(job.task, url)
+        if job.task.id not in engine._approved:
+            return StepResult("pass", f"Opened {url}")
+        await job.report("Merging the pull request")
+        try:
+            method = await asyncio.to_thread(github.merge_pull_request, url)
+        except github.GitHubError as e:
+            return StepResult("pass", f"Opened {url}, but couldn't merge it: {e}")
+        task.merged_at = utcnow()
+        await task.asave(update_fields=["merged_at"])
+        return StepResult("pass", f"Opened and merged {url} ({method}).")
 
 
 HANDLERS: dict[str, BuildingHandler] = {
@@ -221,8 +260,23 @@ async def run_shell(command: str, cwd: Path, timeout: float) -> tuple[int, str]:
 # --- The engine ---------------------------------------------------------------------
 
 
+@dataclass
+class Lane:
+    """One island's line of packages. Islands work in parallel; within an island,
+    one package at a time (each building has one resident)."""
+
+    queue: asyncio.Queue = field(default_factory=asyncio.Queue)
+    worker: asyncio.Task | None = None
+    current: asyncio.Task | None = None  # the task run in progress
+    current_id: str | None = None
+
+
 class WorkflowEngine:
-    """Runs task packages through the island, one task at a time."""
+    """Runs task packages through the islands: one at a time per island, islands in parallel.
+
+    submit() puts a task id in `queue` (the inbox); run_forever() hands each one to
+    its island's Lane, whose worker runs that island's packages in order.
+    """
 
     def __init__(
         self,
@@ -252,10 +306,10 @@ class WorkflowEngine:
         self.test_command = test_command
         self.keep_worktrees = keep_worktrees
         self.git_author = git_author
-        self.queue: asyncio.Queue[str] = asyncio.Queue()
-        self.current: asyncio.Task | None = None  # the task run in progress (run_forever)
-        self.current_id: str | None = None
-        self._cancel_requested: str | None = None  # task id that cancel() is stopping
+        self.queue: asyncio.Queue[str] = asyncio.Queue()  # the inbox: every island's new task ids
+        self.lanes: dict[str, Lane] = {}  # island id -> its line of packages (run_forever)
+        self._cancelling: set[str] = set()  # task ids that cancel() is stopping
+        self._approved: set[str] = set()  # task ids you approved at the Courthouse (merge at the Post Office)
 
     # --- Public API -----------------------------------------------------------
 
@@ -281,36 +335,61 @@ class WorkflowEngine:
             task = await self._update(Task, task_id, status="cancelled", finished_at=utcnow())
             await self._emit(task, events.task(task))  # run_forever skips it when it comes off the queue
             return task
-        if task.status == "in_progress" and self.current and self.current_id == task_id and not self.current.done():
-            self._cancel_requested = task_id
-            self.current.cancel()
-            await asyncio.wait([self.current])
+        lane = self.lanes.get(task.island_id)
+        if task.status == "in_progress" and lane and lane.current_id == task_id and not lane.current.done():
+            self._cancelling.add(task_id)
+            lane.current.cancel()
+            await asyncio.wait([lane.current])
             return await self._get(Task, task_id)
         raise ValueError(f"task {task_id} is already {task.status}")
 
+    def busy_islands(self) -> set[str]:
+        """Islands with a package being worked on right now."""
+        return {island for island, lane in self.lanes.items() if lane.current_id}
+
     async def run_forever(self) -> None:
-        """Worker loop: take tasks off the queue and run them."""
-        while True:
-            try:
-                task_id = await asyncio.wait_for(self.queue.get(), timeout=self.sleep_after)
-            except TimeoutError:
-                await self._put_idle_residents_to_sleep()
-                continue
+        """Dispatcher: hand each new task to its island's lane (starting the lane's worker)."""
+        try:
+            while True:
+                try:
+                    task_id = await asyncio.wait_for(self.queue.get(), timeout=self.sleep_after)
+                except TimeoutError:
+                    await self._put_idle_residents_to_sleep()
+                    continue
+                task = await Task.objects.filter(pk=task_id, status="queued").afirst()
+                if task is None:
+                    continue  # cancelled while waiting, or its island was deleted
+                lane = self.lanes.setdefault(task.island_id, Lane())
+                lane.queue.put_nowait(task_id)
+                if lane.worker is None or lane.worker.done():
+                    lane.worker = asyncio.create_task(self._work_lane(lane))
+        finally:  # the server is shutting down: stop every island's worker too
+            workers = [lane.worker for lane in self.lanes.values() if lane.worker]
+            for worker in workers:
+                worker.cancel()
+            await asyncio.gather(*workers, return_exceptions=True)
+
+    async def _work_lane(self, lane: Lane) -> None:
+        """One island's worker: run its packages in order, until its queue is empty."""
+        while not lane.queue.empty():
+            task_id = lane.queue.get_nowait()
             if not await Task.objects.filter(pk=task_id, status="queued").aexists():
-                continue  # cancelled while waiting, or its island was deleted
-            self.current_id = task_id
-            self.current = asyncio.create_task(self.run_task(task_id))
+                continue  # cancelled while waiting in line
+            lane.current_id = task_id
+            lane.current = asyncio.create_task(self.run_task(task_id))
             try:
-                await self.current
+                await lane.current
             except asyncio.CancelledError:
-                if self._cancel_requested != task_id:
+                if task_id not in self._cancelling:
                     raise  # the server is shutting down
             except Exception:
                 log.exception("task %s crashed", task_id)
                 task = await self._update(Task, task_id, status="failed", finished_at=utcnow())
                 await self._emit(task, events.task(task))
             finally:
-                self.current = self.current_id = self._cancel_requested = None
+                lane.current = lane.current_id = None
+                self._cancelling.discard(task_id)
+                self._approved.discard(task_id)
 
     async def recover(self) -> None:
         """After a restart: re-queue waiting tasks, fail half-done ones, wake everyone."""
@@ -334,7 +413,7 @@ class WorkflowEngine:
         try:
             return await self._run_task(task, sandbox)
         except asyncio.CancelledError:
-            if self._cancel_requested != task_id:
+            if task_id not in self._cancelling:
                 raise  # the server is shutting down, not a cancel request
             return await self._drop_package(task_id)
         finally:
@@ -425,12 +504,13 @@ class WorkflowEngine:
         )
         bubbles_raised = 0
 
-        async def ask(kind: str, text: str, options: list[str] | None = None) -> str | None:
+        async def ask(kind: str, text: str, options: list[str] | None = None, detail: str | None = None) -> str | None:
             nonlocal bubbles_raised
             bubbles_raised += 1
-            timeout = self.permission_timeout if kind == "permission" else self.bubble_timeout
+            # Permission and review bubbles are you approving something: they can wait longer.
+            timeout = self.permission_timeout if kind in ("permission", "ready") else self.bubble_timeout
             await self._set_mood(resident, BUBBLE_MOODS.get(kind, "confused"))
-            answer = await self.bubbles.ask(task.island_id, resident.id, kind, text, timeout, options)
+            answer = await self.bubbles.ask(task.island_id, resident.id, kind, text, timeout, options, task.id, detail)
             await self._set_mood(resident, "focused")
             return answer
 
@@ -440,6 +520,7 @@ class WorkflowEngine:
             ask=ask, report=partial(self._report, task, resident), attempt=attempt,
             history=list(history), workdir=workdir, sandbox=sandbox, read_only=handler.read_only,
             rules=rules or {}, notebook=partial(self._set_notebook, resident),
+            think=partial(self._think, task, resident),
         )
         timed_out = False
         try:
@@ -466,6 +547,9 @@ class WorkflowEngine:
         friendship.updated_at = utcnow()
         await friendship.asave(update_fields=["handoffs", "updated_at"])
         await self.bus.emit(island_id, events.friendship(friendship))
+
+    async def _think(self, task: Task, resident: Resident, kind: str, text: str) -> None:
+        await self._emit(task, events.thinking(resident.id, task.id, kind, text))
 
     async def _report(self, task: Task, resident: Resident, text: str) -> None:
         await self._emit(task, events.activity(resident.id, text))
@@ -497,7 +581,8 @@ class WorkflowEngine:
         return resident
 
     async def _put_idle_residents_to_sleep(self) -> None:
-        idle = [r async for r in Resident.objects.filter(state="idle")]
+        """Nap time on quiet islands (an island with a package in progress stays awake)."""
+        idle = [r async for r in Resident.objects.filter(state="idle").exclude(island_id__in=self.busy_islands())]
         for resident in idle:
             await self._set_state(resident, "sleeping")
             await self._set_mood(resident, "tired")

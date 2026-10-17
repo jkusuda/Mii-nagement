@@ -1,9 +1,11 @@
 class_name IslandCreator
 extends Control
 ## Found a new island, in two steps:
-##   1. Name & repo: a name, a GitHub repo (listed by the backend through the
-##      `gh` CLI, or typed as owner/name), and the branch residents start from.
-##      Also the island's shape and season. A live 3D preview shows the island.
+##   1. Name & repo: a name, and where the code comes from (REPO_MODES): a new
+##      empty repository, a GitHub repo to clone (listed by the backend through
+##      the `gh` CLI, or typed as owner/name) and the branch residents start
+##      from, or a git folder already on this computer. Also the island's shape
+##      and season. A live 3D preview shows the island.
 ##   2. Town & residents: which buildings (workflow steps) the island has
 ##      (the town plans are quick picks), the residents you make for it, and
 ##      house rules.
@@ -37,10 +39,18 @@ const TOGGLE_OFF := preload("res://assets/ui/toggle_off.svg")
 const CHECK := preload("res://assets/icons/check.svg")
 const DashedButton := preload("res://scenes/ui/dashed_button.gd")
 const REPO_PATTERN := "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+## [mode, chip label]: where the island's code comes from (POST /islands sends
+## nothing, "repo", or "existing_repo").
+const REPO_MODES := [["new", "New empty repository"], ["github", "Clone from GitHub"],
+	["folder", "Use a folder on this computer"]]
 
 var _step := 1
 var _repos: Array = []    # [{"repo", "private", "updated_at"}] from the backend
+var _repo_mode := "new"   # a REPO_MODES id
 var _repo := ""           # chosen "owner/name" ("" = none)
+var _mode_row: HFlowContainer  # the REPO_MODES chips (built in code)
+var _folder_edit: LineEdit     # the path, for "folder" mode
+var _mode_hint: Label          # one line about the chosen mode
 var _branch := "main"
 var _plan := "classic"     # the plan card that matches _steps ("" = a custom mix)
 var _steps: Array = IslandLayout.STEP_ORDER.duplicate()
@@ -71,6 +81,7 @@ func _ready() -> void:
 	%NameEdit.text_changed.connect(func(_t): _refresh())
 	%SearchEdit.text_changed.connect(func(_t): _show_repos())
 	%BranchEdit.text_changed.connect(func(text: String): _branch = text.strip_edges())
+	_build_repo_modes()
 	_build_shapes()
 	_build_looks()
 	_build_plans()
@@ -81,7 +92,9 @@ func _ready() -> void:
 ## Start fresh (called each time the creator opens).
 func open() -> void:
 	_step = 1
+	_repo_mode = "new"
 	_repo = ""
+	_folder_edit.text = ""
 	_branch = "main"
 	_plan = "classic"
 	_steps = IslandLayout.STEP_ORDER.duplicate()
@@ -97,6 +110,7 @@ func open() -> void:
 	_style_plans()
 	_style_choices()
 	_show_branches([])
+	_show_repo_mode()
 	_go_to(1)
 	%GhStatus.text = "Asking GitHub…"
 	_repo_http.cancel_request()
@@ -138,15 +152,25 @@ func _refresh() -> void:
 	layout.season = _season
 	%Preview.show_islands([{"id": "new", "layout": layout}])
 	%PreviewText.text = "Preview · %s · %s" % [IslandLayout.SHAPES[_shape]["title"].to_lower(), _season]
-	%Next.disabled = not named or _busy
+	%Next.disabled = not named or _busy or not _code_chosen()
 	if _step == 1:
 		%Next.text = "Next: town plan"
-		_set_note("Residents only read and push to the repo you link here." if _repo
-			else "No repo yet? You can found the island and link one later.")
+		match _repo_mode:
+			"github":
+				_set_note("Residents work on a copy of %s and send their work back as pull requests." % _repo
+					if _repo else "Pick the repo to clone.")
+			"folder":
+				_set_note("Residents work in their own git worktrees; your checkout stays as it is."
+					if _folder_path() else "Paste the path of a git folder.")
+			_:
+				_set_note("A fresh repository with a README. Clone or pick a folder to work on code you have.")
 	else:
 		var short := island_name() if island_name().length() <= 14 else "island"
 		%Next.text = "Founding…" if _busy else "Found %s" % short
-		_set_note("Each resident brings their own keys. Fine-tune them anytime from Residents.")
+		if _busy and _repo_mode == "github":
+			_set_note("Cloning %s… big repositories take a minute." % _repo)
+		else:
+			_set_note("Each resident brings their own keys. Fine-tune them anytime from Residents.")
 
 
 func _set_note(text: String, error := false) -> void:
@@ -178,6 +202,76 @@ func _process(_delta: float) -> void:
 	if %Step1.visible:
 		var shore: Vector2 = %Preview.screen_point("new", Vector3(0, 0, SeaView.ISLAND_HALF.y - 1.0))
 		%NamePlate.position = (shore - Vector2(%NamePlate.size.x / 2.0, 0)).round()
+
+
+# --- Step 1: where the code comes from -------------------------------------------
+
+## The REPO_MODES chips, a path field for "folder" mode, and a hint line, built
+## in code just under the name row. An HFlowContainer is like an HBoxContainer
+## that wraps its children onto a new line when they don't fit.
+func _build_repo_modes() -> void:
+	var right: Control = %SearchEdit.get_parent()
+	var at: int = right.get_node("RepoHeader").get_index()
+	var label := Label.new()
+	label.theme_type_variation = &"FieldLabel"
+	label.text = "Code"
+	_mode_row = HFlowContainer.new()
+	_mode_row.add_theme_constant_override("h_separation", 4)
+	_mode_row.add_theme_constant_override("v_separation", 4)
+	_folder_edit = LineEdit.new()
+	_folder_edit.placeholder_text = "/path/to/your/project (a git folder)"
+	_folder_edit.clear_button_enabled = true
+	_folder_edit.text_changed.connect(func(_t): _refresh())
+	_mode_hint = _label("", 12, false)
+	_mode_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	var nodes: Array[Control] = [label, _mode_row, _folder_edit, _mode_hint]
+	for i in nodes.size():
+		right.add_child(nodes[i])
+		right.move_child(nodes[i], at + i)
+
+
+## Show the chips, and only the fields the chosen mode needs.
+func _show_repo_mode() -> void:
+	for child in _mode_row.get_children():
+		child.queue_free()
+	for mode in REPO_MODES:
+		var chip := Button.new()
+		chip.text = mode[1]
+		chip.focus_mode = Control.FOCUS_NONE
+		chip.theme_type_variation = &"FilterChipActive" if mode[0] == _repo_mode else &"FilterChip"
+		chip.pressed.connect(func():
+			_repo_mode = mode[0]
+			_show_repo_mode()
+			_refresh())
+		_mode_row.add_child(chip)
+	var github := _repo_mode == "github"
+	for node in ["RepoHeader", "SearchEdit", "RepoScroll", "BranchLabel", "BranchRow"]:
+		%SearchEdit.get_parent().get_node(node).visible = github
+	_folder_edit.visible = _repo_mode == "folder"
+	match _repo_mode:
+		"new":
+			_mode_hint.text = "Starts from scratch on branch main, in your islands folder (see Settings)."
+		"github":
+			_mode_hint.text = "Cloned with your gh login. Residents open pull requests against the branch below."
+		"folder":
+			_mode_hint.text = ("Residents branch off whatever is checked out there. If it pushes to GitHub, "
+				+ "they open pull requests too.")
+	if _repo_mode == "folder":
+		_folder_edit.grab_focus.call_deferred()
+
+
+## Ready for Next: a repo picked (GitHub) or a path typed (folder).
+func _code_chosen() -> bool:
+	match _repo_mode:
+		"github":
+			return _repo != ""
+		"folder":
+			return _folder_path() != ""
+	return true
+
+
+func _folder_path() -> String:
+	return _folder_edit.text.strip_edges() if _folder_edit else ""
 
 
 # --- Step 1: repos and branches --------------------------------------------------
@@ -582,9 +676,14 @@ func _found() -> void:
 		return
 	_busy = true
 	_refresh()
-	var body := {"name": %NameEdit.text.strip_edges(), "repo": _repo if _repo else null,
-		"branch": _branch if _branch else "main", "shape": _shape, "steps": _steps, "season": _season,
+	var body := {"name": %NameEdit.text.strip_edges(), "shape": _shape, "steps": _steps, "season": _season,
 		"rules": _rules}
+	match _repo_mode:
+		"github":  # the backend clones it (can take a while; HTTPRequest has no timeout by default)
+			body["repo"] = _repo
+			body["branch"] = _branch if _branch else null
+		"folder":  # adopt it; the backend reads owner/name from its origin and uses its branch
+			body["existing_repo"] = _folder_path()
 	var error := _found_http.request(Net.http_url("/islands"), ["Content-Type: application/json"],
 		HTTPClient.METHOD_POST, JSON.stringify(body))
 	if error != OK:
@@ -599,8 +698,9 @@ func _on_founded(result: int, code: int, _headers, body: PackedByteArray) -> voi
 	if result == HTTPRequest.RESULT_SUCCESS and code == 200 and typeof(data) == TYPE_DICTIONARY:
 		founded.emit(data, _residents.duplicate(true))
 		return
-	_refresh()
 	var why: String = str(data.get("error", data.get("detail", ""))) if typeof(data) == TYPE_DICTIONARY else "the backend is offline"
+	# Repo problems (gh not logged in, a bad path, a missing branch) are fixed on step 1.
+	_go_to(1) if _repo_mode != "new" else _refresh()
 	_set_note("Hmm, that didn't work: %s" % why, true)
 
 

@@ -13,6 +13,7 @@ const TABS := {"all": [], "questions": ["confused", "struggling", "permission"],
 
 var _tab := "all"
 var _cards := {}  # bubble id -> BubbleCard
+var _popup := AnswerPopup.new()  # one popup, reused for every bubble
 
 
 func _ready() -> void:
@@ -21,6 +22,10 @@ func _ready() -> void:
 	%TabReviews.pressed.connect(_set_tab.bind("reviews"))
 	Net.island_changed.connect(refresh)
 	Net.disconnected.connect(refresh)
+	add_child(_popup)
+	_popup.answered.connect(func(id: String):
+		if _cards.has(id):
+			_cards[id].mark_sent())
 
 	# Godot concept: a Timer node fires `timeout` every `wait_time` seconds.
 	var timer := Timer.new()
@@ -33,13 +38,11 @@ func _ready() -> void:
 	refresh()
 
 
-## Open the reply box of one bubble (the Residents screen's Answer button).
+## Open the answer popup of one bubble (a card's Answer, or the Residents screen's).
 func open_reply(bubble_id: String) -> void:
-	_set_tab("all")
 	var card: BubbleCard = _cards.get(bubble_id)
 	if card:
-		card.open_reply()
-		%Scroll.ensure_control_visible(card)
+		_popup.open(card.bubble)
 
 
 func refresh() -> void:
@@ -51,6 +54,7 @@ func refresh() -> void:
 		if not _cards.has(id):
 			_cards[id] = CardScene.instantiate()
 			%Cards.add_child(_cards[id])
+			_cards[id].answer_requested.connect(func(b: Dictionary): open_reply(str(b["id"])))
 		var resident := Net.find_resident(str(bubble["agent"]))
 		var place: String = Net.find_building(str(resident.get("building", ""))).get("name", "Island")
 		_cards[id].setup(bubble, resident, place)

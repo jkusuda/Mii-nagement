@@ -15,12 +15,14 @@ const JOBS := ["planner", "coder", "reviewer"]
 ## Where each job starts working (building id -> label), for the creator footer.
 const JOB_HOMES := {"planner": "Mailbox", "coder": "Workshop", "reviewer": "Courthouse"}
 
-## Brain id -> label. Must match BRAINS in backend/mii/agents/acp.py, plus `mock`.
+## Brain id -> label. Must match BRAINS in backend/mii/agents/acp.py, plus
+## `mock` and `openrouter` (backend/mii/agents/openrouter.py).
 const BRAINS := {
 	"mock": "Mock · free",
 	"claude-code": "Claude Code",
 	"codex": "Codex",
 	"gemini": "Gemini CLI",
+	"openrouter": "OpenRouter",
 }
 
 ## The four personality sliders (backend/mii/personality.py TRAITS):
@@ -162,3 +164,28 @@ static func status_text(resident: Dictionary) -> String:
 		"walking": return "Walking"
 		"sleeping": return "Asleep"
 	return "Resting"
+
+
+## The resident's closest friend from `friendships` (snapshot shape: {a, b,
+## handoffs, score}): {"id", "score", "handoffs"}, or {} if they have none yet.
+## Friendship grows every time two residents hand a package to each other.
+static func best_friend(resident_id: String, friendships: Array) -> Dictionary:
+	var best := {}
+	for f in friendships:
+		var other := ""
+		if str(f["a"]) == resident_id:
+			other = str(f["b"])
+		elif str(f["b"]) == resident_id:
+			other = str(f["a"])
+		if other and float(f["score"]) > float(best.get("score", -1.0)):
+			best = {"id": other, "score": float(f["score"]), "handoffs": int(f["handoffs"])}
+	return best
+
+
+## "Best friends" / "Good friends" / "Getting to know each other", by score (0-1).
+static func friendship_words(score: float) -> String:
+	if score >= 0.75:
+		return "Best friends with"
+	if score >= 0.4:
+		return "Good friends with"
+	return "Getting to know"

@@ -59,7 +59,7 @@ class OpenRouterRunner:
 
     async def run(self, job: AgentJob) -> StepResult:
         if not self.api_key:
-            return StepResult("fail", "The openrouter brain needs OPENROUTER_API_KEY in .env.")
+            return StepResult("fail", "The openrouter brain needs an OpenRouter API key (Settings, or OPENROUTER_API_KEY).")
         if job.sandbox is None or job.workdir is None:
             return StepResult("fail", "The openrouter brain needs a worktree (MOCK_AGENTS=0 and an island repository).")
         try:
@@ -79,6 +79,8 @@ class OpenRouterRunner:
                 if isinstance(reply, StepResult):
                     return reply
                 messages.append(reply)
+                if job.think and reply.get("content"):
+                    await job.think("reply", str(reply["content"]))
                 calls = reply.get("tool_calls") or []
                 if not calls:
                     return parse_verdict(reply.get("content") or "")
@@ -89,6 +91,8 @@ class OpenRouterRunner:
                     except json.JSONDecodeError:
                         args = {}
                     await job.report(_describe(name, args))
+                    if job.think:
+                        await job.think("tool", _describe(name, args))
                     output = await self._tool(name, args, job)
                     messages.append({"role": "tool", "tool_call_id": call["id"], "content": output[:MAX_OUTPUT]})
             return StepResult("fail", f"{job.resident.name} used all {MAX_TURNS} turns without finishing.")
@@ -138,7 +142,7 @@ class OpenRouterRunner:
                 key = permission_for(job, "execute", command)  # house keys + house rules
                 if key == "no":
                     return "denied: this resident's house key says no to running commands"
-                if key == "ask" and await job.ask("permission", f"May I run `{command}`?", ["Allow", "Deny"]) != "Allow":
+                if key == "ask" and await job.ask("permission", f"May I run `{command}`?", ["Allow", "Deny"], command) != "Allow":
                     return "denied: the user did not allow this command"
                 return await _run(command, workdir)
             if name == "ask_user":

@@ -28,9 +28,19 @@ signal task_updated(task: Dictionary)
 signal server_error(message: String)
 ## A resident was created or edited (by this client or another one).
 signal resident_updated(resident: Dictionary)
+## A resident moved away (`resident_removed`).
+signal resident_removed(resident_id: String)
 signal activity_reported(agent: String, text: String)
+## More of a package's train of thought arrived (Net.thinking[task_id]).
+signal thinking_received(task_id: String)
 ## Every event from the server, as it arrived (the News tab turns them into stories).
 signal event_received(event: Dictionary)
+## Task id -> the residents' train of thought while carrying it: entries
+## {"agent", "kind" ("thought" | "reply" | "tool"), "text"}, oldest first. Live
+## `thinking` events add to it; building_panel.gd loads older ones on demand.
+var thinking := {}
+const THINKING_KEEP := 400  # entries per task
+
 ## Something in `island` changed (after any of the signals above).
 signal island_changed
 
@@ -99,7 +109,7 @@ func _process(delta: float) -> void:
 
 ## The resident fields the server accepts (docs/protocol.md, create_resident).
 const RESIDENT_FIELDS := ["id", "name", "job", "color", "catchphrase", "brain", "model",
-	"bluntness", "caution", "chattiness", "creativity", "keys", "gifts", "appearance"]
+	"bluntness", "caution", "chattiness", "creativity", "keys", "gifts", "appearance", "buildings"]
 
 
 ## Create a resident (no "id") or edit one (with "id"). The server answers with a
@@ -120,6 +130,54 @@ func send_resident(resident: Dictionary) -> bool:
 ## The backend's HTTP address for `path`, e.g. http_url("/brains").
 func http_url(path: String) -> String:
 	return url.replace("ws://", "http://").trim_suffix("/ws") + path
+
+
+## One HTTP call to the backend: `done` is called later with (ok, data), where
+## `data` is the JSON reply (a Dictionary). When it fails, data["error"] says why
+## (the backend's own message when it sent one). `body` is sent as JSON.
+##
+## Godot concept: HTTPRequest is a node; request() returns right away and the
+## `request_completed` signal fires later. This makes a throwaway one per call.
+func request_json(path: String, done: Callable, method := HTTPClient.METHOD_GET, body = null) -> void:
+	var http := HTTPRequest.new()
+	add_child(http)
+	http.request_completed.connect(func(result: int, code: int, _headers, raw: PackedByteArray):
+		http.queue_free()
+		# JSON.new().parse() reports bad input with an error code instead of printing
+		# an engine error (an old backend answers unknown paths with an HTML page).
+		var json := JSON.new()
+		var data = json.data if json.parse(raw.get_string_from_utf8()) == OK else null
+		if typeof(data) != TYPE_DICTIONARY:
+			data = {}
+		var ok := result == HTTPRequest.RESULT_SUCCESS and code == 200
+		if not ok and not data.has("error"):
+			data["error"] = "the backend is offline" if result != HTTPRequest.RESULT_SUCCESS else "HTTP %d" % code
+		done.call(ok, data))
+	var headers := PackedStringArray(["Content-Type: application/json"] if body != null else [])
+	var error := http.request(http_url(path), headers, method, JSON.stringify(body) if body != null else "")
+	if error != OK:
+		http.queue_free()
+		done.call(false, {"error": "could not start the request (error %d)" % error})
+
+
+## Move a resident away. The server replies with `resident_removed`, or an `error`
+## (they're carrying a package, or a building still counts on them).
+func send_delete_resident(resident_id: String) -> bool:
+	return _send({"type": "delete_resident", "id": resident_id})
+
+
+## Take a package back. The server replies with a `task` event (status
+## `cancelled`), or an `error` if it already finished.
+func send_cancel_task(task_id: String) -> bool:
+	return _send({"type": "cancel_task", "id": task_id})
+
+
+func _send(message: Dictionary) -> bool:
+	if not is_online:
+		push_warning("Not connected; %s not sent." % message["type"])
+		return false
+	_socket.send_text(JSON.stringify(message))
+	return true
 
 
 ## Answer a resident's bubble. The server replies with `bubble_resolved`.
@@ -170,6 +228,7 @@ func _handle_message(text: String) -> void:
 			var bubble := {
 				"id": str(event["id"]), "agent": str(event["agent"]), "kind": str(event["kind"]),
 				"text": str(event["text"]), "options": event.get("options"),
+				"task": event.get("task"), "detail": event.get("detail"),
 				"since": Time.get_unix_time_from_system(),
 			}
 			_bubbles().append(bubble)
@@ -189,6 +248,25 @@ func _handle_message(text: String) -> void:
 		"activity":
 			_patch_resident(event["agent"], {"activity": event["text"]})
 			activity_reported.emit(str(event["agent"]), str(event["text"]))
+		"resident_removed":
+			var residents: Array = island.get("residents", [])
+			for i in range(residents.size() - 1, -1, -1):
+				if residents[i]["id"] == event["id"]:
+					residents.remove_at(i)
+			resident_removed.emit(str(event["id"]))
+		"friendship":
+			# Two residents handed a package over: replace that pair's entry.
+			var pairs: Array = island.get_or_add("friendships", [])
+			for i in range(pairs.size() - 1, -1, -1):
+				if pairs[i]["a"] == event["a"] and pairs[i]["b"] == event["b"]:
+					pairs.remove_at(i)
+			var pair: Dictionary = event.duplicate()
+			pair.erase("type")
+			pair.erase("ts")
+			pairs.append(pair)
+		"thinking":
+			add_thinking(event)
+			return  # only the thinking dropdown cares; nothing in `island` changes
 		"notebook":
 			# How full the resident's context window is (0-1); resident_card shows it.
 			_patch_resident(event["agent"], {"notebook": event["value"]})
@@ -205,6 +283,21 @@ func _handle_message(text: String) -> void:
 		_:
 			return
 	island_changed.emit()
+
+
+## Add a `thinking` event (live, or from a task's stored events) to Net.thinking.
+## Text of the same resident and kind joins the previous entry.
+func add_thinking(event: Dictionary) -> void:
+	var task_id := str(event.get("task", ""))
+	var entries: Array = thinking.get_or_add(task_id, [])
+	var last: Dictionary = entries.back() if not entries.is_empty() else {}
+	if last and last["agent"] == event["agent"] and last["kind"] == event["kind"] and event["kind"] != "tool":
+		last["text"] += str(event["text"])
+	else:
+		entries.append({"agent": str(event["agent"]), "kind": str(event["kind"]), "text": str(event["text"])})
+	if entries.size() > THINKING_KEEP:
+		entries.pop_front()
+	thinking_received.emit(task_id)
 
 
 ## The resident with this id from `island`, or {} if there's none.

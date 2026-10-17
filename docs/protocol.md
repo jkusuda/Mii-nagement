@@ -71,7 +71,7 @@ The client should rebuild its view from scratch when it gets one.
       {"id": "b_3f2a", "agent": "carlos", "kind": "confused", "text": "Which test file?"}
     ],
     "tasks": [
-      {"id": "t_12", "title": "Fix login typo", "status": "in_progress", "building": "lab", "agent": "carlos", "pr_url": null}
+      {"id": "t_12", "title": "Fix login typo", "status": "in_progress", "building": "lab", "agent": "carlos", "pr_url": null, "issue": 42}
     ],
     "friendships": [
       {"a": "carlos", "b": "jun", "handoffs": 7, "score": 0.679}
@@ -82,12 +82,18 @@ The client should rebuild its view from scratch when it gets one.
 
 - `repo`: the island's GitHub repo (`owner/name`) or `null`. `path`: the island's
   local git repository (every island is a repository; see `GET /islands` and
-  `POST /islands` in architecture.md). `branch`: what residents branch off from.
+  `POST /islands` in architecture.md). `branch`: what residents branch off from,
+  and what the Post Office's PRs target. An island founded with a `repo` is a
+  `gh repo clone` of it; one founded with `existing_repo` (a local git folder)
+  gets `repo` from that folder's GitHub `origin` (`null` if it has none, so no
+  PRs) and `branch` from its checked-out branch unless one is given.
   `plan`: the town plan its steps match (`classic`, `quick_fixes`) or `custom`. `rules`: house rules from
   the island creator (`true` = ask me before doing this). `shell` and
   `install_packages` turn a resident's `execute` key from `yes` into `ask` (for
-  every command, or for commands that look like a package install); `merge_pr`
-  is stored only: the post office opens PRs and never merges them.
+  every command, or for commands that look like a package install). `merge_pr`
+  makes the Courthouse ask you (a `ready` bubble, "Approve & merge" / "Send
+  back") before the Post Office merges the PR it opens; off, it merges without
+  asking.
 - `created_at`: when the island was founded (ISO-8601 UTC). The game counts
   days from it ("Day 1" is the founding day, in the player's local time).
 - `map`: how the island looks: land, pond, plants, season (see "Island map" below).
@@ -155,6 +161,15 @@ one back as the `response`. Agents' permission requests use it:
 {"type": "bubble", "agent": "carlos", "kind": "permission", "id": "b_9c1d", "text": "May I run `npm install`?", "options": ["Allow once", "Always allow", "Reject"]}
 ```
 
+`task` (optional): the id of the task package the resident is working on, so
+the client can show its title and pull request. `detail` (optional): extra
+context shown as-is, such as the exact command or file a permission bubble asks
+about:
+```json
+{"type": "bubble", "agent": "pip", "kind": "permission", "id": "b_7e10", "text": "May I borrow the toolbox key?", "options": ["Allow once", "Always allow", "Reject"], "task": "t_12", "detail": "npm install zod@3.23.8"}
+```
+Snapshot `bubbles[]` have the same fields (`task` and `detail` are `null` when unset).
+
 | kind         | meaning                                  | suggested emoji |
 |--------------|------------------------------------------|-----------------|
 | `confused`   | needs clarification                      | ❓              |
@@ -203,12 +218,25 @@ bubbles or a status line under their name.
 {"type": "activity", "agent": "carlos", "text": "Reading auth.py"}
 ```
 
+### `thinking`
+The resident's train of thought while carrying a package, streamed from their
+agent in small batches (about once a second). Append `text` to what you have for
+that `task`; it is a piece of a longer stream, not a full message.
+```json
+{"type": "thinking", "agent": "carlos", "task": "t_12", "kind": "thought", "text": "The rate limiter should live in middleware, not the view. "}
+```
+`kind`: `thought` (the agent's own reasoning, when it shares it), `reply` (what
+it is writing back), or `tool` (a tool it is calling, one line). Stored like
+every event, so `GET /islands/{id}/tasks/{task_id}` returns them for a package
+already under way.
+
 ### `task`
 A task package's status changed. Lets the client show who is carrying a package.
 `pr_url` is set once the post office opens a pull request.
 ```json
-{"type": "task", "id": "t_12", "title": "Fix login typo", "status": "in_progress", "building": "lab", "agent": "carlos", "pr_url": null}
+{"type": "task", "id": "t_12", "title": "Fix login typo", "status": "in_progress", "building": "lab", "agent": "carlos", "pr_url": null, "issue": 42}
 ```
+`issue` is the GitHub issue number the package came from, or `null`.
 
 ### `resident`
 A resident was created or edited (by any client). Add it, or replace the
@@ -263,6 +291,16 @@ sends `bubble_resolved` to every client.
 {"type": "answer_bubble", "id": "b_3f2a", "response": "Use tests/test_login.py"}
 ```
 If the bubble ID is unknown or already resolved, the server replies with `error`.
+
+For a bubble with `options`, `response` is one of them. A `ready` bubble's
+response may add a note for the resident after a colon, e.g.
+`"Send back: also test IPv6"` (the package goes back to the Workshop with it).
+
+Where bubbles come from: ✋ `permission` when an agent wants a house key set to
+`ask`; ❓ `confused` when an agent ends its turn with a `QUESTION:` line (ACP
+brains) or calls `ask_user` (OpenRouter); ✅ `ready` from the Courthouse once
+the reviewer passes work that will become a PR; 💤 `tired` when a brain isn't
+logged in. Mock residents raise any kind at random.
 
 ### `create_resident`
 Move a new resident onto the island (the resident creator's "Move in"). The

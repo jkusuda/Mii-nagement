@@ -54,14 +54,19 @@ async def health(request: HttpRequest) -> JsonResponse:
     return JsonResponse({"ok": True, "mock_agents": get_runtime().mock_agents})
 
 
+def _brains() -> dict[str, dict]:
+    """available_brains() with the API keys saved in Settings (keychain reads: run in a thread)."""
+    return available_brains(prefs.secret("openrouter_api_key"), prefs.secrets_env())
+
+
 @require_GET
 async def brains(request: HttpRequest) -> JsonResponse:
-    return JsonResponse({brain: info["ok"] for brain, info in available_brains(prefs.secret("openrouter_api_key")).items()})
+    return JsonResponse({brain: info["ok"] for brain, info in (await asyncio.to_thread(_brains)).items()})
 
 
 @require_GET
 async def brains_detail(request: HttpRequest) -> JsonResponse:
-    return JsonResponse(available_brains(prefs.secret("openrouter_api_key")))
+    return JsonResponse(await asyncio.to_thread(_brains))
 
 
 @require_GET
@@ -71,7 +76,7 @@ async def gifts(request: HttpRequest) -> JsonResponse:
 
 @require_GET
 async def models_list(request: HttpRequest) -> JsonResponse:
-    api_key = prefs.secret("openrouter_api_key")
+    api_key = await asyncio.to_thread(prefs.secret, "openrouter_api_key")
     if not api_key:
         return _error("no OpenRouter API key: save one with PUT /settings or set OPENROUTER_API_KEY", 503)
     try:

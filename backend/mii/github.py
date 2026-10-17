@@ -6,6 +6,7 @@
     PR out:    git push -u origin mii/<task_id>   (from the task's worktree)
                gh pr create --repo <owner/name> --head mii/<task_id> --base <island branch> --title ... --body ...
     PR state:  gh pr view <url> --json state,mergedAt   (insights.py: "PRs merged")
+    merge:     gh pr merge <url> --squash   (or --merge / --rebase, whichever the repo allows)
 
 Both functions block on subprocesses; async callers wrap them in asyncio.to_thread.
 """
@@ -72,6 +73,24 @@ def open_pull_request(repo: str, worktree: Path, branch: str, title: str, body: 
     if not lines or not lines[-1].startswith("http"):
         raise GitHubError(f"gh did not print a PR URL: {out.strip()[:200]}")
     return lines[-1]
+
+
+MERGE_METHODS = ("--squash", "--merge", "--rebase")
+
+
+def merge_pull_request(pr_url: str) -> str:
+    """Merge a PR you approved. Tries squash, then a merge commit, then rebase, since
+    repositories can switch any of them off. Returns the method that worked."""
+    errors = []
+    for method in MERGE_METHODS:
+        try:
+            _run(["gh", "pr", "merge", pr_url, method])
+            return method.lstrip("-")
+        except GitHubError as e:
+            if "not allowed" not in str(e).lower():
+                raise  # not about the method (checks failing, a conflict, no permission): say so
+            errors.append(str(e))
+    raise GitHubError(f"this repository allows none of {', '.join(MERGE_METHODS)}: {errors[-1]}")
 
 
 def pr_merged_at(pr_url: str) -> str | None:

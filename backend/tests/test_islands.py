@@ -1,5 +1,6 @@
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -39,19 +40,14 @@ def test_default_folder_is_documents_or_home(monkeypatch, tmp_path):
 
 async def test_found_classic_island_with_buildings_roads_and_a_repo(island, repos_in_tmp):
     found = sync_to_async(islands.create_island)  # sync (git + ORM) -> run it off the event loop
-    new = await found({
-        "name": "Fern Harbor", "repo": "your-org/fern-api", "branch": "develop",
-        "rules": {"merge_pr": True, "shell": False},
-    })
-    assert (new.id, new.repo, new.branch, new.plan) == ("fern_harbor", "your-org/fern-api", "develop", "classic")
+    new = await found({"name": "Fern Harbor", "branch": "develop", "rules": {"merge_pr": True, "shell": False}})
+    assert (new.id, new.repo, new.branch, new.plan) == ("fern_harbor", None, "develop", "classic")
     assert new.rules == {"merge_pr": True, "install_packages": False, "shell": False}
     path = Path(new.repo_path)
     assert path == (repos_in_tmp / "fern_harbor").resolve() and (path / ".git").is_dir()
     assert (path / "README.md").read_text().startswith("# Fern Harbor")
     log = subprocess.run(["git", "-C", str(path), "log", "--oneline"], capture_output=True, text=True).stdout
     assert "New island" in log
-    origin = subprocess.run(["git", "-C", str(path), "remote", "get-url", "origin"], capture_output=True, text=True).stdout
-    assert origin.strip() == "https://github.com/your-org/fern-api.git"
 
     snap = await island_snapshot(new.id, [])
     assert sorted(b["type"] for b in snap["buildings"]) == ["courthouse", "lab", "mailbox", "post_office", "workshop"]
@@ -133,3 +129,135 @@ def test_gh_failure_is_a_github_error(monkeypatch):
     monkeypatch.setattr(subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 1, "", "not logged in"))
     with pytest.raises(github.GitHubError, match="not logged in"):
         github.list_branches("me/fern-api")
+
+
+# --- An island on code you already have -------------------------------------------
+
+def git(path, *args):
+    return subprocess.run(["git", "-C", str(path), "-c", "user.name=t", "-c", "user.email=t@t", *args],
+                          capture_output=True, text=True, check=True).stdout.strip()
+
+
+@pytest.fixture
+def fake_github(monkeypatch, tmp_path):
+    """A pretend GitHub: bare repos under tmp_path/github, cloned by tests/fake_gh.py."""
+    root = tmp_path / "github"
+    monkeypatch.setattr(islands, "GH", [sys.executable, str(Path(__file__).parent / "fake_gh.py")])
+    monkeypatch.setenv("FAKE_GH_ROOT", str(root))
+    return root
+
+
+def hosted_repo(github_root: Path, repo: str, tmp_path: Path) -> Path:
+    """Push a small project (main + a develop branch) to github_root/<repo>.git."""
+    work = make_git_repo(tmp_path / "work" / repo)
+    git(work, "branch", "-M", "main")
+    git(work, "checkout", "-q", "-b", "develop")
+    (work / "feature.py").write_text("x = 1\n")
+    git(work, "add", ".")
+    git(work, "commit", "-q", "-m", "develop work")
+    git(work, "checkout", "-q", "main")
+    bare = github_root / f"{repo}.git"
+    bare.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "clone", "-q", "--bare", str(work), str(bare)], check=True)
+    return bare
+
+
+def test_found_from_github_clones_the_real_code(island, fake_github, tmp_path, repos_in_tmp):
+    bare = hosted_repo(fake_github, "your-org/fern-api", tmp_path)
+    new = islands.create_island({"name": "Fern Harbor", "repo": "your-org/fern-api", "branch": "develop"})
+    path = Path(new.repo_path)
+    assert path == (repos_in_tmp / "fern_harbor").resolve()
+    assert (new.repo, new.branch) == ("your-org/fern-api", "develop")
+    assert (path / "hello.py").exists() and (path / "feature.py").exists()  # the real project, on develop
+    assert not (path / "README.md").exists()
+    assert git(path, "rev-parse", "HEAD") == git(bare, "rev-parse", "develop")  # same history as GitHub
+
+    # A task's worktree can push its branch back (the Post Office's first step).
+    from mii.sandbox import Sandbox
+    work = Sandbox(path, tmp_path / "worktrees").create_worktree("t1", new.branch)
+    (work / "fix.py").write_text("fixed = True\n")
+    git(work, "add", ".")
+    git(work, "commit", "-q", "-m", "fix")
+    git(work, "push", "-q", "-u", "origin", "mii/t1")
+    assert git(bare, "rev-parse", "mii/t1^") == git(bare, "rev-parse", "develop")
+
+
+def test_found_from_github_defaults_to_its_default_branch(island, fake_github, tmp_path):
+    hosted_repo(fake_github, "me/app", tmp_path)
+    new = islands.create_island({"name": "App", "repo": "me/app"})
+    assert new.branch == "main" and (Path(new.repo_path) / "hello.py").exists()
+
+
+def test_found_from_an_empty_github_repo_starts_it(island, fake_github, tmp_path):
+    subprocess.run(["git", "init", "-q", "--bare", str(fake_github / "me" / "empty.git")], check=True)
+    new = islands.create_island({"name": "Empty", "repo": "me/empty", "branch": "trunk"})
+    path = Path(new.repo_path)
+    assert new.branch == "trunk" and git(path, "symbolic-ref", "--short", "HEAD") == "trunk"
+    assert (path / "README.md").read_text().startswith("# Empty")
+
+
+@pytest.mark.parametrize("setup, request_extra, match", [
+    ("missing", {}, "Could not resolve"),
+    ("logged_out", {}, "gh auth login"),
+    ("no_gh", {}, "not installed"),
+    ("hosted", {"branch": "nope"}, "no branch nope"),
+])
+def test_clone_errors_are_clear_and_leave_nothing(island, fake_github, tmp_path, repos_in_tmp, monkeypatch,
+                                                   setup, request_extra, match):
+    if setup == "hosted":
+        hosted_repo(fake_github, "me/app", tmp_path)
+    if setup == "logged_out":
+        monkeypatch.setenv("FAKE_GH_LOGGED_OUT", "1")
+    if setup == "no_gh":
+        monkeypatch.setattr(islands, "GH", ["no-such-gh-command-here"])
+    with pytest.raises(islands.IslandError, match=match):
+        islands.create_island({"name": "App", "repo": "me/app", **request_extra})
+    assert not Island.objects.filter(name="App").exists()
+    assert not (repos_in_tmp / "app").exists()  # no half-made clone to trip over next time
+
+
+def test_clone_refuses_a_non_empty_folder(island, fake_github, tmp_path, repos_in_tmp):
+    hosted_repo(fake_github, "me/app", tmp_path)
+    (repos_in_tmp / "app").mkdir(parents=True)
+    (repos_in_tmp / "app" / "notes.txt").write_text("mine")
+    with pytest.raises(islands.IslandError, match="not empty"):
+        islands.create_island({"name": "App", "repo": "me/app"})
+    assert (repos_in_tmp / "app" / "notes.txt").read_text() == "mine"  # left alone
+
+
+@pytest.mark.parametrize("url", ["https://github.com/me/app.git", "git@github.com:me/app.git",
+                                 "ssh://git@github.com/me/app", "https://github.com/me/app"])
+def test_adopt_reads_owner_and_name_from_origin(island, tmp_path, url):
+    repo = make_git_repo(tmp_path / "mine")
+    git(repo, "checkout", "-q", "-b", "work")
+    git(repo, "remote", "add", "origin", url)
+    adopted = islands.create_island({"name": "Mine", "existing_repo": str(repo)})
+    assert (adopted.repo, adopted.branch, Path(adopted.repo_path)) == ("me/app", "work", repo.resolve())
+
+
+def test_adopt_without_github_origin(island, tmp_path):
+    repo = make_git_repo(tmp_path / "local")
+    adopted = islands.create_island({"name": "Local", "existing_repo": str(repo)})
+    assert adopted.repo is None  # no PRs, but residents still work on the code
+    git(repo, "remote", "add", "origin", "https://gitlab.com/me/app.git")
+    assert islands.create_island({"name": "Lab", "existing_repo": str(repo)}).repo is None
+    linked = make_git_repo(tmp_path / "linked")
+    assert islands.create_island({"name": "Linked", "existing_repo": str(linked), "repo": "me/app"}).repo == "me/app"
+    assert git(linked, "remote", "get-url", "origin") == "https://github.com/me/app.git"
+
+
+def test_adopt_errors(island, tmp_path):
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    with pytest.raises(islands.IslandError, match="not a git repository"):
+        islands.create_island({"name": "A", "existing_repo": str(plain)})
+    subprocess.run(["git", "init", "-q", str(tmp_path / "fresh")], check=True)
+    with pytest.raises(islands.IslandError, match="no commits"):
+        islands.create_island({"name": "A", "existing_repo": str(tmp_path / "fresh")})
+    repo = make_git_repo(tmp_path / "other")
+    git(repo, "remote", "add", "origin", "https://github.com/me/other.git")
+    with pytest.raises(islands.IslandError, match="pushes to me/other"):
+        islands.create_island({"name": "A", "existing_repo": str(repo), "repo": "me/app"})
+    with pytest.raises(islands.IslandError, match="no branch"):
+        islands.create_island({"name": "A", "existing_repo": str(repo), "branch": "nope"})
+    assert not Island.objects.filter(name="A").exists()
