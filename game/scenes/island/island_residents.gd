@@ -4,7 +4,7 @@ extends Node3D
 ## with its events. Lives in island_3d.tscn as `Residents`.
 ##
 ## - snapshot           -> everyone appears at their building, in their state
-## - move (from -> to)  -> walk there, along the island's roads
+## - move (from -> to)  -> walk there, the shortest way along the sand paths
 ## - agent_state        -> working (hop, facing the building), idle, sleeping (z Z)
 ## - bubble             -> an icon over their head until it's answered
 ##
@@ -129,8 +129,8 @@ func _line_up(snap: bool) -> void:
 			continue
 		var building := str(resident.get("building", ""))
 		if resident.get("state") == "walking" and walker.global_position.distance_to(_stop(building)) > 1.5:
-			# Walking, but no `move` came (e.g. they had no building before): go straight there.
-			_walk(walker, [_stop(building)])
+			# Walking, but no `move` came (e.g. they had no building before): go there.
+			walker.walk(IslandPaths.route(island.layout, walker.global_position, _stop(building)))
 			continue
 		# (Arrived before the server's walk timer ran out: wait at the building.)
 		at_building.get_or_add(building, []).append(resident)
@@ -144,56 +144,18 @@ func _line_up(snap: bool) -> void:
 			if snap:
 				walker.place(spot)
 			var state := str(group[i].get("state", "idle"))
-			walker.settle(spot, "idle" if state == "walking" else state, _building_position(building))
+			var route := IslandPaths.route(island.layout, walker.global_position, spot)
+			walker.settle(route, "idle" if state == "walking" else state, _building_position(building))
 
 
-func _on_moved(agent: String, from_building: String, to_building: String) -> void:
+## Walk to the new building the shortest way along the sand paths (they join
+## every door, so no need to pass the buildings in between).
+func _on_moved(agent: String, _from_building: String, to_building: String) -> void:
 	var walker: IslandResident = _walkers.get(agent)
 	if walker == null:
 		return
 	walker.stop_life()
-	var points: Array[Vector3] = []
-	var stops := [walker.global_position]
-	for building in _road_route(from_building, to_building):
-		stops.append(_stop(building))
-	for i in range(1, stops.size()):
-		points.append_array(IslandPaths.route(island.layout, stops[i - 1], stops[i]))
-	_walk(walker, points)
-
-
-func _walk(walker: IslandResident, points: Array) -> void:
-	var typed: Array[Vector3] = []
-	typed.assign(points)
-	walker.walk(typed)
-
-
-## The buildings to pass through to get from one building to another, following
-## the island's roads (in either direction), from `from` to `to` inclusive.
-## A breadth-first search: look at the neighbours, then their neighbours, and so
-## on, remembering where each building was reached from.
-func _road_route(from: String, to: String) -> Array:
-	var neighbours := {}
-	for road in Net.island.get("roads", []):
-		neighbours.get_or_add(road["from"], []).append(road["to"])
-		neighbours.get_or_add(road["to"], []).append(road["from"])
-
-	var came_from := {from: ""}
-	var queue := [from]
-	while not queue.is_empty():
-		var here: String = queue.pop_front()
-		if here == to:
-			break
-		for next in neighbours.get(here, []):
-			if not came_from.has(next):
-				came_from[next] = here
-				queue.append(next)
-
-	if not came_from.has(to):
-		return [to]  # no road connects them: walk straight there
-	var route := [to]
-	while route[0] != from:
-		route.push_front(came_from[route[0]])
-	return route
+	walker.walk(IslandPaths.route(island.layout, walker.global_position, _stop(to_building)))
 
 
 ## The point on the sand path where a building's residents stand.

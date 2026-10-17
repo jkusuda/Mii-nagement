@@ -123,9 +123,9 @@ looks or sits on its lot*, open its scene in `scenes/buildings/`.
 
 ### 8. `scenes/island/`: residents on the 3D island
 - `island_residents.gd` (the `Residents` node in island_3d.tscn) makes one
-  `island_resident` per resident and listens to Net. On `move` it finds the
-  buildings to pass with a breadth-first search over the island's roads, then
-  asks `IslandPaths.route()` for the points along the sand path between them.
+  `island_resident` per resident and listens to Net. On `move` it asks
+  `IslandPaths.route()` for the points along the sand path to the new building
+  (`IslandLayout.walk_tiles` finds the shortest way with the fewest turns).
 - `island_resident.gd` walks through those points with a **Tween** (a node that
   animates a property over time) and shows the state: hop = working, "z Z" =
   asleep, an icon in a bubble = needs you.
