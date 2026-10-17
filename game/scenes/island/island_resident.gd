@@ -44,8 +44,9 @@ var _speech: Label3D
 
 func _ready() -> void:
 	mii.scale = Vector3.ONE * MII_SCALE
-	# Built in code rather than in the .tscn: two more Label3Ds like NameTag.
-	_mood_tag = _make_label(Vector3(0, 2.72, 0), 30, 0.02)
+	# Built in code, not in the .tscn: two more Label3Ds like NameTag.
+	# The mood tag is a small symbol beside the name.
+	_mood_tag = _make_label(Vector3(0, 3.0, 0), 28, 0.016)
 	_speech = _make_label(Vector3(0, 5.1, 0), 36, 0.02)
 	_speech.width = 440.0
 	_speech.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -77,8 +78,10 @@ func show_resident(resident: Dictionary, open_bubble: Dictionary) -> void:
 	if look != mii.appearance:
 		mii.appearance = look
 	name_tag.text = str(resident.get("name", "?"))
-	_mood_tag.text = ResidentData.vibe_word(resident)
+	_mood_tag.text = ResidentData.vibe_symbol(resident)
 	_mood_tag.modulate = ResidentData.vibe_color(resident)
+	# Sit just right of the name; get_aabb() is the name's size in world units.
+	_mood_tag.position.x = name_tag.get_aabb().size.x / 2.0 + 0.2
 	bubble.visible = not open_bubble.is_empty()
 	if bubble.visible:
 		var kind := str(open_bubble["kind"])
