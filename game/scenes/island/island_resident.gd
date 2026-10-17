@@ -126,12 +126,12 @@ func walk(points: Array[Vector3]) -> void:
 	)
 
 
-## Stand still at `spot` in a state: "idle", "working", or "sleeping".
-## `look_at_point` is what to face while working (the building).
-func settle(spot: Vector3, new_state: String, look_at_point: Vector3) -> void:
-	if global_position.distance_to(spot) > 0.05:
-		var points: Array[Vector3] = [spot]
-		walk(points)  # a short step into place
+## Walk `route` (along the path) to its last point and stand still there in a
+## state: "idle", "working", or "sleeping". `look_at_point` is what to face
+## while working (the building).
+func settle(route: Array[Vector3], new_state: String, look_at_point: Vector3) -> void:
+	if not route.is_empty() and global_position.distance_to(route[-1]) > 0.05:
+		walk(route)  # a few steps into place
 		await arrived
 	state = new_state
 	zz.visible = state == "sleeping"
