@@ -30,7 +30,7 @@ func _init() -> void:
 	# A popup is its own window, so it doesn't inherit the game's theme: set it here.
 	theme = preload("res://ui/theme.tres")
 	var box := VBoxContainer.new()
-	box.custom_minimum_size.x = 320
+	box.custom_minimum_size.x = 380
 	box.add_theme_constant_override("separation", 10)
 	add_child(box)
 
@@ -130,6 +130,10 @@ func _row(island: Dictionary) -> Control:
 	names.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var name_label := UI.label(str(island.get("name", id)), 15, true)
 	var repo := UI.label(str(island["repo"]) if island.get("repo") else "no repo linked", 11, false)
+	# Long names give way (with "…") so the status and the ✕ stay inside the row.
+	for label in [name_label, repo]:
+		label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		label.custom_minimum_size.x = 1
 	names.add_child(name_label)
 	names.add_child(repo)
 
