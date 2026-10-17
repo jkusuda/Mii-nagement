@@ -71,6 +71,8 @@ var _repo_mode := "new"  # a REPO_MODES id
 var _repo := ""  # chosen "owner/name" ("" = none)
 var _mode_row: HFlowContainer  # the REPO_MODES chips (built in code)
 var _folder_edit: LineEdit  # the path, for "folder" mode
+var _folder_row: HBoxContainer  # _folder_edit + the Browse button
+var _folder_dialog: FileDialog  # the folder picker behind Browse
 var _mode_hint: Label  # one line about the chosen mode
 var _branch := "main"
 var _plan := "classic"  # the plan card that matches _steps ("" = a custom mix)
@@ -262,12 +264,41 @@ func _build_repo_modes() -> void:
 	_folder_edit.placeholder_text = "/path/to/your/project (a git folder)"
 	_folder_edit.clear_button_enabled = true
 	_folder_edit.text_changed.connect(func(_t): _refresh())
+	_folder_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var browse := Button.new()
+	browse.text = "Browse..."
+	browse.pressed.connect(_browse_folder)
+	_folder_row = HBoxContainer.new()
+	_folder_row.add_child(_folder_edit)
+	_folder_row.add_child(browse)
+	# A FileDialog is a popup window for picking files or folders. With use_native_dialog
+	# it is the operating system's own picker; Godot's built-in one is the fallback.
+	_folder_dialog = FileDialog.new()
+	_folder_dialog.file_mode = FileDialog.FILE_MODE_OPEN_DIR
+	_folder_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	_folder_dialog.use_native_dialog = true
+	_folder_dialog.title = "Choose a git folder"
+	_folder_dialog.dir_selected.connect(
+		func(dir: String):
+			_folder_edit.text = dir
+			_refresh()
+	)
+	add_child(_folder_dialog)
 	_mode_hint = UI.label("", 12, false)
 	_mode_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	var nodes: Array[Control] = [label, _mode_row, _folder_edit, _mode_hint]
+	var nodes: Array[Control] = [label, _mode_row, _folder_row, _mode_hint]
 	for i in nodes.size():
 		right.add_child(nodes[i])
 		right.move_child(nodes[i], at + i)
+
+
+## Open the folder picker, starting where the field already points.
+func _browse_folder() -> void:
+	var current := _folder_path()
+	if current != "" and DirAccess.dir_exists_absolute(current):
+		_folder_dialog.current_dir = current
+	# Sized for the built-in fallback dialog; the native one ignores it.
+	_folder_dialog.popup_centered_ratio(0.6)
 
 
 ## Show the chips, and only the fields the chosen mode needs.
@@ -289,7 +320,7 @@ func _show_repo_mode() -> void:
 	var github := _repo_mode == "github"
 	for node in ["RepoHeader", "SearchEdit", "RepoScroll", "BranchLabel", "BranchRow"]:
 		%SearchEdit.get_parent().get_node(node).visible = github
-	_folder_edit.visible = _repo_mode == "folder"
+	_folder_row.visible = _repo_mode == "folder"
 	match _repo_mode:
 		"new":
 			_mode_hint.text = "Starts from scratch on branch main, in your islands folder (see Settings)."
