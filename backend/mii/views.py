@@ -14,7 +14,7 @@ from django.http import HttpRequest, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
-from mii import events, github, islands, layout, prefs, residents, tasks, vocab, weather
+from mii import events, github, islands, layout, prefs, residents, talk, tasks, vocab, weather
 from mii.agents.acp import GIFTS, BrainError, available_brains, available_gifts, list_brain_models
 from mii.agents.openrouter import list_models
 from mii.insights import RANGES, island_insights
@@ -350,17 +350,32 @@ async def get_insights(request: HttpRequest, island_id: str) -> JsonResponse:
 
 @require_GET
 async def get_events(request: HttpRequest, island_id: str) -> JsonResponse:
-    """The newest `limit` stored events, oldest first: the stored payload plus `event_id`."""
+    """The newest `limit` stored events, oldest first: the stored payload plus `event_id`.
+    Talk lines aren't island events (they're private to the talk scene): see talks_view."""
     island = await _island_or_404(island_id)
     if isinstance(island, JsonResponse):
         return island
     limit = _int_param(request, "limit", 200, 2000)
     if isinstance(limit, JsonResponse):
         return limit
-    newest = [
-        {"event_id": e.id, **e.payload} async for e in Event.objects.filter(island_id=island_id).order_by("-id")[:limit]
-    ]
+    rows = Event.objects.filter(island_id=island_id).exclude(type=talk.TURN_TYPE).order_by("-id")
+    newest = [{"event_id": e.id, **e.payload} async for e in rows[:limit]]
     return JsonResponse({"events": newest[::-1]})
+
+
+@require_GET
+async def talks_view(request: HttpRequest, island_id: str) -> JsonResponse:
+    """GET ?building=<id>: what was said in talks at that building, oldest first (talk.history)."""
+    island = await _island_or_404(island_id)
+    if isinstance(island, JsonResponse):
+        return island
+    building = request.GET.get("building", "")
+    if not building:
+        return _error("building is required", 400)
+    limit = _int_param(request, "limit", 200, 1000)
+    if isinstance(limit, JsonResponse):
+        return limit
+    return JsonResponse({"turns": await talk.history(island_id, building, limit)})
 
 
 @csrf_exempt

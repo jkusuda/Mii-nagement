@@ -322,7 +322,7 @@ func _show_island() -> void:
 		var building: Dictionary = by_type.get(type, {})
 		var here := 0
 		for r in data.get("residents", []):
-			if r.get("building") == building.get("id") and r.get("state") != "walking":
+			if ResidentData.inside(r, str(building.get("id", ""))):  # working inside, not idling nearby
 				here += 1
 		_labels[type].show_count(here, str(building.get("name", "")))
 

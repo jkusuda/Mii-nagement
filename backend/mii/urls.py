@@ -22,6 +22,7 @@ urlpatterns = [
     path("islands/<str:island_id>/issues", views.island_issues),
     path("islands/<str:island_id>/insights", views.get_insights),
     path("islands/<str:island_id>/events", views.get_events),
+    path("islands/<str:island_id>/talks", views.talks_view),
     path("islands/<str:island_id>/layout", views.layout_view),
     path("replay/<str:task_id>", views.replay),
 ]

@@ -93,10 +93,12 @@ class ThinkingStream:
     ("thought" -> "reply") sends what's waiting first. Call flush() at the end."""
 
     EVERY = 1.0  # seconds
+    CHAT_EVERY = 0.25  # a talk (talk.py) streams its reply into the speech bubble: smaller, quicker batches
     MAX_CHARS = 600
 
-    def __init__(self, think: ThinkFn | None):
+    def __init__(self, think: ThinkFn | None, every: float = EVERY):
         self.think = think
+        self.every = every
         self.kind = ""
         self.parts: list[str] = []
         self.size = 0
@@ -110,7 +112,7 @@ class ThinkingStream:
             self.kind = kind
         self.parts.append(text)
         self.size += len(text)
-        if kind == "tool" or self.size >= self.MAX_CHARS or time.monotonic() - self.last >= self.EVERY:
+        if kind == "tool" or self.size >= self.MAX_CHARS or time.monotonic() - self.last >= self.every:
             await self.flush()
 
     async def tool(self, title: str, tool: str = "", call: str = "", detail: str = "") -> None:
@@ -223,6 +225,12 @@ def build_prompt(job: AgentJob, system_prompt: str, diary: bool = True) -> str:
     return "\n".join(parts)
 
 
+def chat_followup(job: AgentJob) -> str:
+    """A later message in a talk whose session already has the personality, the building's role
+    and the conversation so far (agents that keep a session, like ACP): just what was said."""
+    return f"Owner: {job.chat}\n\nAnswer in character, in a few friendly sentences."
+
+
 class AgentRunner(Protocol):
     async def run(self, job: AgentJob) -> StepResult: ...
 
@@ -232,6 +240,14 @@ async def end_task(runner: AgentRunner, task_id: str) -> None:
     close = getattr(runner, "end_task", None)  # optional: only runners that keep agents alive have it
     if close is not None:
         await close(task_id)
+
+
+async def prepare(runner: AgentRunner, job: AgentJob) -> None:
+    """Start the job's agent ahead of time and keep it for job.task.id, so the first prompt
+    doesn't wait for the start-up (a talk warms up while you read the greeting)."""
+    warm = getattr(runner, "prepare", None)  # optional: only runners that keep agents alive have it
+    if warm is not None:
+        await warm(job)
 
 
 class BrainRunner:
@@ -249,6 +265,11 @@ class BrainRunner:
     async def end_task(self, task_id: str) -> None:
         for runner in self.runners.values():
             await end_task(runner, task_id)
+
+    async def prepare(self, job: AgentJob) -> None:
+        runner = self.runners.get(job.resident.brain)
+        if runner is not None:
+            await prepare(runner, job)
 
 
 def make_runner(

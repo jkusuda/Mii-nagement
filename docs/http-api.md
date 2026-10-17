@@ -31,7 +31,8 @@ The WebSocket messages are in [protocol.md](protocol.md); how the pieces fit is 
 | `GET /islands/{id}/tasks/{task_id}` | one task: `steps` (building, resident, brain, outcome, `summary` = what the resident reported) + `events` (the stored events while it ran) |
 | `POST /islands/{id}/tasks/{task_id}/cancel` | cancel a queued task or stop the running one (409 if it already finished) |
 | `GET /islands/{id}/insights?range=week` | stats for the Insights screen and News' "This week" (`today` / `week` / `month`) |
-| `GET /islands/{id}/events?limit=200` | stored events, oldest first, for the News tab (see "Events history") |
+| `GET /islands/{id}/events?limit=200` | stored events, oldest first, for the News tab (see "Events history"); talk lines are left out |
+| `GET /islands/{id}/talks?building=<id>&limit=200` | `{"turns": [{"building", "agent", "from": "you" \| "resident", "text", "ts"}]}`: what was said in talks at that building, oldest first (the talk scene's history; protocol.md `talk`) |
 | `PUT /islands/{id}/layout` | build mode over HTTP: `{"buildings", "roads"}` → the saved layout (same rules as `set_layout` in protocol.md); or the game's form `{"map", "buildings": [{type, x, y, facing}]}` → the new snapshot (also sent to every client as a stored `snapshot` event), 400 / 409 (steps changing during a task), see protocol.md "Island map" |
 | `GET /settings` | effective settings (incl. `judge`, `godot_path`), what `.env` locks, which API keys are set (incl. `typesafe_api_key`) |
 | `PUT /settings` | `{"settings": {...}, "secrets": {"openrouter_api_key": "sk-..." \| null}}`; keys go to the keychain and are never echoed |

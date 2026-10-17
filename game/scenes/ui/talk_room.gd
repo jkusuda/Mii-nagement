@@ -1,21 +1,28 @@
 class_name TalkRoom
 extends Control
-## The room behind a resident in the talk popup, Tomodachi-style: a wall in the
-## building's colour with soft doodles on it (circles, triangles, squiggles,
-## bars), a baseboard, a wooden floor, and a shadow where the Mii stands.
+## The room behind a resident in the talk popup, Tomodachi-style: a back wall and two
+## side walls with moulded panels, a baseboard, and a tiled floor drawn in perspective,
+## all in a pale shade of the building's colour. A soft shadow marks where the Mii stands.
 ##
 ## Godot concept: a Control can paint itself in `_draw()` with draw_rect,
-## draw_arc, draw_polyline... Godot calls it once and keeps the result until
-## queue_redraw() asks for a new one (here: a new colour, or a new size).
+## draw_colored_polygon, draw_line... Godot calls it once and keeps the result until
+## queue_redraw() asks for a new one (here: a new colour, a new size, or the feet moved).
 
-const FLOOR_AT := 0.64  # where the floor starts, as a fraction of the height
-const FEET_AT := 0.8  # where the Mii's feet land (MiiPreview.ROOM_SHOT)
-const WOOD := Color("D8914C")
-const PATTERN_SEED := 7  # the same doodles every time
+const BACK_LEFT := 0.15  # where the back wall starts and ends, as fractions of the width
+const BACK_RIGHT := 0.85
+const FLOOR_AT := 0.58  # where the back wall meets the floor, as a fraction of the height
+const FLOOR := Color("EFE6D6")
 
+## The building's colour; the walls are a pale shade of it.
 var color := Color("F4A7B9"):
 	set(value):
 		color = value
+		queue_redraw()
+
+## Where the Mii's feet are (in this Control's coordinates), for the shadow. NAN = no shadow.
+var feet := Vector2(NAN, NAN):
+	set(value):
+		feet = value
 		queue_redraw()
 
 
@@ -27,69 +34,80 @@ func _ready() -> void:
 func _draw() -> void:
 	var w := size.x
 	var h := size.y
-	var floor_y := h * FLOOR_AT
-	var wall := color.lerp(Color.WHITE, 0.45)
-	draw_rect(Rect2(0, 0, w, floor_y), wall)
-	_draw_doodles(Rect2(0, 0, w, floor_y), wall.lerp(Color.WHITE, 0.5))
-	_draw_floor(floor_y, w, h)
-	draw_rect(Rect2(0, floor_y - 7, w, 9), wall.darkened(0.12))  # baseboard
-	# The Mii's shadow: a squashed circle (draw_set_transform scales what's drawn next).
-	draw_set_transform(Vector2(w / 2.0, h * FEET_AT), 0.0, Vector2(1.0, 0.26))
-	draw_circle(Vector2.ZERO, w * 0.17, Color(0.2, 0.1, 0.05, 0.22))
-	draw_set_transform(Vector2.ZERO)
+	var x0 := w * BACK_LEFT
+	var x1 := w * BACK_RIGHT
+	var fy := h * FLOOR_AT
+	var wall := color.lerp(Color.WHITE, 0.74)
+	var side := wall.darkened(0.07)
+	var trim := wall.darkened(0.16)
+
+	# Floor first, then the walls over its edges.
+	var floor_tint := FLOOR.lerp(color, 0.06)
+	draw_colored_polygon(
+		PackedVector2Array([Vector2(x0, fy), Vector2(x1, fy), Vector2(w, h), Vector2(0, h)]), floor_tint
+	)
+	_draw_floor_tiles(x0, x1, fy, w, h, floor_tint.darkened(0.09))
+
+	draw_rect(Rect2(x0, 0, x1 - x0, fy), wall)
+	draw_colored_polygon(PackedVector2Array([Vector2(0, 0), Vector2(x0, 0), Vector2(x0, fy), Vector2(0, h)]), side)
+	draw_colored_polygon(PackedVector2Array([Vector2(x1, 0), Vector2(w, 0), Vector2(w, h), Vector2(x1, fy)]), side)
+	# The room's corners.
+	draw_line(Vector2(x0, 0), Vector2(x0, fy), trim, 2.0, true)
+	draw_line(Vector2(x1, 0), Vector2(x1, fy), trim, 2.0, true)
+
+	_draw_back_panels(x0, x1, fy, h, trim)
+	_draw_side_panels(x0, fy, w, h, trim, false)
+	_draw_side_panels(x1, fy, w, h, trim, true)
+
+	# Baseboards: along the back wall, and down each side wall to the front.
+	var board := wall.darkened(0.1)
+	draw_rect(Rect2(x0, fy - 10, x1 - x0, 10), board)
+	draw_line(Vector2(x0, fy - 5), Vector2(0, h - 14), board, 12.0, true)
+	draw_line(Vector2(x1, fy - 5), Vector2(w, h - 14), board, 12.0, true)
+
+	if not is_nan(feet.x):
+		# A squashed circle: draw_set_transform scales what's drawn next.
+		draw_set_transform(feet, 0.0, Vector2(1.0, 0.24))
+		draw_circle(Vector2.ZERO, 92.0, Color(0.25, 0.18, 0.1, 0.18))
+		draw_set_transform(Vector2.ZERO)
 
 
-## Doodles on a loose grid, each nudged and turned a little.
-func _draw_doodles(area: Rect2, ink: Color) -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = PATTERN_SEED
-	var cols := 4
-	var rows := 4
-	var cell := Vector2(area.size.x / cols, area.size.y / rows)
-	var s := minf(cell.x, cell.y) * 0.3
-	var line := maxf(3.0, s * 0.18)
-	for row in rows:
-		for col in cols:
-			var jitter := Vector2(rng.randf_range(-0.25, 0.25), rng.randf_range(-0.25, 0.25))
-			var p := area.position + cell * (Vector2(col, row) + Vector2(0.5, 0.5) + jitter)
-			var turn := rng.randf() * TAU
-			match rng.randi() % 4:
-				0:  # a ring
-					draw_arc(p, s * 0.45, 0.0, TAU, 28, ink, line, true)
-				1:  # a triangle
-					var tri := PackedVector2Array()
-					for i in 4:
-						tri.append(p + Vector2(0, -s * 0.6).rotated(turn + i * TAU / 3.0))
-					draw_polyline(tri, ink, line, true)
-				2:  # a squiggle
-					var wave := PackedVector2Array()
-					for i in 14:
-						var t := i / 13.0
-						wave.append(p + Vector2((t - 0.5) * s * 2.4, sin(t * TAU * 1.3) * s * 0.35).rotated(turn))
-					draw_polyline(wave, ink, line, true)
-				_:  # a rounded bar
-					var d := Vector2(s * 0.7, 0).rotated(turn)
-					draw_line(p - d, p + d, ink, line * 1.8, true)
-					draw_circle(p - d, line * 0.9, ink)
-					draw_circle(p + d, line * 0.9, ink)
+## Three tall panels with an inner moulding, and a picture rail near the top.
+func _draw_back_panels(x0: float, x1: float, fy: float, h: float, trim: Color) -> void:
+	draw_line(Vector2(x0, h * 0.06), Vector2(x1, h * 0.06), trim, 2.0, true)
+	var gap := (x1 - x0) * 0.04
+	var width := ((x1 - x0) - gap * 4) / 3.0
+	for i in 3:
+		var left := x0 + gap + i * (width + gap)
+		var outer := Rect2(left, h * 0.11, width, fy - h * 0.17)
+		draw_rect(outer, trim, false, 2.0)
+		draw_rect(outer.grow(-12.0), trim.lightened(0.25), false, 1.5)
 
 
-## Planks that get taller toward the front (a hint of perspective), with seams.
-func _draw_floor(top: float, w: float, h: float) -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = PATTERN_SEED
-	var y := top
-	var plank := (h - top) * 0.11
-	var row := 0
-	while y < h:
-		var shade := WOOD.darkened(rng.randf_range(0.0, 0.1)).lightened(0.04 * (row % 2))
-		draw_rect(Rect2(0, y, w, plank + 1), shade)
-		draw_line(Vector2(0, y), Vector2(w, y), WOOD.darkened(0.25), 2.0)
-		var offset := rng.randf_range(0.0, w / 3.0)
-		var x := offset
-		while x < w:
-			draw_line(Vector2(x, y), Vector2(x, y + plank), WOOD.darkened(0.2), 2.0)
-			x += w / 2.2
-		y += plank
-		plank *= 1.22
-		row += 1
+## Two panels on a side wall, skewed to follow it. `right` = the right-hand wall.
+func _draw_side_panels(edge: float, fy: float, w: float, h: float, trim: Color, right: bool) -> void:
+	# A point on the wall: u = 0 at the front (screen edge), 1 at the back corner; v = 0 top, 1 bottom.
+	var at := func(u: float, v: float) -> Vector2:
+		var x := lerpf(w if right else 0.0, edge, u)
+		var bottom := lerpf(h, fy, u)
+		var top := lerpf(0.0, h * 0.06, u)
+		return Vector2(x, lerpf(top + (bottom - top) * 0.12, bottom - (bottom - top) * 0.08, v))
+	for span in [[0.12, 0.46], [0.56, 0.9]]:
+		var quad := PackedVector2Array([at.call(span[0], 0.0), at.call(span[1], 0.0), at.call(span[1], 1.0)])
+		quad.append(at.call(span[0], 1.0))
+		quad.append(quad[0])
+		draw_polyline(quad, trim, 2.0, true)
+
+
+## Tiles in perspective: seams from the back edge to the front fan out, and rows get
+## deeper toward the viewer.
+func _draw_floor_tiles(x0: float, x1: float, fy: float, w: float, h: float, seam: Color) -> void:
+	var columns := 8
+	for i in columns + 1:
+		var t := float(i) / columns
+		draw_line(Vector2(lerpf(x0, x1, t), fy), Vector2(lerpf(0.0, w, t), h), seam, 1.5, true)
+	var rows := 6
+	for i in range(1, rows + 1):
+		var t := pow(float(i) / rows, 1.7)
+		var y := lerpf(fy, h, t)
+		draw_line(Vector2(lerpf(x0, 0.0, t), y), Vector2(lerpf(x1, w, t), y), seam, 1.5, true)

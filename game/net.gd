@@ -33,11 +33,15 @@ signal resident_updated(resident: Dictionary)
 signal resident_removed(resident_id: String)
 ## More of a package's train of thought arrived (Net.thinking[task_id]).
 signal thinking_received(task_id: String)
-## Answers to send_talk() (talk_popup.gd): a tool line while the resident looks
-## something up, then their reply, or why they couldn't answer.
+## Answers to send_talk_open() / send_talk() (talk_popup.gd): the conversation is open,
+## a tool line while the resident looks something up, the next piece of their reply as
+## it's written, the whole reply, why they couldn't answer, or the server ended the talk.
+signal talk_ready(conversation_id: String)
 signal talk_thinking(talk_id: String, text: String)
+signal talk_partial(talk_id: String, text: String)
 signal talk_replied(talk_id: String, text: String)
 signal talk_failed(talk_id: String, message: String)
+signal talk_closed(conversation_id: String, message: String)
 ## Every event from the server, as it arrived (the News tab turns them into stories).
 signal event_received(event: Dictionary)
 ## Something in `island` changed (after any of the signals above).
@@ -201,14 +205,28 @@ func send_answer(bubble_id: String, text: String) -> bool:
 	return _send({"type": "answer_bubble", "id": bubble_id, "response": text})
 
 
-## Say something to a resident at a building. `history` is the conversation so far
+## Start a conversation with a resident inside a building: they stay inside until
+## send_talk_close(). Answer: talk_ready (or talk_failed) with the same id.
+func send_talk_open(conversation_id: String, resident_id: String, building_id: String) -> bool:
+	return _send({"type": "talk_open", "id": conversation_id, "resident": resident_id, "building": building_id})
+
+
+## The conversation is over: the resident may go back to work.
+func send_talk_close(conversation_id: String) -> bool:
+	return _send({"type": "talk_close", "id": conversation_id})
+
+
+## Say something in an open conversation. `history` is the conversation so far
 ## ([{"from": "you" | "resident", "text"}]). The answer comes back to this client
-## only, as talk_thinking / talk_replied / talk_failed with the same `talk_id`.
-func send_talk(talk_id: String, resident_id: String, building_id: String, text: String, history: Array) -> bool:
+## only, as talk_thinking / talk_partial / talk_replied / talk_failed with the same `talk_id`.
+func send_talk(
+	talk_id: String, conversation_id: String, resident_id: String, building_id: String, text: String, history: Array
+) -> bool:
 	return _send(
 		{
 			"type": "talk",
 			"id": talk_id,
+			"conversation": conversation_id,
 			"resident": resident_id,
 			"building": building_id,
 			"message": text,
@@ -233,8 +251,17 @@ func _handle_message(text: String) -> void:
 
 	# A talk is private and never stored: not an island event, so not News either.
 	match event.get("type", ""):
+		"talk_ready":
+			talk_ready.emit(str(event.get("id", "")))
+			return
 		"talk_thinking":
 			talk_thinking.emit(str(event.get("id", "")), str(event.get("text", "")))
+			return
+		"talk_partial":
+			talk_partial.emit(str(event.get("id", "")), str(event.get("text", "")))
+			return
+		"talk_closed":
+			talk_closed.emit(str(event.get("id", "")), str(event.get("message", "")))
 			return
 		"talk_reply":
 			talk_replied.emit(str(event.get("id", "")), str(event.get("text", "")))

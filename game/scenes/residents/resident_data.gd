@@ -224,6 +224,13 @@ static func vibe_symbol(resident: Dictionary, island: Dictionary = {}) -> String
 	return VIBES[v][2] if VIBES.has(v) else "🙂"
 
 
+## Is this resident inside this building right now? Only while working there: everyone
+## else (idle, asleep, walking) is out on the island. The building count, the building
+## panel and Talk all go by this (and the backend's `talk` checks the same).
+static func inside(resident: Dictionary, building_id: String) -> bool:
+	return resident.get("state") == "working" and str(resident.get("building", "")) == building_id
+
+
 ## Does this resident run a building of this type on the island?
 static func runs_building_type(resident_id: String, type: String, island: Dictionary) -> bool:
 	for b in island.get("buildings", []):

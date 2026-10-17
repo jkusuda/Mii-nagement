@@ -358,6 +358,31 @@ def split_pr_text(text: str, fallback_title: str) -> tuple[str, str]:
 # --- The engine ---------------------------------------------------------------------
 
 
+class TalkHolds:
+    """Residents the island owner is talking to (talk.py). A resident is inside a building
+    only while working there, so the engine keeps a held resident at work, and the package
+    with them, until the talk ends: they never walk out mid-conversation."""
+
+    def __init__(self):
+        self._held: dict[str, asyncio.Event] = {}  # resident id -> set when the talk ends
+
+    def hold(self, resident_id: str) -> None:
+        self._held.setdefault(resident_id, asyncio.Event())
+
+    def release(self, resident_id: str) -> None:
+        event = self._held.pop(resident_id, None)
+        if event is not None:
+            event.set()
+
+    def held(self, resident_id: str) -> bool:
+        return resident_id in self._held
+
+    async def wait(self, resident_id: str) -> None:
+        event = self._held.get(resident_id)
+        if event is not None:
+            await event.wait()
+
+
 @dataclass
 class Lane:
     """One island's line of packages. Islands work in parallel; within an island,
@@ -402,6 +427,7 @@ class WorkflowEngine:
         self.permission_timeout = permission_timeout or bubble_timeout
         self.sleep_after = sleep_after
         self.step_timeout = step_timeout
+        self.holds = TalkHolds()  # residents you're talking to stay inside until you're done
         self.test_command = test_command
         self.keep_worktrees = keep_worktrees
         self.git_author = git_author
@@ -663,6 +689,9 @@ class WorkflowEngine:
                 feedback=feedback,
             )
             feedback = None
+            if self.holds.held(resident.id):  # you're talking to them: they finish the chat before moving on
+                await self._report(task, resident, "Chatting with you; the package waits until you're done")
+                await self.holds.wait(resident.id)
             if building.type == "workshop":
                 coder = building_id
             did = f"helped {owner.name} at" if helped else "at"

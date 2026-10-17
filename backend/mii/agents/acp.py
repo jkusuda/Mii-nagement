@@ -58,6 +58,7 @@ from mii.agents import (
     StepResult,
     ThinkingStream,
     build_prompt,
+    chat_followup,
     parse_verdict,
     permission_for,
 )
@@ -308,7 +309,8 @@ class MiiClient(Client):
         self.job = job
         self.workdir = workdir
         self.text: list[str] = []  # the agent's reply, chunk by chunk
-        self.thinking = ThinkingStream(job.think)  # thoughts + reply + tool calls, for the game
+        every = ThinkingStream.CHAT_EVERY if job.chat is not None else ThinkingStream.EVERY
+        self.thinking = ThinkingStream(job.think, every)  # thoughts + reply + tool calls, for the game
         self.pending: asyncio.Task | None = None  # a bubble we're waiting on
         self._tools: dict[str, dict] = {}  # tool call id -> what the game was last told about it
         self._last_report = 0.0
@@ -684,6 +686,7 @@ class LiveAgent:
     model: str | None
     gifts: tuple[str, ...]
     read_only: bool
+    prompted: bool = False  # False until the first prompt (an agent started early by prepare() has had none)
 
     def fits(self, job: AgentJob) -> bool:
         """Can this job use the kept session? Not if the worktree, model or gifts changed."""
@@ -714,6 +717,17 @@ class AcpRunner:
         for key in [key for key in self.live if key[0] == task_id]:
             await self.live.pop(key).close()
 
+    async def prepare(self, job: AgentJob) -> None:
+        """Start the agent and open its session now, kept for the job's (task, resident), so the
+        first run() skips the start-up. Failures are left for run() to report."""
+        key = (job.task.id, job.resident.id)
+        if key in self.live or require_worktree(job):
+            return
+        try:
+            self.live[key] = await self._start(job, MiiClient(job, job.workdir))
+        except Exception as e:  # not logged in, no npx...: run() tries again and says why
+            log.info("%s: warming up for %s failed: %s", self.brain, job.resident.id, e)
+
     async def run(self, job: AgentJob) -> StepResult:
         if problem := require_worktree(job):
             return StepResult("fail", problem)
@@ -735,7 +749,7 @@ class AcpRunner:
                 if agent.read_only != job.read_only:
                     await self._set_mode(agent.conn, agent.session, job.read_only)
                     agent.read_only = job.read_only
-            result, keep = await self._prompt(agent, job, resumed)
+            result, keep = await self._prompt(agent, job)
             return result
         except asyncio.CancelledError:
             # The engine's step timeout, or the task was cancelled. Ask the agent to stop; the
@@ -795,17 +809,20 @@ class AcpRunner:
             raise
         return LiveAgent(stack, conn, client, session, job.workdir, job.resident.model, _gifts(job), job.read_only)
 
-    async def _prompt(self, agent: LiveAgent, job: AgentJob, resumed: bool) -> tuple[StepResult, bool]:
+    async def _prompt(self, agent: LiveAgent, job: AgentJob) -> tuple[StepResult, bool]:
         """Prompt the session (answering QUESTION lines with ❓ bubbles). Returns the result and
         whether the session is still fit to keep for this resident's next visit. A chat (talk.py)
         asks no questions, keeps its whole reply, and is never kept: its worktree goes right after."""
         conn, client, session_id = agent.conn, agent.client, agent.session.session_id
         chat = job.chat is not None
-        if resumed:
+        if chat and agent.prompted:  # the session already has the role and the conversation so far
+            prompt = chat_followup(job)
+        elif agent.prompted:
             intro = RESUMED.format(name=job.resident.name, building=job.building.name, attempt=job.attempt)
             prompt = build_prompt(job, intro, diary=False)
         else:
             prompt = build_prompt(job, build_system_prompt(job.resident))
+        agent.prompted = True
         if not chat:
             prompt = f"{prompt}\n\n{QUESTION_RULE}"
         for asked in range(MAX_QUESTIONS + 1):
@@ -823,7 +840,7 @@ class AcpRunner:
                 else "Nobody answered in time. Use your best judgement and carry on."
             )
             prompt += "\n\nWhen you're done, end with one line: `VERDICT: PASS` or `VERDICT: FAIL`."
-        return parse_verdict("".join(client.text), job.summary_chars), not chat
+        return parse_verdict("".join(client.text), job.summary_chars), True  # a talk's session: talk.py ends it
 
     async def _set_mode(self, conn, session, read_only: bool) -> None:
         """Switch on the agent's edit / read-only mode, when it offers it."""

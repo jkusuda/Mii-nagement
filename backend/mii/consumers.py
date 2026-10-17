@@ -37,12 +37,15 @@ async def handle_message(runtime: Runtime, island_id: str, message: object, send
 
 async def _handle(runtime: Runtime, island_id: str, message: dict, send=None) -> dict | None:
     kind = message.get("type")
-    if kind == "talk":
+    if kind in ("talk", "talk_open"):
         if send is None:
-            return events.error("talk needs a WebSocket connection")
-        job = asyncio.create_task(talk.talk(runtime, island_id, message, send))  # a real brain takes a while
+            return events.error(f"{kind} needs a WebSocket connection")
+        answer = talk.talk if kind == "talk" else talk.open_conversation
+        job = asyncio.create_task(answer(runtime, island_id, message, send))  # a real brain takes a while
         _talks.add(job)
         job.add_done_callback(_talks.discard)
+    elif kind == "talk_close":
+        await talk.close_conversation(runtime, str(message.get("id", "")))
     elif kind == "answer_bubble":
         bubble_id = str(message.get("id", ""))
         if not runtime.bubbles.answer(bubble_id, str(message.get("response", ""))):
@@ -125,7 +128,9 @@ class IslandConsumer(AsyncJsonWebsocketConsumer):
         runtime.bus.add_client(self, island_id)  # only this island's events
 
     async def disconnect(self, code: int) -> None:
-        get_runtime().bus.remove_client(self)
+        runtime = get_runtime()
+        runtime.bus.remove_client(self)
+        await talk.close_all(runtime, self._send_quietly)  # residents it was talking to can go back to work
 
     async def receive_json(self, message: object, **kwargs: object) -> None:
         reply = await handle_message(get_runtime(), self.island_id, message, self._send_quietly)

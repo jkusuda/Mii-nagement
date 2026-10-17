@@ -220,6 +220,7 @@ func _fill_mailbox() -> void:
 		_list.add_child(_empty("No open issues. Send one and watch the residents get to work."))
 	for task in tasks:
 		_list.add_child(_task_card(task, false))
+	_fill_inside(_building())
 
 
 func _fill_stage() -> void:
@@ -235,15 +236,26 @@ func _fill_stage() -> void:
 		_list.add_child(_task_card(task, true))
 	if tasks.is_empty():
 		_list.add_child(_empty("No packages here right now."))
+	_fill_inside(building)
 
-	# Who's here: residents standing at this building, plus the one who works here.
+
+## Who's inside: only residents working here right now (ResidentData.inside). You can
+## talk to them here; anyone else is out on the island.
+func _fill_inside(building: Dictionary) -> void:
+	var id := str(building.get("id", ""))
 	var people := []
 	for r in Net.island.get("residents", []):
-		if r.get("building") == id or r.get("id") == building.get("resident"):
+		if ResidentData.inside(r, id):
 			people.append(r)
-	_list.add_child(_subheading("Residents"))
+	_list.add_child(_subheading("Inside now"))
 	if people.is_empty():
-		_list.add_child(_empty("Nobody works here yet. Move a resident in from the Residents tab."))
+		var owner := Net.find_resident(str(building.get("resident", "")))
+		if owner.is_empty():
+			_list.add_child(_empty("Nobody works here yet. Move a resident in from the Residents tab."))
+		else:
+			_list.add_child(
+				_empty("Nobody's inside. %s works here and comes in with the next package." % owner["name"])
+			)
 	for r in people:
 		_list.add_child(_resident_card(r, id))
 
@@ -502,8 +514,6 @@ func _resident_card(r: Dictionary, here_id: String) -> Control:
 	texts.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	texts.add_child(_text(str(r.get("name", "?")), 17, true))
 	var about := "%s · feeling %s" % [str(r.get("job", "")).capitalize(), ResidentData.vibe_word(r)]
-	if r.get("building") != here_id:
-		about += " · works here, now at the %s" % Net.find_building(str(r.get("building", ""))).get("name", "island")
 	texts.add_child(_detail(about, 13))
 	if r.get("activity"):
 		texts.add_child(_activity(str(r["activity"])))

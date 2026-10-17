@@ -137,15 +137,21 @@ class MockRunner:
         return self._chatter(job, result)
 
     async def _talk(self, job: AgentJob) -> StepResult:
-        """A chat: a short pause, one tool line, an in-character answer. No bubbles, never fails."""
+        """A chat: a short pause, one tool line, an in-character answer streamed a few words
+        at a time (like a real brain's reply). No bubbles, never fails."""
         if job.think:
             await job.think("tool", "Looking around the " + job.building.name)
-        await asyncio.sleep(self.rng.uniform(0.6, 1.6))
+        await asyncio.sleep(self.rng.uniform(0.4, 1.0))
         topic = " ".join(job.chat.split()[:5]).rstrip("?!.,") or "that"
         line = self.rng.choice(self.TALK_LINES.get(job.building.type, ["Hmm, {topic}? Let me think."]))
         reply = f"(mock) {line.format(topic=topic)}"
         if job.resident.catchphrase:
             reply += f" {job.resident.catchphrase}"
+        if job.think:
+            words = reply.split(" ")
+            for i in range(0, len(words), 3):
+                await job.think("reply", " ".join(words[i : i + 3]) + " ")
+                await asyncio.sleep(0.08)
         return StepResult("pass", reply)
 
     def _chatter(self, job: AgentJob, result: StepResult) -> StepResult:

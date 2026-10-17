@@ -329,17 +329,22 @@ sleep/wake changes it, never more often than it changes.
 {"type": "weather", "weather": "rainy"}
 ```
 
-### `talk_thinking` / `talk_reply` / `talk_error`
-Answers to a `talk` message (see Client → server). Sent **only to the client that
-sent `talk`** and never stored (they don't show up in News or replays). `id` is the
-talk id the client chose.
+### `talk_ready` / `talk_thinking` / `talk_partial` / `talk_reply` / `talk_error` / `talk_closed`
+Answers to `talk_open` and `talk` (see Client → server). Sent **only to the client
+that asked**, never broadcast. `id` is the conversation id (`talk_ready`,
+`talk_closed`, and a `talk_error` for `talk_open`) or the message's talk id.
 ```json
+{"type": "talk_ready", "id": "c_51a0", "agent": "carlos"}
 {"type": "talk_thinking", "id": "k_7c1e", "agent": "carlos", "text": "Reading src/auth.py"}
+{"type": "talk_partial", "id": "k_7c1e", "agent": "carlos", "text": "The rate limiter lives in "}
 {"type": "talk_reply", "id": "k_7c1e", "agent": "carlos", "text": "The rate limiter lives in middleware.py. Want me to explain it?"}
-{"type": "talk_error", "id": "k_7c1e", "agent": "carlos", "message": "carlos is asleep (no claude-code login)."}
+{"type": "talk_error", "id": "k_7c1e", "agent": "carlos", "message": "Carlos isn't inside the Workshop right now."}
+{"type": "talk_closed", "id": "c_51a0", "agent": "carlos", "message": "We talked a while ago, so I went back to work."}
 ```
-`talk_thinking` is optional, zero or more times (one line: a tool the agent is using).
-Exactly one `talk_reply` or `talk_error` ends the turn.
+Per message: `talk_thinking` (a tool the agent is using) and `talk_partial` (the next
+piece of the reply: append it) come zero or more times; exactly one `talk_reply` (the
+whole reply) or `talk_error` ends the turn. `talk_closed`: the server ended an open
+conversation by itself (nothing said for 5 minutes).
 
 ### `error`
 The server couldn't handle something the client sent. If the message carried a
@@ -479,21 +484,34 @@ the island repository's `origin` at it, so the post office can push.
 The server replies with `error` (bad name or repo, nothing to change), or an
 `island` event to every client. Same thing over HTTP: `PATCH /islands/{id}`.
 
-### `talk`
-Chat with a resident at a building (the building panel → a resident → Talk). The
+### `talk_open` / `talk` / `talk_close`
+Chat with a resident inside a building (the building panel → a resident → Talk). The
 resident's brain answers in character, in that building's role, **read-only**: it
 may read the island's repository but never changes files, raises no bubbles, and
-the conversation never touches a package. In real mode it runs in a throwaway
-worktree; in mock mode the reply is canned.
+the conversation never touches a package. You can only talk to a resident
+**inside** a building: one whose `state` is `working` there. Anyone else is out on
+the island, and the answer is `talk_error`.
+
+1. `talk_open` starts a conversation. The resident stays inside until it ends: they
+   finish their step, but don't walk out (and the package waits) until `talk_close`.
+   In real mode their agent starts right away, so the first reply is quicker.
+   Answer: `talk_ready` (or `talk_error`).
+2. Each `talk` is one message (`conversation`: the open conversation's id), answered
+   with the events above. Messages in one conversation share one agent session.
+3. `talk_close` ends it. So does disconnecting, or 5 minutes without a message
+   (`talk_closed`).
 ```json
-{"type": "talk", "id": "k_7c1e", "resident": "carlos", "building": "workshop",
+{"type": "talk_open", "id": "c_51a0", "resident": "carlos", "building": "workshop"}
+{"type": "talk", "id": "k_7c1e", "conversation": "c_51a0", "resident": "carlos", "building": "workshop",
  "message": "Where does the rate limiter live?",
  "history": [{"from": "you", "text": "Hi!"}, {"from": "resident", "text": "Hey! Busy day at the Workshop."}]}
+{"type": "talk_close", "id": "c_51a0"}
 ```
-`id` is the client's (short, letters/digits/`_`/`-`), echoed on every answer.
-`history` is the conversation so far (the server keeps none; it uses the last 10
-turns). `building` is optional (default: the resident's home building). Answers:
-`talk_thinking` (optional), then `talk_reply` or `talk_error`, to the sender only.
+Ids are the client's (short, letters/digits/`_`/`-`). `history` is the conversation
+so far (the last 10 turns are used). `building` is optional (default: the building
+they're in). A `talk` without a `conversation` is answered one-off. Every message and
+reply is stored per building (never broadcast, not in News):
+`GET /islands/{id}/talks?building=<id>` returns them (docs/http-api.md).
 
 ---
 

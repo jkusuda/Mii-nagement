@@ -1,40 +1,68 @@
-"""Talk to a resident at a building (the `talk` message, docs/protocol.md).
+"""Talk to a resident inside a building (`talk_open`, `talk`, `talk_close`; docs/protocol.md).
 
 The island owner chats with a resident's brain outside any package: the resident
-answers in character, in the role of the building you found them at. Always
-read-only, and it never raises bubbles. The game keeps the conversation; each
-`talk` carries the history, so nothing is stored here.
+answers in character, in the role of the building they're in. Only a resident
+working inside that building can be talked to (idle ones are out on the island).
+Always read-only, and it never raises bubbles.
 
-Real brains run in a throwaway worktree of the island's repo (agents only ever run
-inside worktrees, sandbox.py), removed again with its branch. Mock mode answers
-with a canned line (agents/mock.py).
+A conversation (`talk_open` ... `talk_close`):
+- holds the resident in the building (engine.TalkHolds): they finish their step but
+  don't walk out, and the package waits, until the talk ends;
+- in real mode, gets one throwaway worktree of the island's repo (agents only run inside
+  worktrees, sandbox.py) and starts the resident's agent right away, so the first reply
+  doesn't wait for the start-up. Every message reuses that agent session, and its reply
+  streams back as it's written (`talk_partial`);
+- ends when the game closes it, the game disconnects, or nothing was said for IDLE_LIMIT.
+
+Every turn is stored per building (Event rows of type `talk_turn`, never broadcast, kept
+out of News) for the talk scene's history: GET /islands/{id}/talks?building=<id>.
+A `talk` without a conversation is answered one-off (its own worktree and agent).
+Mock mode answers with a canned line (agents/mock.py).
 """
 
 import asyncio
 import logging
 import re
+import time
 import uuid
 from collections.abc import Awaitable, Callable
+from contextlib import suppress
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from pathlib import Path
 
-from mii.agents import AgentJob
+from mii.agents import AgentJob, end_task, prepare
 from mii.engine import HANDLERS
-from mii.models import Building, Island, Resident, Task
-from mii.sandbox import SandboxError
+from mii.models import Building, Event, Island, Resident, Task
+from mii.sandbox import Sandbox, SandboxError
 
 log = logging.getLogger(__name__)
 
 HISTORY_TURNS = 10  # how much of the conversation the resident sees
 MAX_MESSAGE = 2000  # characters per message
+IDLE_LIMIT = 300.0  # seconds without a message before an open conversation ends by itself
 ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
+TURN_TYPE = "talk_turn"  # the stored lines (Event.type)
 
 SendFn = Callable[[dict], Awaitable[None]]
 
-# Residents mid-talk (resident id -> talk id): one conversation turn at a time each.
+# Residents mid-reply (resident id -> talk id): one conversation turn at a time each.
 _talking: dict[str, str] = {}
+
+
+# --- Events (to the client that talks only) ---------------------------------------
+
+
+def talk_ready(conversation: str, agent: str) -> dict:
+    return {"type": "talk_ready", "id": conversation, "agent": agent}
 
 
 def talk_thinking(talk_id: str, agent: str, text: str) -> dict:
     return {"type": "talk_thinking", "id": talk_id, "agent": agent, "text": text}
+
+
+def talk_partial(talk_id: str, agent: str, text: str) -> dict:
+    return {"type": "talk_partial", "id": talk_id, "agent": agent, "text": text}
 
 
 def talk_reply(talk_id: str, agent: str, text: str) -> dict:
@@ -45,8 +73,131 @@ def talk_error(talk_id: str, agent: str, message: str) -> dict:
     return {"type": "talk_error", "id": talk_id, "agent": agent, "message": message}
 
 
+def talk_closed(conversation: str, agent: str, message: str) -> dict:
+    return {"type": "talk_closed", "id": conversation, "agent": agent, "message": message}
+
+
 class TalkError(Exception):
     """A talk message that can't be answered; the text goes back as `talk_error`."""
+
+
+# --- Conversations ---------------------------------------------------------------
+
+
+@dataclass
+class Conversation:
+    id: str
+    island_id: str
+    resident_id: str
+    building_id: str
+    send: SendFn  # the client that opened it
+    runner: object  # the runner it started with (settings may swap runtime's later)
+    sandbox: Sandbox | None = None
+    workdir: Path | None = None
+    warming: asyncio.Task | None = None  # the agent starting up (real mode)
+    watchdog: asyncio.Task | None = None  # ends it after IDLE_LIMIT of silence
+    busy: bool = False  # a reply is being written
+    closed: bool = False
+    cleaned: bool = False
+    last_active: float = field(default_factory=time.monotonic)
+
+    @property
+    def task_id(self) -> str:
+        return f"talk_{self.id}"  # the runner keeps its agent under this "task"
+
+    @property
+    def worktree_id(self) -> str:
+        return f"talk-{self.id}"
+
+
+_conversations: dict[str, Conversation] = {}
+
+
+async def open_conversation(runtime, island_id: str, message: dict, send: SendFn) -> None:
+    """`talk_open`: hold the resident inside, start their agent, then answer `talk_ready` (or `talk_error`)."""
+    conv_id = str(message.get("id") or "")
+    agent = str(message.get("resident") or "")
+    try:
+        if not ID_PATTERN.match(conv_id):
+            raise TalkError("talk_open needs an `id` (letters, digits, _ or -)")
+        if conv_id in _conversations:
+            raise TalkError("that conversation is already open")
+        resident, island, building = await _inside(island_id, agent, message.get("building"))
+        if runtime.workflow.holds.held(resident.id):
+            raise TalkError(f"{resident.name} is already talking with someone.")
+        conv = Conversation(conv_id, island_id, resident.id, building.id, send, runtime.workflow.runner)
+        _conversations[conv_id] = conv
+        runtime.workflow.holds.hold(resident.id)
+        conv.watchdog = asyncio.create_task(_expire(runtime, conv))
+        if runtime.sandboxes is not None and resident.brain != "mock":
+            try:
+                conv.sandbox = runtime.sandboxes.for_island(island)
+                conv.workdir = await asyncio.to_thread(conv.sandbox.create_worktree, conv.worktree_id, island.branch)
+            except SandboxError as e:
+                await close_conversation(runtime, conv_id)
+                raise TalkError(f"Can't open the island's repository: {e}") from None
+            job = _job(resident, island, building, conv.task_id, "", "", send, [], conv.workdir, conv.sandbox)
+            conv.warming = asyncio.create_task(prepare(conv.runner, job))
+        await send(talk_ready(conv_id, resident.id))
+    except TalkError as e:
+        await send(talk_error(conv_id, agent, str(e)))
+    except Exception:
+        log.exception("talk_open %s failed", conv_id)
+        await close_conversation(runtime, conv_id)
+        await send(talk_error(conv_id, agent, "Something went wrong; try again."))
+
+
+async def close_conversation(runtime, conv_id: str, message: str | None = None) -> None:
+    """`talk_close` (or a disconnect, or silence): let the resident go, end the agent, drop the
+    worktree. `message`: also tell the client why (`talk_closed`)."""
+    conv = _conversations.pop(conv_id, None)
+    if conv is None:
+        return
+    conv.closed = True
+    runtime.workflow.holds.release(conv.resident_id)
+    if conv.watchdog is not None and conv.watchdog is not asyncio.current_task():
+        conv.watchdog.cancel()
+    if message:
+        with suppress(Exception):
+            await conv.send(talk_closed(conv.id, conv.resident_id, message))
+    if not conv.busy:  # a reply in progress cleans up when it finishes
+        await _cleanup(conv)
+
+
+async def close_all(runtime, send: SendFn) -> None:
+    """The client went away: end every conversation it had open."""
+    for conv in [c for c in _conversations.values() if c.send == send]:
+        await close_conversation(runtime, conv.id)
+
+
+async def _cleanup(conv: Conversation) -> None:
+    if conv.cleaned:
+        return
+    conv.cleaned = True
+    if conv.warming is not None and not conv.warming.done():
+        conv.warming.cancel()
+        with suppress(BaseException):
+            await conv.warming
+    with suppress(Exception):
+        await end_task(conv.runner, conv.task_id)
+    if conv.sandbox is not None:
+        try:
+            await asyncio.to_thread(conv.sandbox.remove_worktree, conv.worktree_id, True)
+        except SandboxError as e:
+            log.warning("could not remove talk worktree %s: %s", conv.worktree_id, e)
+
+
+async def _expire(runtime, conv: Conversation) -> None:
+    """End the conversation after IDLE_LIMIT seconds without a message (never mid-reply)."""
+    while not conv.closed:
+        left = conv.last_active + IDLE_LIMIT - time.monotonic()
+        if left <= 0 and not conv.busy:
+            await close_conversation(runtime, conv.id, "We talked a while ago, so I went back to work.")
+            return
+        await asyncio.sleep(max(left, 1.0))
+
+
+# --- One message -----------------------------------------------------------------
 
 
 def chat_instructions(building: Building, role: str, history: list[dict], message: str) -> str:
@@ -54,8 +205,9 @@ def chat_instructions(building: Building, role: str, history: list[dict], messag
     lines = [
         f"You're at the {building.name}. {role}",
         "The island owner (the human you work for) dropped by for a chat. This is not a task: "
-        "don't create or change any files. You may read the repository to answer.",
-        "Answer in character, in a few friendly sentences (plain text, no headings).",
+        "don't create or change any files.",
+        "Answer quickly, in character, in a few friendly sentences (plain text, no headings). "
+        "Answer from what you already know; only read files in the repository when the question needs it.",
     ]
     if history:
         lines += ["", "The conversation so far:"]
@@ -79,10 +231,8 @@ def clean_history(raw: object) -> list[dict]:
 
 
 async def talk(runtime, island_id: str, message: dict, send: SendFn) -> None:
-    """Answer one `talk` message with `talk_thinking`* then `talk_reply` or `talk_error`, via `send`.
-
-    Run it as its own asyncio task: a real brain can take a minute.
-    """
+    """Answer one `talk` message with `talk_thinking` / `talk_partial`*, then `talk_reply` or
+    `talk_error`, via `send`. Run it as its own asyncio task: a real brain can take a while."""
     talk_id = str(message.get("id") or "")
     agent = str(message.get("resident") or "")
     try:
@@ -107,18 +257,75 @@ async def talk(runtime, island_id: str, message: dict, send: SendFn) -> None:
 
 
 async def _answer(runtime, island_id: str, message: dict, talk_id: str, agent: str, text: str, send: SendFn) -> str:
+    resident, island, building = await _inside(island_id, agent, message.get("building"))
+    conv = _conversations.get(str(message.get("conversation") or ""))
+    if conv is not None and (conv.resident_id != resident.id or conv.island_id != island_id):
+        conv = None
+    history = clean_history(message.get("history"))
+    if conv is None:
+        return await _one_off(runtime, resident, island, building, talk_id, history, text, send)
+
+    conv.busy = True
+    conv.last_active = time.monotonic()
     try:
-        resident = await Resident.objects.aget(pk=agent, island_id=island_id)
-        island = await Island.objects.aget(pk=island_id)
-    except (Resident.DoesNotExist, Island.DoesNotExist):
-        raise TalkError(f"no resident {agent!r} on this island") from None
-    building = await _building(island_id, resident, message.get("building"))
+        if conv.warming is not None:
+            with suppress(Exception):
+                await conv.warming  # the agent is still starting: the first reply waits for it
+        job = _job(resident, island, building, conv.task_id, talk_id, text, send, history, conv.workdir, conv.sandbox)
+        reply = await _run(runtime, conv.runner, job, resident)
+    finally:
+        conv.busy = False
+        conv.last_active = time.monotonic()
+        if conv.closed:  # closed while the reply was being written
+            await _cleanup(conv)
+    await _store(island_id, building.id, resident.id, text, reply)
+    return reply
+
+
+async def _one_off(runtime, resident, island, building, talk_id, history, text, send) -> str:
+    """A `talk` outside a conversation: its own worktree and agent, both gone after the reply."""
+    runner = runtime.workflow.runner
+    sandbox, workdir = None, None
+    worktree_id = f"talk-{uuid.uuid4().hex[:8]}"
+    if runtime.sandboxes is not None and resident.brain != "mock":
+        try:
+            sandbox = runtime.sandboxes.for_island(island)
+            workdir = await asyncio.to_thread(sandbox.create_worktree, worktree_id, island.branch)
+        except SandboxError as e:
+            raise TalkError(f"Can't open the island's repository: {e}") from None
+    job = _job(resident, island, building, f"talk_{talk_id}", talk_id, text, send, history, workdir, sandbox)
+    try:
+        reply = await _run(runtime, runner, job, resident)
+    finally:
+        with suppress(Exception):
+            await end_task(runner, job.task.id)
+        if sandbox is not None:
+            await asyncio.to_thread(sandbox.remove_worktree, worktree_id, True)
+    await _store(island.id, building.id, resident.id, text, reply)
+    return reply
+
+
+async def _run(runtime, runner, job: AgentJob, resident: Resident) -> str:
+    try:
+        result = await asyncio.wait_for(runner.run(job), timeout=runtime.workflow.step_timeout)
+    except TimeoutError:
+        raise TalkError(f"{resident.name} took too long to answer.") from None
+    if result.outcome == "fail":  # runner refusals (no login, no key, stopped early) come back as a fail
+        raise TalkError(result.summary or f"{resident.name} couldn't answer.")
+    return result.summary or "..."
+
+
+def _job(resident, island, building, task_id, talk_id, text, send, history, workdir, sandbox) -> AgentJob:
     handler = HANDLERS.get(building.type)
     role = handler.role if handler else "You work here."
 
     async def think(kind: str, chunk: str, **_details) -> None:  # tool details (sort, call, diff) aren't shown
+        if not talk_id:
+            return  # warming up: nobody is listening yet
         if kind == "tool":  # one line per tool: "Reading src/auth.py"
-            await send(talk_thinking(talk_id, agent, chunk.strip()[:200]))
+            await send(talk_thinking(talk_id, resident.id, chunk.strip()[:200]))
+        elif kind == "reply":  # the answer as it's written, for the speech bubble
+            await send(talk_partial(talk_id, resident.id, chunk))
 
     async def ask(*args, **kwargs) -> None:
         return None  # a chat never raises bubbles: "nobody answered", the agent decides
@@ -126,12 +333,12 @@ async def _answer(runtime, island_id: str, message: dict, talk_id: str, agent: s
     async def report(_text: str) -> None:
         return None
 
-    job = AgentJob(
+    return AgentJob(
         resident=resident,
-        task=Task(id=f"talk_{talk_id}", island=island, title="A chat"),  # never saved
+        task=Task(id=task_id, island=island, title="A chat"),  # never saved
         island=island,
         building=building,
-        instructions=chat_instructions(building, role, clean_history(message.get("history")), text),
+        instructions=chat_instructions(building, role, history or [], text),
         ask=ask,
         report=report,
         read_only=True,
@@ -139,39 +346,50 @@ async def _answer(runtime, island_id: str, message: dict, talk_id: str, agent: s
         notes=resident.notes,
         think=think,
         chat=text,
+        workdir=workdir,
+        sandbox=sandbox,
     )
-    runner = runtime.workflow.runner
-    sandbox = None
-    worktree_id = f"talk-{uuid.uuid4().hex[:8]}"
-    if runtime.sandboxes is not None and resident.brain != "mock":
-        try:
-            sandbox = runtime.sandboxes.for_island(island)
-            job.workdir = await asyncio.to_thread(sandbox.create_worktree, worktree_id, island.branch)
-            job.sandbox = sandbox
-        except SandboxError as e:
-            raise TalkError(f"Can't open the island's repository: {e}") from None
+
+
+async def _inside(island_id: str, agent: str, building_id: object) -> tuple[Resident, Island, Building]:
+    """The resident, island and building, if the resident is working inside that building."""
     try:
-        result = await asyncio.wait_for(runner.run(job), timeout=runtime.workflow.step_timeout)
-    except TimeoutError:
-        raise TalkError(f"{resident.name} took too long to answer.") from None
-    finally:
-        if sandbox is not None:
-            await asyncio.to_thread(sandbox.remove_worktree, worktree_id, True)
-    if result.outcome == "fail":  # runner refusals (no login, no key, stopped early) come back as a fail
-        raise TalkError(result.summary or f"{resident.name} couldn't answer.")
-    return result.summary or "..."
+        resident = await Resident.objects.aget(pk=agent, island_id=island_id)
+        island = await Island.objects.aget(pk=island_id)
+    except (Resident.DoesNotExist, Island.DoesNotExist):
+        raise TalkError(f"no resident {agent!r} on this island") from None
+    building = await _building(island_id, resident, building_id)
+    if resident.state != "working" or resident.building_id != building.id:
+        # Residents are inside a building only while they work there; you talk to them there.
+        raise TalkError(f"{resident.name} isn't inside the {building.name} right now.")
+    return resident, island, building
 
 
 async def _building(island_id: str, resident: Resident, building_id: object) -> Building:
-    """The building named in the message, else the resident's home building, else where they stand."""
-    if building_id:
-        try:
-            return await Building.objects.aget(pk=str(building_id), island_id=island_id)
-        except Building.DoesNotExist:
-            raise TalkError(f"no building {building_id!r} on this island") from None
-    home = await Building.objects.filter(island_id=island_id, resident_id=resident.id).order_by("id").afirst()
-    if home is None and resident.building_id:
-        home = await Building.objects.filter(pk=resident.building_id).afirst()
-    if home is None:
-        raise TalkError(f"{resident.name} doesn't work at any building yet")
-    return home
+    """The building named in the message, else the one the resident is in."""
+    building_id = str(building_id or resident.building_id or "")
+    if not building_id:
+        raise TalkError(f"{resident.name} isn't inside any building right now.")
+    try:
+        return await Building.objects.aget(pk=building_id, island_id=island_id)
+    except Building.DoesNotExist:
+        raise TalkError(f"no building {building_id!r} on this island") from None
+
+
+# --- History -----------------------------------------------------------------------
+
+
+async def _store(island_id: str, building_id: str, resident_id: str, said: str, reply: str) -> None:
+    """Keep both lines of a turn for the building's talk history (never broadcast)."""
+    ts = datetime.now(UTC).isoformat()
+    for who, text in (("you", said), ("resident", reply)):
+        payload = {"type": TURN_TYPE, "building": building_id, "agent": resident_id, "from": who, "text": text}
+        payload["ts"] = ts
+        await Event.objects.acreate(island_id=island_id, type=TURN_TYPE, payload=payload)
+
+
+async def history(island_id: str, building_id: str, limit: int = 200) -> list[dict]:
+    """The newest `limit` stored lines said at a building, oldest first."""
+    rows = Event.objects.filter(island_id=island_id, type=TURN_TYPE, payload__building=building_id).order_by("-id")
+    newest = [e.payload async for e in rows[:limit]]
+    return newest[::-1]
