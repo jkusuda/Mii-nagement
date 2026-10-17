@@ -66,6 +66,8 @@ class Resident(models.Model):
     # keys = what the agent may do without asking (honoured by the ACP runner), gifts = extra MCP server ids (stored only).
     keys = models.JSONField(default=default_keys)
     gifts = models.JSONField(default=list)
+    # How their Mii looks (skin, hair, eyes, ...). Only the game reads it; see MiiParts in the game.
+    appearance = models.JSONField(default=dict, blank=True)
 
     # Live state, shown in the game
     state = models.CharField(max_length=20, default="idle")  # idle | walking | working | sleeping
@@ -75,8 +77,6 @@ class Resident(models.Model):
     notebook = models.FloatField(null=True, blank=True)
     # The last `activity` line the agent reported, so a client that connects later still sees it.
     activity = models.TextField(blank=True, default="")
-    # Cosmetics from the resident creator (face, hair, hat...). Stored and echoed, never read by the backend.
-    appearance = models.JSONField(default=dict)
     # The diary: `REMEMBER:` lines from the resident's own replies, oldest first (engine.NOTES_CHARS cap).
     notes = models.TextField(blank=True, default="")
 
@@ -200,12 +200,12 @@ def resident_to_dict(r: Resident) -> dict:
         "creativity": r.creativity,
         "keys": r.keys,
         "gifts": r.gifts,
+        "appearance": r.appearance,
         "state": r.state,
         "building": r.building_id,
         "mood": r.mood,
         "notebook": r.notebook,
         "activity": r.activity,
-        "appearance": r.appearance,
     }
 
 

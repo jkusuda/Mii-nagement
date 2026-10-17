@@ -30,6 +30,12 @@ const HEADER_COLORS := {
 	"ready": Color("E3F6EF"), "permission": Color("FFF6D6"), "confused": Color("F0ECFF"),
 	"struggling": Color("FFEDE0"), "tired": Color("FCEFD9"),
 }
+## Text longer than this is cut off with a "Show more" link (_collapsible).
+const LONG_CODE := 160
+const LONG_QUOTE := 260
+const COLLAPSED_HEIGHT := 62  # about three lines
+const EXPANDED_HEIGHT := 220  # then it scrolls
+
 ## Words that mark an option as a "no" (shown as the Not now button, not a card).
 const DECLINE_WORDS := ["reject", "deny", "don't", "cancel", "no"]
 
@@ -170,7 +176,7 @@ func _quote(text: String) -> Control:
 	style.set_border_width_all(2)
 	var label := _label("“%s”" % text, &"QuoteText")
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	return _panel(label, style)
+	return _collapsible(label, style, text.length() > LONG_QUOTE, "Show the whole message")
 
 
 ## The task package: PR icon, title, little pills, and "Open on GitHub" when there's a PR.
@@ -407,7 +413,44 @@ func _code(text: String) -> Control:
 	label.add_theme_color_override("font_color", Color("FFE15A"))
 	label.add_theme_font_override("font", SystemFont.new())  # TODO(stretch): a monospace font in assets/font
 	label.add_theme_font_size_override("font_size", 13)
-	return _panel(label, _box(INK, 8, 10))
+	var is_long := text.length() > LONG_CODE or text.count("\n") >= 3
+	return _collapsible(label, _box(INK, 8, 10), is_long, "Show the full command")
+
+
+## A box for text that may be long (a command, a question). Short text shows as
+## is. Long text is cut off at a few lines, with a link under it that opens the
+## box up into a scrollable one, so the popup never grows past the window and
+## its buttons stay where they are.
+##
+## Godot concept: a ScrollContainer shows part of its child and clips the rest.
+## With SCROLL_MODE_SHOW_NEVER it still cuts off but shows no scroll bar.
+func _collapsible(content: Control, style: StyleBox, is_long: bool, more_text: String) -> Control:
+	if not is_long:
+		return _panel(content, style)
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
+	scroll.custom_minimum_size.y = COLLAPSED_HEIGHT
+	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(content)
+
+	var more := LinkButton.new()
+	more.text = more_text + "  ▾"
+	more.add_theme_color_override("font_color", Color("4D5BD6"))
+	more.add_theme_font_size_override("font_size", 13)
+	more.pressed.connect(func():
+		var opening := scroll.vertical_scroll_mode == ScrollContainer.SCROLL_MODE_SHOW_NEVER
+		scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO if opening else ScrollContainer.SCROLL_MODE_SHOW_NEVER
+		scroll.custom_minimum_size.y = EXPANDED_HEIGHT if opening else COLLAPSED_HEIGHT
+		scroll.scroll_vertical = 0
+		more.text = ("Show less  ▴" if opening else more_text + "  ▾")
+		_fit())
+
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 4)
+	box.add_child(_panel(scroll, style))
+	box.add_child(more)
+	return box
 
 
 func _tag(text: String, icon: Texture2D, color: Color) -> Control:

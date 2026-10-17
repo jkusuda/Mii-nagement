@@ -63,6 +63,7 @@ var toast := Toast.new()  # server errors no screen handled itself
 var screen := "island"
 ## True while the creator waits for the server to accept a resident.
 var _saving_resident := false
+var _saving_look := false  # the resident being saved carries an appearance
 ## The resident the creator asked to move away, until the server answers.
 var _removing_resident := ""
 ## The resident creator is making a draft for the island creator (not sent yet),
@@ -214,6 +215,7 @@ func _save_resident(resident: Dictionary) -> void:
 		return
 	if Net.send_resident(resident):
 		_saving_resident = true
+		_saving_look = resident.has("appearance")
 		return
 	if not resident.has("id"):
 		resident["id"] = "local_%d" % Time.get_ticks_msec()
@@ -227,6 +229,11 @@ func _on_resident_updated(resident: Dictionary) -> void:
 		residents_screen.add_or_update(resident)  # offline: Net.island doesn't have it
 	if _saving_resident:
 		_saving_resident = false
+		# A backend older than the Look page drops `appearance` without a word.
+		# Say so, instead of quietly showing the old look.
+		if _saving_look and not resident.has("appearance"):
+			creator.show_error("the backend didn't keep the look. Restart it so it picks up the new appearance field (it updates its database at startup).")
+			return
 		show_screen("residents")
 
 
@@ -274,6 +281,8 @@ func _show_island() -> void:
 	%IslandName.text = str(data.get("name", ""))
 	_show_time()
 	%Repo.text = str(data["repo"]) if data.get("repo") else "no repo linked"
+	# Long names get "…" (the top bar has a fixed width); the tooltip has them in full.
+	%IslandSelector.tooltip_text = "%s\n%s\nSwitch island" % [%IslandName.text, %Repo.text]
 	residents_screen.show_snapshot(data)
 	_show_resident_summary(data.get("residents", []))
 

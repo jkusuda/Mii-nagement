@@ -19,18 +19,17 @@ theme_override_constants/separation = 10
 
 [node name="Avatar" type="PanelContainer" parent="Rows/Header"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(38, 38)
+clip_children = 2
+custom_minimum_size = Vector2(46, 46)
 layout_mode = 2
 size_flags_vertical = 4
 theme_type_variation = &"AvatarCircle"
 
-[node name="Initial" type="Label" parent="Rows/Header/Avatar"]
+[node name="Portrait" type="TextureRect" parent="Rows/Header/Avatar"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_type_variation = &"CardName"
-text = "M"
-horizontal_alignment = 1
-vertical_alignment = 1
+expand_mode = 1
+stretch_mode = 5
 
 [node name="NameBox" type="VBoxContainer" parent="Rows/Header"]
 layout_mode = 2

@@ -79,6 +79,8 @@ class OpenRouterRunner:
                 if isinstance(reply, StepResult):
                     return reply
                 messages.append(reply)
+                if job.think and reply.get("content"):
+                    await job.think("reply", str(reply["content"]))
                 calls = reply.get("tool_calls") or []
                 if not calls:
                     return parse_verdict(reply.get("content") or "")
@@ -89,6 +91,8 @@ class OpenRouterRunner:
                     except json.JSONDecodeError:
                         args = {}
                     await job.report(_describe(name, args))
+                    if job.think:
+                        await job.think("tool", _describe(name, args))
                     output = await self._tool(name, args, job)
                     messages.append({"role": "tool", "tool_call_id": call["id"], "content": output[:MAX_OUTPUT]})
             return StepResult("fail", f"{job.resident.name} used all {MAX_TURNS} turns without finishing.")

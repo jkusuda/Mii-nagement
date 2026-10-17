@@ -74,6 +74,9 @@ func _make_label(at: Vector3, size: int, pixel: float) -> Label3D:
 ## their waiting bubble, or {} when they don't need you.
 func show_resident(resident: Dictionary, open_bubble: Dictionary) -> void:
 	mii.color = Color(str(resident.get("color", "#FFFFFF")))
+	var look := MiiParts.for_resident(resident)
+	if look != mii.appearance:
+		mii.appearance = look
 	name_tag.text = str(resident.get("name", "?"))
 	_mood_tag.text = ResidentData.vibe_word(resident)
 	_mood_tag.modulate = ResidentData.vibe_color(resident)

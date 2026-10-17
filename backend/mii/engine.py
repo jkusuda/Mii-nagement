@@ -580,6 +580,7 @@ class WorkflowEngine:
             history=list(history), workdir=workdir, sandbox=sandbox, read_only=handler.read_only,
             rules=rules or {}, notebook=partial(self._set_notebook, resident),
             messages=messages, notes=resident.notes, neighbours=neighbours,
+            think=partial(self._think, task, resident),
         )
         timed_out = False
         try:
@@ -676,6 +677,9 @@ class WorkflowEngine:
         friendship.updated_at = utcnow()
         await friendship.asave(update_fields=["handoffs", "updated_at"])
         await self.bus.emit(island_id, events.friendship(friendship))
+
+    async def _think(self, task: Task, resident: Resident, kind: str, text: str) -> None:
+        await self._emit(task, events.thinking(resident.id, task.id, kind, text))
 
     async def _report(self, task: Task, resident: Resident, text: str) -> None:
         await Resident.objects.filter(pk=resident.id).aupdate(activity=text[:500])  # so late joiners see it too

@@ -191,6 +191,23 @@ async def test_acp_runner_reports_a_missing_login_as_a_tired_bubble(sandbox):
     assert ask.asked[0][0] == "tired"
 
 
+async def test_login_needed_at_the_first_prompt_is_a_tired_bubble_too(sandbox):
+    workdir = sandbox.create_worktree("t_test")
+    ask = RecordingAsk()
+    runner = AcpRunner("claude-code", command=[sys.executable, str(FAKE_AGENT), "--login-at-prompt"])
+    result = await asyncio.wait_for(runner.run(make_job("claude-code", workdir=workdir, ask=ask, sandbox=sandbox)), 20)
+    assert result.outcome == "fail" and "login" in result.summary
+    assert ask.asked[0][0] == "tired" and "claude" in ask.asked[0][1]
+
+
+async def test_blank_api_keys_are_not_passed_to_the_agent(sandbox, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")  # like `ANTHROPIC_API_KEY=` in .env
+    workdir = sandbox.create_worktree("t_test")
+    runner = AcpRunner("claude-code", command=[sys.executable, str(FAKE_AGENT)])
+    result = await asyncio.wait_for(runner.run(make_job("claude-code", workdir=workdir, sandbox=sandbox)), 20)
+    assert result.outcome == "pass", result.summary
+
+
 async def test_acp_resident_asks_a_question_and_carries_on_with_the_answer(sandbox):
     workdir = sandbox.create_worktree("t_test")
     runner = AcpRunner("claude-code", command=[sys.executable, str(FAKE_AGENT)])
@@ -208,3 +225,46 @@ def test_find_question():
     assert find_question("Hmm.\nQUESTION: Which branch?") == "Which branch?"
     assert find_question("QUESTION: one?\nVERDICT: PASS") is None  # it decided after all
     assert find_question("All done.\nVERDICT: FAIL") is None
+
+
+def test_pick_model_takes_a_short_name():
+    from mii.agents.acp import pick_model
+
+    offered = ["default", "claude-sonnet-4-5", "claude-haiku-4-5", "claude-opus-4-1"]
+    assert pick_model(offered, "claude-haiku-4-5") == "claude-haiku-4-5"
+    assert pick_model(offered, "Haiku") == "claude-haiku-4-5"
+    assert pick_model(offered, "claude") is None  # ambiguous: keep the default
+    assert pick_model(offered, "gpt-5") is None
+
+
+async def test_acp_streams_thoughts_replies_and_tools_as_thinking(sandbox):
+    workdir = sandbox.create_worktree("t_test")
+    runner = AcpRunner("claude-code", command=[sys.executable, str(FAKE_AGENT)])
+    job = make_job("claude-code", workdir=workdir, sandbox=sandbox)
+    streamed: list[tuple[str, str]] = []
+
+    async def think(kind: str, text: str) -> None:
+        streamed.append((kind, text))
+
+    job.think = think
+    await asyncio.wait_for(runner.run(job), 20)
+    assert ("thought", "Hmm, hello.py first.") in streamed
+    assert ("tool", "Reading hello.py") in streamed
+    assert "VERDICT: PASS" in "".join(text for kind, text in streamed if kind == "reply")
+
+
+async def test_thinking_stream_batches_chunks():
+    from mii.agents import ThinkingStream
+
+    sent: list[tuple[str, str]] = []
+
+    async def think(kind, text):
+        sent.append((kind, text))
+
+    stream = ThinkingStream(think)
+    for word in ["The ", "fix ", "is ", "small."]:
+        await stream.add("thought", word)
+    assert sent == []  # still batching
+    await stream.add("reply", "Done.")  # a new kind sends what was waiting
+    await stream.flush()
+    assert sent == [("thought", "The fix is small."), ("reply", "Done.")]

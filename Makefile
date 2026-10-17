@@ -61,13 +61,19 @@ up: setup
 # Real agents: no simulator (its fake tasks would become real agent work) and no
 # --reload (editing the code would restart the server and stop a running task).
 real: setup
+	@if lsof -nP -iTCP:$(PORT) -sTCP:LISTEN >/dev/null 2>&1; then \
+		echo "Port $(PORT) is already in use (an older backend?). Stop it first:"; \
+		lsof -nP -iTCP:$(PORT) -sTCP:LISTEN | tail -n +2 | awk '{print "  kill " $$2 "    # " $$1}' | sort -u; \
+		echo "or use another port: make real PORT=8001"; \
+		exit 1; \
+	fi
 	@set -e; \
 	cd $(BACKEND) && $(UV) run python -m uvicorn mii.asgi:application --port $(PORT) & SERVER=$$!; \
 	trap 'kill $$SERVER 2>/dev/null; wait $$SERVER 2>/dev/null; echo; echo "stopped"' EXIT INT TERM; \
 	for i in $$(seq 1 60); do curl -s localhost:$(PORT)/health >/dev/null && break; sleep 0.5; done; \
 	curl -s localhost:$(PORT)/health >/dev/null || { echo "backend did not start (is another one on port $(PORT)?)"; exit 1; }; \
 	echo "backend ready at http://localhost:$(PORT)"; \
-	if [ -n "$(GODOT)" ]; then "$(GODOT)" --path game; else echo "Godot not found: backend running, Ctrl+C to stop"; wait $$SERVER; fi
+	if [ -n "$(GODOT)" ]; then MII_SERVER=localhost:$(PORT) "$(GODOT)" --path game; else echo "Godot not found: backend running, Ctrl+C to stop"; wait $$SERVER; fi
 
 test: setup
 	cd $(BACKEND) && $(UV) run pytest -q

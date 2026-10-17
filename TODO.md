@@ -101,7 +101,9 @@ Backend design: [docs/architecture.md](docs/architecture.md).
 - [x] Cancel a task (`cancel_task` / `POST .../cancel`), create one over the socket
       (`create_task`), residents and islands can be deleted. Game: "Take back" on package
       cards, "Move away" in the creator, ✕ on island switcher rows (all ask first)
-- [ ] Mii faces (with mood expressions), hats, hair, portraits ([docs/mii-customization.md](docs/mii-customization.md))
+- [x] Mii faces and hair from the Mii Maker parts, chosen on the creator's Look page
+- [x] Mii headshots on the resident cards (`Portraits` autoload)
+- [ ] Mood expressions, headshots in bubbles, body shape ([docs/mii-customization.md](docs/mii-customization.md))
 - [ ] Dreams, parties, apartment interiors
 - [ ] Blueprints (save and share island layouts as workflow templates)
 - [ ] Mock-mode web demo (Godot web export + hosted mock backend)

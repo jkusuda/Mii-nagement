@@ -47,6 +47,12 @@ var _form := PackageForm.new()
 var _footer_title := Label.new()
 var _footer_text := Label.new()
 var _back := Button.new()
+## The "What Jo is thinking" dropdowns, per task id: open or not, the text view
+## (rebuilt with the list), and where it was scrolled to (kept across rebuilds).
+var _thinking_open := {}
+var _thinking_views := {}
+var _thinking_scroll := {}  # task id -> [scroll value, was at the bottom]
+var _thinking_loaded := {}  # task ids whose stored history we've asked for
 var _action := Button.new()
 
 
@@ -82,6 +88,9 @@ func _init() -> void:
 	_form.sent.connect(func(): _show_list())
 	_form.busy_changed.connect(func(busy: bool): _action.disabled = busy)
 	Net.island_changed.connect(func(): if visible and not _composing: _refresh())
+	Net.thinking_received.connect(func(task_id: String):
+		if _thinking_views.has(task_id):
+			_show_thinking(task_id))
 
 
 ## Open the card for a building type ("mailbox", "lab", ...). `compose` opens
@@ -168,6 +177,11 @@ func _on_action() -> void:
 
 ## Redraw the list (and the parts of the footer that depend on the island).
 func _refresh() -> void:
+	# Remember where each open thinking view was scrolled, then rebuild.
+	for task_id in _thinking_views:
+		var bar: VScrollBar = _thinking_views[task_id].get_v_scroll_bar()
+		_thinking_scroll[task_id] = [bar.value, bar.value + bar.page >= bar.max_value - 2]
+	_thinking_views.clear()
 	for child in _list.get_children():
 		_list.remove_child(child)
 		child.queue_free()
@@ -253,9 +267,11 @@ func _task_card(task: Dictionary, with_activity: bool) -> Control:
 	texts.add_theme_constant_override("separation", 2)
 	texts.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	texts.add_child(_text(str(task.get("title", "A package")), 17, true))
-	texts.add_child(_text(" · ".join(parts), 13, false))
+	texts.add_child(_detail(" · ".join(parts), 13))
 	if with_activity and resident.get("activity"):
 		texts.add_child(_activity(str(resident["activity"])))
+	if task.get("status") == "in_progress":
+		texts.add_child(_thinking_box(task, str(resident.get("name", "the resident"))))
 	var right := VBoxContainer.new()
 	right.add_theme_constant_override("separation", 6)
 	right.add_child(_pill(status, color))
@@ -284,6 +300,106 @@ func _take_back_button(task: Dictionary) -> Button:
 	return button
 
 
+## "▸ What Jo is thinking": opens a scrolling view of the package's train of
+## thought (Net.thinking, from `thinking` events): every resident who carried it,
+## their thoughts in grey italics, tool calls as "›" lines, replies as plain text.
+func _thinking_box(task: Dictionary, who: String) -> Control:
+	var task_id := str(task["id"])
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 6)
+	var toggle := LinkButton.new()
+	toggle.add_theme_color_override("font_color", Color("4D5BD6"))
+	toggle.add_theme_font_size_override("font_size", 13)
+	toggle.text = ("▾ " if _thinking_open.get(task_id) else "▸ ") + "What %s is thinking" % who
+	box.add_child(toggle)
+
+	var view := RichTextLabel.new()
+	view.bbcode_enabled = true
+	view.selection_enabled = true
+	view.scroll_active = true
+	view.custom_minimum_size = Vector2(0, 190)
+	view.add_theme_font_size_override("normal_font_size", 13)
+	view.add_theme_font_size_override("italics_font_size", 13)
+	view.add_theme_font_size_override("bold_font_size", 13)
+	view.add_theme_color_override("default_color", INK)
+	var frame := PanelContainer.new()
+	frame.add_theme_stylebox_override("panel", _box(CREAM, 12, LINE, 2, 0, false, Vector4(12, 10, 12, 10)))
+	frame.add_child(view)
+	frame.visible = _thinking_open.get(task_id, false)
+	box.add_child(frame)
+	_thinking_views[task_id] = view
+	_show_thinking(task_id)
+
+	toggle.pressed.connect(func():
+		var opening: bool = not _thinking_open.get(task_id, false)
+		_thinking_open[task_id] = opening
+		frame.visible = opening
+		toggle.text = ("▾ " if opening else "▸ ") + "What %s is thinking" % who
+		if opening:
+			_thinking_scroll.erase(task_id)  # start at the newest
+			_load_thinking_history(task_id)
+			_show_thinking(task_id))
+	return box
+
+
+## Fill (or refresh) one thinking view from Net.thinking, keeping its scroll:
+## at the bottom it follows new text; scrolled up, it stays put.
+func _show_thinking(task_id: String) -> void:
+	var view: RichTextLabel = _thinking_views.get(task_id)
+	if view == null or not is_instance_valid(view):
+		return
+	var bar := view.get_v_scroll_bar()
+	var was: Array = _thinking_scroll.get(task_id, [bar.value, bar.value + bar.page >= bar.max_value - 2])
+	var entries: Array = Net.thinking.get(task_id, [])
+	view.clear()  # clear() + append_text() (not `text =`): redraws reliably while visible
+	if entries.is_empty():
+		view.append_text("[color=#68738B]Nothing yet. Thoughts show up here as the residents work.[/color]")
+		return
+	var parts := PackedStringArray()
+	var speaker := ""
+	for e in entries:
+		if e["agent"] != speaker:
+			speaker = e["agent"]
+			parts.append("\n[b]%s[/b]\n" % _escape(str(Net.find_resident(speaker).get("name", speaker))))
+		var text := _escape(str(e["text"]))
+		match e["kind"]:
+			"thought": parts.append("[i][color=#68738B]%s[/color][/i]\n" % text.strip_edges())
+			"tool": parts.append("[color=#68738B]› %s[/color]\n" % text.strip_edges())
+			_: parts.append(text)
+	view.append_text("".join(parts).strip_edges())
+	_thinking_scroll.erase(task_id)
+	# The new text is laid out next frame; then scroll.
+	(func():
+		if not is_instance_valid(view):
+			return
+		var b := view.get_v_scroll_bar()
+		b.value = b.max_value if was[1] else was[0]).call_deferred()
+
+
+## Opened mid-task: fetch what was thought before the game started listening.
+func _load_thinking_history(task_id: String) -> void:
+	if _thinking_loaded.has(task_id) or Net.island.is_empty():
+		return
+	_thinking_loaded[task_id] = true
+	var path := "/islands/%s/tasks/%s" % [str(Net.island["id"]).uri_encode(), task_id.uri_encode()]
+	Net.request_json(path, func(ok: bool, data: Dictionary):
+		if not ok:
+			return
+		var live: Array = Net.thinking.get(task_id, []).duplicate()
+		Net.thinking[task_id] = []
+		for e in data.get("events", []):
+			if e.get("type") == "thinking":
+				Net.add_thinking(e)
+		if Net.thinking[task_id].is_empty():  # nothing stored (yet): keep what we had
+			Net.thinking[task_id] = live
+		_show_thinking(task_id))
+
+
+## Text from an agent can contain "[": keep it from being read as BBCode.
+static func _escape(text: String) -> String:
+	return text.replace("[", "[lb]")
+
+
 ## One resident: initial, name, job · mood, what they're doing, and Answer if they need you.
 func _resident_card(r: Dictionary, here_id: String) -> Control:
 	var color := Color(str(r.get("color", "#8A8FA8")))
@@ -302,7 +418,7 @@ func _resident_card(r: Dictionary, here_id: String) -> Control:
 	var about := "%s · feeling %s" % [str(r.get("job", "")).capitalize(), ResidentData.vibe_word(r)]
 	if r.get("building") != here_id:
 		about += " · works here, now at the %s" % Net.find_building(str(r.get("building", ""))).get("name", "island")
-	texts.add_child(_text(about, 13, false))
+	texts.add_child(_detail(about, 13))
 	if r.get("activity"):
 		texts.add_child(_activity(str(r["activity"])))
 
@@ -511,9 +627,8 @@ func _next_stops(from_id: String) -> String:
 
 
 func _activity(text: String) -> Label:
-	var label := _text("“%s”" % text, 12, false)
+	var label := _detail("“%s”" % text, 12)
 	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	label.add_theme_color_override("font_color", Color("6B7390"))
 	label.tooltip_text = text
 	label.mouse_filter = Control.MOUSE_FILTER_PASS
 	return label
@@ -539,6 +654,13 @@ func _text(text: String, size: int, strong: bool) -> Label:
 	label.theme_type_variation = &"LabelStrong" if strong else &"LabelMuted"
 	label.add_theme_font_size_override("font_size", size)
 	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	return label
+
+
+## A detail line inside a card: the title's ink (not the muted grey), so it reads on white.
+func _detail(text: String, size: int) -> Label:
+	var label := _text(text, size, false)
+	label.add_theme_color_override("font_color", INK)
 	return label
 
 
