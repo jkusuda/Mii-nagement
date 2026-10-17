@@ -9,10 +9,46 @@ import pytest
 from conftest import RecordingAsk, RecordingReport, make_job
 
 from mii.agents import BrainRunner, StepResult, make_runner, parse_verdict, permission_for
-from mii.agents.acp import BRAINS, GIFTS, AcpRunner, available_brains, available_gifts, gift_servers
+from mii.agents.acp import (
+    BRAINS,
+    GIFTS,
+    AcpRunner,
+    available_brains,
+    available_gifts,
+    describe_command,
+    gift_servers,
+)
 from mii.agents.mock import MockRunner
 
 FAKE_AGENT = Path(__file__).parent / "fake_acp_agent.py"
+
+
+@pytest.fixture(autouse=True)
+async def close_kept_agents(monkeypatch):
+    """Runners keep each resident's agent until end_task(); end them after every test."""
+    runners: list[AcpRunner] = []
+    start = AcpRunner.__init__
+
+    def init(self, *args, **kwargs):
+        start(self, *args, **kwargs)
+        runners.append(self)
+
+    monkeypatch.setattr(AcpRunner, "__init__", init)
+    yield
+    for runner in runners:
+        for task_id in {key[0] for key in runner.live}:
+            await runner.end_task(task_id)
+
+
+def _gone(pid: int) -> bool:
+    if os.name == "nt":  # os.kill(pid, 0) can't probe a process on Windows: ask tasklist
+        listing = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"], capture_output=True, text=True).stdout
+        return f" {pid} " not in listing
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    return False
 
 
 class AlwaysPass:
@@ -85,11 +121,26 @@ async def test_acp_runner_against_fake_agent(sandbox):
     assert "Reading hello.py" in report.lines
     assert "gifts: none" in result.summary
     assert ask.asked == [
-        ("permission", "Run `npm test`", ["Allow once", "Reject"]),
-        ("permission", "Edit hello.py", ["Allow once", "Reject"]),
+        ("permission", "Run the tests", ["Just this once", "Not now"]),  # our labels, not the agent's
+        ("permission", "Edit hello.py", ["Just this once", "Not now"]),
     ]
     assert "edit permission: allow" in result.summary
     assert ask.details[0] == "npm test"  # the exact command, for the permission popup
+
+
+@pytest.mark.parametrize(
+    "command, expected",
+    [
+        ("python3 - <<'E'\np='backend/mii/github.py'\nE", "run a script, touching backend/mii/github.py"),
+        ('bash -lc "npm install zod"', "install packages"),
+        ("cd backend && uv run pytest tests/test_engine.py -q", "run the tests"),
+        ("rm -rf build dist/app.js", "delete files, touching dist/app.js"),
+        ("git push origin main", "change the git history"),
+        ("weirdtool --x", "run `weirdtool`"),
+    ],
+)
+def test_describe_command_says_what_a_command_does(command, expected):
+    assert describe_command(command) == expected
 
 
 async def test_acp_runner_hands_over_gifts_and_fills_the_notebook(sandbox, monkeypatch):
@@ -152,6 +203,7 @@ async def test_house_keys_answer_permissions_without_a_bubble(sandbox):
         result = await asyncio.wait_for(runner.run(job), 20)
         assert result.outcome == "pass" and f"permission outcome: {expected}" in result.summary
         assert ask.asked == []  # decided by the house key, no bubble
+        await runner.end_task("t_test")  # the next key gets a fresh agent
 
 
 async def test_acp_runner_reads_a_fail_verdict_and_blocks_writes_when_read_only(sandbox):
@@ -175,13 +227,66 @@ async def test_a_timed_out_step_ends_the_agent_process(sandbox):
     with pytest.raises(TimeoutError):
         await asyncio.wait_for(runner.run(make_job("claude-code", workdir=workdir, sandbox=sandbox)), 2)
     assert time.monotonic() - started < 12  # the step timeout, not the stuck agent, decides
+    assert _gone(int((workdir / "agent.pid").read_text()))  # the agent process is gone
+
+
+async def test_a_resident_keeps_one_agent_across_visits_until_the_task_ends(sandbox):
+    workdir = sandbox.create_worktree("t_test")
+    runner = AcpRunner("claude-code", command=[sys.executable, str(FAKE_AGENT)])
+    first = await asyncio.wait_for(runner.run(make_job("claude-code", workdir=workdir, sandbox=sandbox)), 20)
+    assert first.outcome == "pass" and "Looking at the code" in first.summary
+    again = make_job("claude-code", workdir=workdir, sandbox=sandbox, instructions="Fix what the Lab reported")
+    again.attempt = 2
+    report = again.report
+
+    second = await asyncio.wait_for(runner.run(again), 20)
+
+    assert second.outcome == "pass" and "(prompt 2)" in second.summary  # same session, second prompt
+    assert len((workdir / "agent.starts").read_text().split()) == 1  # no second process
+    assert "Picking up where I left off" in report.lines
     pid = int((workdir / "agent.pid").read_text())
-    if os.name == "nt":  # os.kill(pid, 0) can't probe a process on Windows: ask tasklist
-        listing = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"], capture_output=True, text=True).stdout
-        assert f" {pid} " not in listing  # the agent process is gone
-    else:
-        with pytest.raises(ProcessLookupError):
-            os.kill(pid, 0)  # the agent process is gone
+    assert not _gone(pid) and list(runner.live) == [("t_test", "r")]
+    await runner.end_task("t_test")
+    for _ in range(50):  # the process tree ends within a moment
+        if _gone(pid):
+            break
+        await asyncio.sleep(0.1)
+    assert _gone(pid) and runner.live == {}
+
+
+async def test_a_timeout_on_a_kept_agent_ends_it(sandbox):
+    workdir = sandbox.create_worktree("t_test")
+    runner = AcpRunner("claude-code", command=[sys.executable, str(FAKE_AGENT)])
+    await asyncio.wait_for(runner.run(make_job("claude-code", workdir=workdir, sandbox=sandbox)), 20)
+    pid = int((workdir / "agent.pid").read_text())
+    stuck = make_job("claude-code", workdir=workdir, sandbox=sandbox, instructions="please hang")
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(runner.run(stuck), 2)
+    assert _gone(pid) and runner.live == {}
+
+
+@pytest.mark.skipif(os.name == "nt", reason="kills the agent with a POSIX signal")
+async def test_a_kept_agent_that_died_is_replaced(sandbox):
+    import signal
+
+    workdir = sandbox.create_worktree("t_test")
+    runner = AcpRunner("claude-code", command=[sys.executable, str(FAKE_AGENT)])
+    await asyncio.wait_for(runner.run(make_job("claude-code", workdir=workdir, sandbox=sandbox)), 20)
+    os.kill(int((workdir / "agent.pid").read_text()), signal.SIGKILL)
+    await asyncio.sleep(0.2)
+    result = await asyncio.wait_for(runner.run(make_job("claude-code", workdir=workdir, sandbox=sandbox)), 20)
+    assert result.outcome == "pass" and "Looking at the code" in result.summary  # a fresh session
+    assert len((workdir / "agent.starts").read_text().split()) == 2
+
+
+async def test_another_task_or_model_gets_its_own_agent(sandbox):
+    workdir = sandbox.create_worktree("t_test")
+    runner = AcpRunner("claude-code", command=[sys.executable, str(FAKE_AGENT)])
+    await asyncio.wait_for(runner.run(make_job("claude-code", workdir=workdir, sandbox=sandbox)), 20)
+    other = make_job("claude-code", workdir=workdir, sandbox=sandbox, model="claude-haiku-4-5")
+    result = await asyncio.wait_for(runner.run(other), 20)
+    assert "Looking at the code" in result.summary  # the model changed: a fresh session
+    assert len((workdir / "agent.starts").read_text().split()) == 2
 
 
 async def test_acp_runner_reports_a_missing_login_as_a_tired_bubble(sandbox):
@@ -246,14 +351,22 @@ async def test_acp_streams_thoughts_replies_and_tools_as_thinking(sandbox):
     runner = AcpRunner("claude-code", command=[sys.executable, str(FAKE_AGENT)])
     job = make_job("claude-code", workdir=workdir, sandbox=sandbox)
     streamed: list[tuple[str, str]] = []
+    tools: list[dict] = []
 
-    async def think(kind: str, text: str) -> None:
+    async def think(kind: str, text: str, **tool_info: str) -> None:
         streamed.append((kind, text))
+        if kind == "tool":
+            tools.append({"text": text, **tool_info})
 
     job.think = think
     await asyncio.wait_for(runner.run(job), 20)
     assert ("thought", "Hmm, hello.py first.") in streamed
     assert ("tool", "Reading hello.py") in streamed
+    # The read is sent, then updated (same call) once its diff arrives; the status-only update sends nothing.
+    reads = [t for t in tools if t.get("call") == "tc1"]
+    assert len(reads) == 2
+    assert reads[0] == {"text": "Reading hello.py", "tool": "read", "call": "tc1"}
+    assert "-a" in reads[1]["detail"] and "+b" in reads[1]["detail"]
     assert "VERDICT: PASS" in "".join(text for kind, text in streamed if kind == "reply")
 
 
@@ -272,3 +385,21 @@ async def test_thinking_stream_batches_chunks():
     await stream.add("reply", "Done.")  # a new kind sends what was waiting
     await stream.flush()
     assert sent == [("thought", "The fix is small."), ("reply", "Done.")]
+
+
+async def test_list_brain_models_asks_the_agent_in_a_scratch_worktree():
+    from mii.agents.acp import list_brain_models
+
+    listed = await asyncio.wait_for(list_brain_models("claude-code", command=[sys.executable, str(FAKE_AGENT)]), 30)
+    assert listed["current"] == "default"
+    assert [m["id"] for m in listed["models"]] == ["default", "claude-haiku-4-5"]
+    assert listed["models"][1] == {"id": "claude-haiku-4-5", "name": "Haiku", "description": "Fast"}
+
+
+async def test_list_brain_models_reports_a_missing_login_or_cli():
+    from mii.agents.acp import BrainError, list_brain_models
+
+    with pytest.raises(BrainError, match="isn't logged in"):
+        await list_brain_models("codex", command=[sys.executable, str(FAKE_AGENT), "--needs-login"])
+    with pytest.raises(BrainError, match="couldn't start"):
+        await list_brain_models("gemini", command=["/no/such/agent-cli"])

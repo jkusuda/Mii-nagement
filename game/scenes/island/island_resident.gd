@@ -17,6 +17,7 @@ const RUN_SPEED := 7.0
 const LONGEST_WALK := 3.5  # seconds: on long routes, run instead so we keep up with the server
 const FONT := preload("res://assets/font/DreamLife-V1.0.0_by_MaxiGamer.ttf")
 const INK := Color("292E50")  # the theme's dark text colour
+const SPEECH_MAX := 80  # characters over a head (see short_line)
 
 var resident_id := ""
 var state := "idle"
@@ -152,7 +153,7 @@ func settle(spot: Vector3, new_state: String, look_at_point: Vector3) -> void:
 func say(text: String, seconds := 4.0) -> void:
 	if _speech_tween:
 		_speech_tween.kill()
-	_speech.text = text
+	_speech.text = short_line(text)
 	_speech.modulate.a = 1.0
 	_speech.outline_modulate.a = 1.0
 	_speech.visible = true
@@ -161,6 +162,20 @@ func say(text: String, seconds := 4.0) -> void:
 	_speech_tween.tween_property(_speech, "modulate:a", 0.0, 0.6)
 	_speech_tween.parallel().tween_property(_speech, "outline_modulate:a", 0.0, 0.6)
 	_speech_tween.tween_callback(func(): _speech.visible = false)
+
+
+## What fits over a head: the first sentence, cut at a word with "…" past
+## SPEECH_MAX characters. The full message is still in the chat and the news.
+static func short_line(text: String) -> String:
+	var line := text.strip_edges().replace("\n", " ")
+	for end in [". ", "! ", "? "]:
+		var at := line.find(end)
+		if at > 0:
+			line = line.left(at + 1)
+	if line.length() <= SPEECH_MAX:
+		return line
+	var cut := line.left(SPEECH_MAX).rfind(" ")
+	return line.left(cut if cut > SPEECH_MAX / 2.0 else SPEECH_MAX).strip_edges() + "…"
 
 
 ## A little reaction: "hop", "proud" (three hops), "frustrated" (a slump), "tired"

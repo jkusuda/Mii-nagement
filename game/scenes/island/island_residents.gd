@@ -72,7 +72,8 @@ func _on_chat(from_agent: String, to_agent: String, _task: String, text: String)
 	var speaker: IslandResident = _walkers.get(from_agent)
 	var listener: IslandResident = _walkers.get(to_agent)
 	if speaker:
-		speaker.say(text, clamp(2.5 + text.length() * 0.05, 3.0, 8.0))
+		var line := IslandResident.short_line(text)
+		speaker.say(line, clamp(2.5 + line.length() * 0.05, 3.0, 6.0))
 		if listener:
 			speaker.look_toward(listener.global_position)
 	if listener and speaker:

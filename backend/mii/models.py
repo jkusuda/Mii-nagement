@@ -118,6 +118,15 @@ class Task(models.Model):
     finished_at = models.DateTimeField(null=True, blank=True)  # when it became done / failed
 
 
+class Attachment(models.Model):
+    """A file sent with a task (POST /islands/{id}/tasks `attachments`). Copied into the
+    task's worktree when it starts (sandbox.Sandbox.add_attachments); sizes are capped in tasks.py."""
+
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="attachments")
+    name = models.CharField(max_length=120)  # a plain file name, made safe by tasks.safe_file_name
+    data = models.BinaryField()
+
+
 class Step(models.Model):
     """One building visit by one resident. The source data for insights.py.
 

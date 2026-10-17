@@ -12,6 +12,8 @@ BASE_DIR = BACKEND_DIR
 SECRET_KEY = "mii-nagement-local-dev-key"
 DEBUG = True
 ALLOWED_HOSTS = ["*"]
+# Room for a task's attachments (8 MB of files, base64 in JSON: tasks.MAX_ATTACHMENTS_TOTAL).
+DATA_UPLOAD_MAX_MEMORY_SIZE = 12 * 1024 * 1024
 
 INSTALLED_APPS = [
     "channels",

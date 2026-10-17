@@ -15,6 +15,7 @@ import httpx
 from mii.agents import AgentJob, StepResult, build_prompt, parse_verdict, permission_for
 from mii.personality import build_system_prompt
 from mii.sandbox import SandboxError, inside, is_inside, require_worktree, run_shell
+from mii.vocab import THINKING_DETAIL_MAX
 
 API_URL = "https://openrouter.ai/api/v1"
 MAX_TURNS = 40  # round trips to the model per step
@@ -123,7 +124,13 @@ class OpenRouterRunner:
                         args = {}
                     await job.report(_describe(name, args))
                     if job.think:
-                        await job.think("tool", _describe(name, args))
+                        await job.think(
+                            "tool",
+                            _describe(name, args),
+                            tool=TOOL_SORTS.get(name, "other"),
+                            call=str(call.get("id", "")),
+                            detail=_detail(name, args),
+                        )
                     output = await self._tool(name, args, job)
                     messages.append({"role": "tool", "tool_call_id": call["id"], "content": output[:MAX_OUTPUT]})
             return StepResult("fail", f"{job.resident.name} used all {MAX_TURNS} turns without finishing.")
@@ -191,6 +198,17 @@ class OpenRouterRunner:
             return f"error: unknown tool {name}"
         except (SandboxError, OSError) as e:
             return f"error: {e}"
+
+
+# Our tools -> the tool sorts of `thinking` events (vocab.TOOL_SORTS).
+TOOL_SORTS = {"list_files": "search", "read_file": "read", "write_file": "edit", "run_command": "execute"}
+
+
+def _detail(name: str, args: dict) -> str:
+    """The technical details the game shows under "Show details": the command, else the input."""
+    if name == "run_command":
+        return "$ " + str(args.get("command", ""))
+    return json.dumps(args, indent=1)[:THINKING_DETAIL_MAX]
 
 
 def _describe(name: str, args: dict) -> str:

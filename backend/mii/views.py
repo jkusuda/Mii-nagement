@@ -9,12 +9,13 @@ import asyncio
 import json
 
 from asgiref.sync import sync_to_async
+from django.core.exceptions import RequestDataTooBig
 from django.http import HttpRequest, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
 from mii import events, github, islands, layout, prefs, residents, tasks, vocab, weather
-from mii.agents.acp import GIFTS, available_brains, available_gifts
+from mii.agents.acp import GIFTS, BrainError, available_brains, available_gifts, list_brain_models
 from mii.agents.openrouter import list_models
 from mii.insights import RANGES, island_insights
 from mii.island_map import SHAPES
@@ -44,6 +45,8 @@ def _json_body(request: HttpRequest) -> dict | JsonResponse:
         body = json.loads(request.body or b"{}")
     except json.JSONDecodeError:
         return _error("body is not valid JSON", 400)
+    except RequestDataTooBig:
+        return _error("the request is too big (attachments: at most 8 MB together)", 413)
     if not isinstance(body, dict):
         return _error("body must be a JSON object", 400)
     return body
@@ -133,6 +136,25 @@ async def models_list(request: HttpRequest) -> JsonResponse:
     except Exception as e:
         return _error(f"could not fetch the OpenRouter catalogue: {e}", 502)
     return JsonResponse({"models": models})
+
+
+@require_GET
+async def brain_models(request: HttpRequest, brain: str) -> JsonResponse:
+    """The models a brain offers here, for the model pickers. ACP brains are asked directly
+    (a short-lived session, no prompt; cached 10 minutes, `?refresh=1` asks again);
+    `openrouter` is its catalogue. {"models": [{id, name, ...}], "current": the default}."""
+    if brain == "openrouter":
+        response = await models_list(request)
+        if response.status_code == 200:
+            current = await sync_to_async(prefs.get)("openrouter_model")
+            return JsonResponse({"models": json.loads(response.content)["models"], "current": current})
+        return response
+    if brain not in vocab.ACP_BRAINS:
+        return _error(f"{brain} has no models to pick from" if brain in vocab.BRAIN_NAMES else "unknown brain", 404)
+    try:
+        return JsonResponse(await list_brain_models(brain, refresh=request.GET.get("refresh") == "1"))
+    except BrainError as e:
+        return _error(str(e), 503)
 
 
 @csrf_exempt

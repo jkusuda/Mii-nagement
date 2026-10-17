@@ -11,6 +11,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from mii import vocab
 from mii.models import (
     Event,
     Friendship,
@@ -73,8 +74,13 @@ def activity(agent: str, text: str) -> dict:
     return {"type": "activity", "agent": agent, "text": text}
 
 
-def thinking(agent: str, task: str, kind: str, text: str) -> dict:
-    return {"type": "thinking", "agent": agent, "task": task, "kind": kind, "text": text}
+def thinking(agent: str, task: str, kind: str, text: str, tool: str = "", call: str = "", detail: str = "") -> dict:
+    """`tool`, `call` and `detail` only go with kind "tool", and only when set (protocol.md)."""
+    event = {"type": "thinking", "agent": agent, "task": task, "kind": kind, "text": text}
+    for key, value in (("tool", tool), ("call", call), ("detail", detail[: vocab.THINKING_DETAIL_MAX])):
+        if value:
+            event[key] = value
+    return event
 
 
 def task(t: Task) -> dict:

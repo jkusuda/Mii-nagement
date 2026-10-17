@@ -19,7 +19,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from mii.vocab import DEFAULT_GIT_AUTHOR
+from mii.vocab import ATTACHMENTS_DIR, DEFAULT_GIT_AUTHOR
 
 OUTPUT_LIMIT = 4000  # characters of command output we keep
 
@@ -80,6 +80,18 @@ class Sandbox:
         path = self.worktree_path(task_id)
         if path.exists():
             self._git(self.repo_path, "worktree", "remove", "--force", str(path))
+
+    def add_attachments(self, task_id: str, files: list[tuple[str, bytes]]) -> None:
+        """Write a task's attached files (plain names, see tasks.safe_file_name) into
+        <worktree>/.mii-attachments/, refusing any path that would land outside it."""
+        folder = self.worktree_path(task_id) / ATTACHMENTS_DIR
+        folder.mkdir(exist_ok=True)
+        (folder / ".gitignore").write_text("*\n")
+        for name, data in files:
+            target = inside(folder, name)
+            if target.parent.resolve() != folder.resolve():
+                raise SandboxError(f"attachment name {name!r} is not a plain file name")
+            target.write_bytes(data)
 
     def check_workdir(self, workdir: Path) -> None:
         """Refuse to start an agent anywhere except inside a worktree we made."""

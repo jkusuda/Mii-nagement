@@ -5,8 +5,8 @@ import subprocess
 import pytest
 from conftest import FakeClient, RecordingAsk, ScriptedRunner, db_test, make_job, make_workflow
 
-from mii import events
-from mii.agents import StepResult
+from mii import events, vocab
+from mii.agents import StepResult, build_prompt
 from mii.agents.mock import MockRunner
 from mii.engine import IslandGraph, split_pr_text
 from mii.models import Event, Island, Resident, Step, Task
@@ -47,6 +47,15 @@ async def test_package_that_never_passes_gives_up(island):
     assert task.status == "failed" and task.finished_at is not None
 
 
+async def test_a_building_visited_too_often_gives_up_with_a_clear_message(island):
+    workflow, client = make_workflow(ScriptedRunner(lab=["fail"] * 100))
+    task = await workflow.run_task((await workflow.submit("sunny", "Impossible bug")).id)
+    assert task.status == "failed"
+    types = [s.building_type async for s in Step.objects.filter(task_id=task.id)]
+    assert types.count("workshop") == 3 and types.count("lab") == 3  # MAX_VISITS, well before MAX_STEPS
+    assert "Gave up at the Workshop: scripted" in [e["text"] for e in client.of_type("activity")]
+
+
 async def test_every_step_is_recorded_for_insights(island):
     workflow, _ = make_workflow(ScriptedRunner(courthouse=["fail", "pass"]))
     task = await workflow.run_task((await workflow.submit("sunny", "Fix the thing")).id)
@@ -63,6 +72,26 @@ async def test_slow_step_times_out_and_fails(island):
     assert first.timed_out and first.outcome == "fail"
 
 
+async def test_prompts_get_a_recap_and_only_the_notes_that_matter(island):
+    runner = LineRunner(
+        mailbox=["1. change hello.py\nVERDICT: PASS"],
+        lab=["first failure\nVERDICT: FAIL", "second failure\nVERDICT: FAIL"],
+    )
+    workflow, _ = make_workflow(runner)
+    task = await workflow.run_task((await workflow.submit("sunny", "Fix the thing")).id)
+    last = runner.jobs[-1].history  # the Post Office, after 8 steps
+    assert last[0].startswith("So far: Jun at the Mailbox: PASS -> Carlos at the Workshop: PASS -> ")
+    assert last[1:] == [
+        "Jun at the Mailbox: PASS. 1. change hello.py",  # the plan
+        "Carlos at the Lab: FAIL. second failure",  # the latest failure report, in full
+        "Sydney at the Courthouse: PASS. fine",  # the step just before
+    ]
+    assert not any("first failure" in note for note in last)
+    assert len(runner.jobs[1].history) == 1  # the first Workshop visit: just the plan, no recap
+    summaries = [s.summary async for s in Step.objects.filter(task_id=task.id).order_by("id")]
+    assert "first failure" in summaries  # the stored history keeps every step
+
+
 async def test_every_event_is_stored_in_sqlite(island):
     workflow, client = make_workflow(ScriptedRunner())
     await workflow.run_task((await workflow.submit("sunny", "Fix the thing")).id)
@@ -76,6 +105,35 @@ async def test_mock_runner_end_to_end(island):
     assert task.status in ("done", "failed")
     assert len(client.of_type("activity")) > 0
     assert len(client.of_type("bubble")) == len(client.of_type("bubble_resolved")) > 0
+
+
+class EndingRunner(ScriptedRunner):
+    """Records end_task() calls, like a runner that keeps agents alive between visits."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.ended: list[str] = []
+
+    async def end_task(self, task_id: str) -> None:
+        self.ended.append(task_id)
+
+
+async def test_the_runner_closes_its_agents_when_a_task_ends_or_is_cancelled(island):
+    runner = EndingRunner(lab=["fail"] * 100)
+    workflow, _ = make_workflow(runner)
+    failed = await workflow.run_task((await workflow.submit("sunny", "Never passes")).id)
+    assert failed.status == "failed" and runner.ended == [failed.id]
+
+    runner = EndingRunner(delay=5)
+    workflow, _ = make_workflow(runner)
+    task = await workflow.submit("sunny", "Slow one")
+    run = asyncio.create_task(workflow.run_task(task.id))
+    while not runner.visited:
+        await asyncio.sleep(0.01)
+    workflow._cancelling.add(task.id)
+    run.cancel()
+    await asyncio.wait([run])
+    assert (await Task.objects.aget(pk=task.id)).status == "cancelled" and runner.ended == [task.id]
 
 
 async def test_recover_requeues_waiting_tasks_and_fails_half_done_ones(island):
@@ -121,6 +179,25 @@ async def test_lab_runs_the_test_command_and_workshop_commits(island, sandbox, s
     assert steps[0].outcome == "pass"
 
 
+async def test_attachments_land_in_the_worktree_and_are_never_committed(island, sandbox, sandboxes):
+    workflow, _ = make_workflow(WritingRunner(), sandboxes=sandboxes, keep_worktrees=True)
+    files = [("spec.md", b"# Spec\n"), ("logo.png", b"\x89PNG")]
+    task = await workflow.run_task((await workflow.submit("sunny", "Add feature", attachments=files)).id)
+
+    folder = sandbox.worktree_path(task.id) / ".mii-attachments"
+    assert (folder / "spec.md").read_bytes() == b"# Spec\n" and (folder / "logo.png").read_bytes() == b"\x89PNG"
+    committed = sandbox._git(sandbox.worktree_path(task.id), "show", "--name-only", "--format=", "HEAD")
+    assert "feature.py" in committed and ".mii-attachments" not in committed
+
+
+async def test_the_prompt_lists_the_attachments(island):
+    runner = ScriptedRunner()
+    workflow, _ = make_workflow(runner)
+    await workflow.run_task((await workflow.submit("sunny", "Read this", attachments=[("a.txt", b"hi")])).id)
+    assert runner.jobs[0].attachments == ["a.txt"]
+    assert "- .mii-attachments/a.txt" in build_prompt(runner.jobs[0], "")
+
+
 async def test_lab_fails_on_a_failing_test_command_and_worktree_is_removed(island, sandbox, sandboxes):
     workflow, _ = make_workflow(WritingRunner(), sandboxes=sandboxes, test_command="exit 3")
     task = await workflow.run_task((await workflow.submit("sunny", "Broken")).id)
@@ -128,6 +205,71 @@ async def test_lab_fails_on_a_failing_test_command_and_worktree_is_removed(islan
     lab = await Step.objects.filter(task_id=task.id, building_type="lab").afirst()
     assert lab.outcome == "fail"
     assert not sandbox.worktree_path(task.id).exists()
+
+
+class FixOnSecondTryRunner:
+    """A coder whose first change breaks the tests and whose second fixes them."""
+
+    def __init__(self):
+        self.jobs: list = []
+        self.workshop_instructions: list[str] = []
+
+    async def run(self, job) -> StepResult:
+        self.jobs.append(job)
+        if job.building.type == "workshop":
+            self.workshop_instructions.append(job.instructions)
+            name = "fixed.py" if len(self.workshop_instructions) > 1 else "feature.py"
+            (job.workdir / name).write_text("x = 1\n")
+        return StepResult("pass", "ok")
+
+
+async def test_workshop_runs_the_tests_before_the_handoff_and_retries_in_the_same_step(island, sandbox, sandboxes):
+    runner = FixOnSecondTryRunner()
+    workflow, client = make_workflow(runner, sandboxes=sandboxes, test_command="test -f fixed.py")
+    task = await workflow.run_task((await workflow.submit("sunny", "Add feature")).id)
+
+    assert task.status == "done"
+    # The Lab runs TEST_COMMAND itself (no agent), so it is not in the runner's jobs.
+    assert [j.building.type for j in runner.jobs] == ["mailbox", "workshop", "workshop", "courthouse", "post_office"]
+    assert await Step.objects.filter(task_id=task.id, building_type="workshop").acount() == 1  # one visit, two turns
+    assert "the tests fail" in runner.workshop_instructions[1] and "Implement:" in runner.workshop_instructions[1]
+    assert "the tests fail" not in runner.workshop_instructions[0]
+    texts = [e["text"] for e in client.of_type("activity")]
+    assert "Checking before the handoff: test -f fixed.py" in texts
+    workshop = await Step.objects.aget(task_id=task.id, building_type="workshop")
+    assert workshop.summary.endswith("The tests pass.")
+
+
+async def test_workshop_pre_check_retries_are_capped(island, sandbox, sandboxes):
+    runner = ScriptedRunner()
+    workflow, _ = make_workflow(runner, sandboxes=sandboxes, test_command="exit 1")
+    task = await workflow.run_task((await workflow.submit("sunny", "Never green")).id)
+    # The first Workshop visit: one turn + PRETEST_RETRIES (2) more, then the Lab gets it anyway.
+    assert runner.visited[:4] == ["mailbox", "workshop", "workshop", "workshop"]
+    steps = [s.building_type async for s in Step.objects.filter(task_id=task.id).order_by("id")]
+    assert steps[:3] == ["mailbox", "workshop", "lab"]
+
+
+async def test_red_tests_at_the_lab_go_straight_back_to_the_coder(island, sandbox, sandboxes):
+    from mii.models import Road
+
+    # This island's Lab sends failures to the Mailbox; red tests skip it and go to the Workshop.
+    await Road.objects.filter(island_id="sunny", from_building_id="lab", condition="fail").aupdate(
+        to_building_id="mailbox"
+    )
+    runner = ScriptedRunner()
+    # Green at the Workshop's pre-check, red at the Lab's first run, green after that.
+    command = (
+        'n=$(cat .runs 2>/dev/null || echo 0); echo $((n + 1)) > .runs; [ "$n" -ne 1 ] || { echo "E  boom"; exit 1; }'
+    )
+    workflow, _ = make_workflow(runner, sandboxes=sandboxes, test_command=command)
+    task = await workflow.run_task((await workflow.submit("sunny", "Add feature")).id)
+
+    assert task.status == "done"
+    types = [s.building_type async for s in Step.objects.filter(task_id=task.id).order_by("id")]
+    assert types == ["mailbox", "workshop", "lab", "workshop", "lab", "courthouse", "post_office"]
+    second = [j for j in runner.jobs if j.building.type == "workshop"][1]
+    assert second.instructions.startswith("The Lab's tests fail. Fix this first:\nE  boom")
 
 
 async def test_post_office_skips_the_pr_without_a_repo(island, sandbox, sandboxes):
@@ -282,10 +424,15 @@ async def test_bubble_answer_reaches_the_waiting_resident(island):
 
 async def test_mock_residents_stream_thinking_for_their_task(island):
     workflow, client = make_workflow(MockRunner(work_seconds=(0, 0), bubble_chance=0.0, rng=random.Random(3)))
-    task = await workflow.run_task((await workflow.submit("sunny", "Think aloud")).id)
+    submitted = await workflow.submit("sunny", "Think aloud", attachments=[("spec.md", b"# Spec")])
+    task = await workflow.run_task(submitted.id)
     thoughts = client.of_type("thinking")
+    assert any(e["text"] == "Read .mii-attachments/spec.md" for e in thoughts)  # the mock planner reads it
     assert thoughts and all(e["task"] == task.id for e in thoughts)
     assert {e["kind"] for e in thoughts} == {"thought", "tool", "reply"}
+    tools = [e for e in thoughts if e["kind"] == "tool"]
+    assert all(e["tool"] in vocab.TOOL_SORTS for e in tools) and any(e.get("detail") for e in tools)
+    assert all("tool" not in e for e in thoughts if e["kind"] != "tool")
 
 
 async def test_bubble_carries_its_task_and_detail(island):
@@ -412,6 +559,49 @@ async def test_a_neighbour_takes_the_workshop_when_the_lab_keeps_failing(island)
     assert any("Jun helped Carlos at the Workshop" in note for note in runner.jobs[-1].history)
 
 
+class NoHelpJudge:
+    """The rules, except that it never thinks a neighbour should come over by itself."""
+
+    name = "rules"
+
+    def __getattr__(self, name):
+        from mii.judge import RuleJudge
+
+        return getattr(RuleJudge(), name)
+
+    async def needs_help(self, building, attempt, last_note):
+        return False
+
+
+@pytest.mark.parametrize(
+    "lab, helped",
+    [
+        (["test_x failed in 0.31s\nVERDICT: FAIL", "test_x failed in 0.29s\nVERDICT: FAIL"], True),  # same failure
+        (["test_x failed\nVERDICT: FAIL", "test_y failed\nVERDICT: FAIL"], False),  # progress: a new failure
+    ],
+)
+async def test_the_same_failure_twice_calls_for_help_whatever_the_judge_says(island, lab, helped):
+    runner = LineRunner(lab=lab)
+    workflow, client = make_workflow(runner, judge=NoHelpJudge())
+    task = await workflow.run_task((await workflow.submit("sunny", "Fix the thing")).id)
+    assert task.status == "done"
+    third_workshop = [j for j in runner.jobs if j.building.type == "workshop"][2]
+    assert (third_workshop.resident.id != "carlos") is helped
+    assert bool([e for e in client.of_type("chat") if "same problem" in e["text"]]) is helped
+
+
+async def test_a_stuck_test_failure_gets_help_on_the_second_visit(island, sandboxes):
+    # The coder's pre-check and the Lab see the same red test: a neighbour takes visit 2, not visit 3.
+    runner = ScriptedRunner()
+    workflow, client = make_workflow(
+        runner, sandboxes=sandboxes, test_command='echo "AssertionError in test_login"; exit 1'
+    )
+    task = await workflow.run_task((await workflow.submit("sunny", "Fix login")).id)
+    steps = [s async for s in Step.objects.filter(task_id=task.id, building_type="workshop").order_by("id")]
+    assert [s.resident_id for s in steps[:2]] == ["carlos", "jun"] and steps[1].helped == "carlos"
+    assert "came back to the Workshop again with the same problem" in client.of_type("chat")[0]["text"]
+
+
 async def test_help_say_and_remember_lines(island):
     runner = LineRunner(
         workshop=["Stuck.\nHELP: the auth tests hang\nSAY TO Sydney: heads up\nREMEMBER: tests are slow\nVERDICT: FAIL"]
@@ -445,7 +635,8 @@ async def test_diary_reaches_the_next_task_and_stays_short(island):
     assert "old note 79" in runner.jobs[1].notes  # the diary was in the prompt
 
 
-async def test_help_is_capped_per_task(island):
+async def test_help_is_capped_per_task(island, monkeypatch):
+    monkeypatch.setattr("mii.engine.MAX_VISITS", 10)  # room for more help visits than MAX_HELPS
     workflow, _ = make_workflow(ScriptedRunner(lab=["fail"] * 100))
     task = await workflow.run_task((await workflow.submit("sunny", "Impossible")).id)
     assert task.status == "failed"
@@ -487,12 +678,12 @@ class FlakyJudge:
 async def test_lab_reruns_a_flaky_test_once(island, sandboxes):
     from mii.insights import island_insights
 
-    # Fails the first time it runs in a worktree, passes the second time.
+    # Passes at the Workshop's pre-check, fails at the Lab's first run, passes on its re-run.
     workflow, client = make_workflow(
         ScriptedRunner(),
         sandboxes=sandboxes,
         judge=FlakyJudge(),
-        test_command="test -f .ran || { touch .ran; exit 1; }",
+        test_command='n=$(cat .runs 2>/dev/null || echo 0); echo $((n + 1)) > .runs; test "$n" -ne 1',
     )
     task = await workflow.run_task((await workflow.submit("sunny", "Flaky")).id)
     assert task.status == "done"

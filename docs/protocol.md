@@ -170,15 +170,18 @@ A resident needs you. Shown as an emoji above their head; click it to answer.
 `options` (optional): when present, show these as buttons and send the chosen
 one back as the `response`. Agents' permission requests use it:
 ```json
-{"type": "bubble", "agent": "carlos", "kind": "permission", "id": "b_9c1d", "text": "May I run `npm install`?", "options": ["Allow once", "Always allow", "Reject"]}
+{"type": "bubble", "agent": "carlos", "kind": "permission", "id": "b_9c1d", "text": "Install packages", "options": ["Just this once", "Always", "Not now"]}
 ```
+A permission bubble's `text` says in plain words what the key is for (the agent's
+own reason, or a guess from the command), and its `options` are always named by
+what they do: `Just this once`, `Always`, `Not now`, `Never` (whichever the agent offers).
 
 `task` (optional): the id of the task package the resident is working on, so
 the client can show its title and pull request. `detail` (optional): extra
 context shown as-is, such as the exact command or file a permission bubble asks
 about:
 ```json
-{"type": "bubble", "agent": "pip", "kind": "permission", "id": "b_7e10", "text": "May I borrow the toolbox key?", "options": ["Allow once", "Always allow", "Reject"], "task": "t_12", "detail": "npm install zod@3.23.8"}
+{"type": "bubble", "agent": "pip", "kind": "permission", "id": "b_7e10", "text": "Add zod to check the settings form", "options": ["Just this once", "Always", "Not now"], "task": "t_12", "detail": "npm install zod@3.23.8"}
 ```
 Snapshot `bubbles[]` have the same fields (`task` and `detail` are `null` when unset).
 
@@ -244,6 +247,19 @@ that `task`; it is a piece of a longer stream, not a full message.
 it is writing back), or `tool` (a tool it is calling, one line). Stored like
 every event, so `GET /islands/{id}/tasks/{task_id}` returns them for a package
 already under way.
+
+A `tool` event may carry three more fields, for the dropdown's summary and its
+"technical details":
+```json
+{"type": "thinking", "agent": "carlos", "task": "t_12", "kind": "tool", "text": "Edit src/limits.py",
+ "tool": "edit", "call": "toolu_01", "detail": "--- src/limits.py\n+++ src/limits.py\n@@ ...\n+RATE = 10"}
+```
+- `tool`: what sort of tool: `read`, `edit`, `delete`, `move`, `search`,
+  `execute`, `fetch`, `think` or `other` (missing = `other`).
+- `call`: the tool call's id. A later `tool` event with the same `call` updates
+  that line (new `text` and `detail`) instead of adding one.
+- `detail`: the raw part, at most ~2000 characters: a diff, the command, or the
+  tool's input as JSON. Missing when there's nothing to add.
 
 ### `task`
 A task package's status changed. Lets the client show who is carrying a package.
@@ -401,7 +417,8 @@ someone else first).
 ### `create_task`
 Drop a package in the mailbox (same as `POST /islands/{id}/tasks`). Either a
 `title` (with an optional `description`) or an `issue` number of the island's
-GitHub repo. The server replies with a `task` event (status `queued`) to every
+GitHub repo, and optional `attachments` (see `POST /islands/{id}/tasks` in
+http-api.md). The server replies with a `task` event (status `queued`) to every
 client, or `error`.
 ```json
 {"type": "create_task", "task": {"title": "Fix login typo", "description": "The button says 'Log im'."}}
@@ -515,8 +532,9 @@ For each building the package visits:
 5. `mood`
 5b. A free neighbour may take a visit instead of the building's owner, at most twice per
    task: when the package keeps coming back to a work building after a failed check (the
-   owner retries once first; the judge decides from the third visit), or right away when a
-   failing reply had a `HELP:` line. Then: `chat` (owner → helper), `handoff` to the helper,
+   owner retries once first; the judge decides from the third visit, or from the second when
+   it came back with the same failure as last time), or right away when a failing reply had
+   a `HELP:` line. Then: `chat` (owner → helper), `handoff` to the helper,
    their `move` / `agent_state`, `activity` and `bubble`s, `chat` back (helper → owner),
    `mood`. The helper carries the package on, so the next handoff comes from them.
 6. The step finishes with an outcome (`pass` or `fail`), and the engine picks the
@@ -525,6 +543,10 @@ For each building the package visits:
    - otherwise an `always` road;
    - no matching road means the task is finished (`task: done`, or `failed` if the
      last outcome was `fail`).
+   - red tests at the Lab (`TEST_COMMAND` failed) go straight back to the Workshop
+     the package last came through, whatever the roads say.
+   - a package that would visit one building a fourth time, or a 21st step, stops:
+     one `activity` ("Gave up at the Workshop: <last failure>") and `task: failed`.
 
 When a resident has nothing to do they go `idle`, and eventually `sleeping`.
 

@@ -71,9 +71,11 @@ var _part_tiles := {}  # kind -> Array of tile buttons, index = style (hair: ind
 var _part_grids := {}  # kind -> GridContainer
 var _part_tabs := {}  # kind -> tab button
 
-## OpenRouter model ids for the model picker (GET /models), loaded the first
-## time the openrouter brain is picked.
-var _model_ids: Array = []
+## Model ids for the model picker, per brain (GET /brains/{brain}/models), loaded
+## the first time that brain is picked. ACP brains are asked by starting their CLI,
+## which takes a few seconds.
+var _models := {}  # brain -> Array of [id, name]
+var _models_asking := {}  # brains whose list is on its way
 var _model_picker := OptionButton.new()
 
 @onready var preview: MiiPreview = %Preview
@@ -416,51 +418,72 @@ func _build_brains() -> void:
 			_show_model_picker()
 	)
 
-	# The OpenRouter catalogue, next to the model field (only for that brain).
+	# The brain's models, next to the model field (every brain but mock).
 	_model_picker.theme_type_variation = &"OutlineButton"
 	_model_picker.add_theme_icon_override("arrow", ARROW)
 	_model_picker.custom_minimum_size = Vector2(0, 34)
 	_model_picker.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_model_picker.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	_model_picker.focus_mode = Control.FOCUS_NONE
-	_model_picker.tooltip_text = "Pick any model from OpenRouter's catalogue"
+	_model_picker.tooltip_text = "Pick one of the models this brain offers (or type an id)"
 	_model_picker.visible = false
 	_model_picker.item_selected.connect(
 		func(index: int):
-			if index > 0:
-				%ModelEdit.text = _model_ids[index - 1]
-				_data["model"] = _model_ids[index - 1]
+			var models: Array = _models.get(_data["brain"], [])
+			if index > 0 and index <= models.size():
+				%ModelEdit.text = models[index - 1][0]
+				_data["model"] = models[index - 1][0]
 	)
 	%ModelEdit.add_sibling(_model_picker)
 
 
-## Show the OpenRouter model picker when that brain is picked (loading the
-## catalogue from GET /models the first time).
+## Show the model picker for the picked brain (none for mock), loading that brain's
+## models from GET /brains/{brain}/models the first time.
 func _show_model_picker() -> void:
-	_model_picker.visible = _data["brain"] == "openrouter"
+	var brain := str(_data["brain"])
+	_model_picker.visible = brain != "mock"
 	if not _model_picker.visible:
 		return
-	if not _model_ids.is_empty():
-		_model_picker.select(_model_ids.find(%ModelEdit.text) + 1)
-		return
-	if _model_picker.item_count > 0 and _model_picker.get_item_text(0) == "Loading models…":
+	if _models.has(brain):
+		_fill_model_picker(brain)
 		return
 	_model_picker.clear()
-	_model_picker.add_item("Loading models…")
+	_model_picker.add_item("Asking %s for its models…" % ResidentData.BRAINS.get(brain, brain))
+	if _models_asking.has(brain):
+		return
+	_models_asking[brain] = true
 	Net.request_json(
-		"/models",
+		"/brains/%s/models" % brain.uri_encode(),
 		func(ok: bool, data: Dictionary):
-			_model_picker.clear()
-			if not ok:  # e.g. no OpenRouter key yet: tried again next time
-				_model_picker.add_item("No catalogue: %s" % data["error"])
-				_model_picker.tooltip_text = str(data["error"])
+			_models_asking.erase(brain)
+			if not ok:  # not installed or logged in, no OpenRouter key...: tried again next time
+				if _data["brain"] == brain:
+					_model_picker.clear()
+					_model_picker.add_item("No model list: %s" % data["error"])
+					_model_picker.tooltip_text = str(data["error"])
 				return
-			_model_picker.add_item("Choose a model…")
+			var models := []
 			for model in data.get("models", []):
-				_model_ids.append(str(model["id"]))
-				_model_picker.add_item(str(model.get("name", model["id"])))
-			_model_picker.select(_model_ids.find(%ModelEdit.text) + 1)
+				models.append([str(model["id"]), str(model.get("name", model["id"]))])
+			_models[brain] = models
+			if _data["brain"] == brain:  # still the picked brain (the answer can take a while)
+				_fill_model_picker(brain)
 	)
+
+
+func _fill_model_picker(brain: String) -> void:
+	var models: Array = _models[brain]
+	_model_picker.clear()
+	_model_picker.tooltip_text = "Pick one of the models this brain offers (or type an id)"
+	_model_picker.add_item("Choose a model…" if models else "This brain offers no model choice")
+	var picked := 0
+	for i in models.size():
+		var id: String = models[i][0]
+		var name: String = models[i][1]
+		_model_picker.add_item(name if name == id else "%s  (%s)" % [name, id])
+		if id == %ModelEdit.text:
+			picked = i + 1
+	_model_picker.select(picked)
 
 
 func _build_sliders() -> void:

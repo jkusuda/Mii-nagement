@@ -306,15 +306,37 @@ func _handle_message(text: String) -> void:
 
 
 ## Add a `thinking` event (live, or from a task's stored events) to Net.thinking.
-## Text of the same resident and kind joins the previous entry.
+## Text of the same resident and kind joins the previous entry; a tool event with
+## the `call` id of an earlier one updates that entry (its title and details filled in).
 func add_thinking(event: Dictionary) -> void:
 	var task_id := str(event.get("task", ""))
 	var entries: Array = thinking.get_or_add(task_id, [])
+	var call := str(event.get("call", ""))
+	if call:
+		for i in range(entries.size() - 1, maxi(entries.size() - 50, 0) - 1, -1):
+			if entries[i].get("call") == call:
+				entries[i]["text"] = str(event["text"])
+				entries[i]["tool"] = str(event.get("tool", entries[i]["tool"]))
+				entries[i]["detail"] = str(event.get("detail", entries[i]["detail"]))
+				thinking_received.emit(task_id)
+				return
 	var last: Dictionary = entries.back() if not entries.is_empty() else {}
 	if last and last["agent"] == event["agent"] and last["kind"] == event["kind"] and event["kind"] != "tool":
 		last["text"] += str(event["text"])
 	else:
-		entries.append({"agent": str(event["agent"]), "kind": str(event["kind"]), "text": str(event["text"])})
+		(
+			entries
+			. append(
+				{
+					"agent": str(event["agent"]),
+					"kind": str(event["kind"]),
+					"text": str(event["text"]),
+					"tool": str(event.get("tool", "other")),
+					"call": call,
+					"detail": str(event.get("detail", "")),
+				}
+			)
+		)
 	if entries.size() > THINKING_KEEP:
 		entries.pop_front()
 	thinking_received.emit(task_id)

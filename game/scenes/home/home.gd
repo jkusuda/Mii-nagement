@@ -152,19 +152,9 @@ func _group(island: Dictionary) -> Control:
 func _bubble_row(bubble: Dictionary, resident: Dictionary) -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
-	var color := Color(str(resident.get("color", "#8A8FA8")))
 	var who := str(resident.get("name", bubble["agent"]))
 
-	var avatar := PanelContainer.new()
-	avatar.custom_minimum_size = Vector2(24, 24)
-	var circle: StyleBoxFlat = get_theme_stylebox("panel", "AvatarCircle").duplicate()
-	circle.bg_color = color.lerp(Color.WHITE, 0.75)
-	circle.set_corner_radius_all(12)
-	avatar.add_theme_stylebox_override("panel", circle)
-	var initial := UI.label(who.left(1), 12, true)
-	initial.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	initial.add_theme_color_override("font_color", color.darkened(0.2))
-	avatar.add_child(initial)
+	var avatar := UI.avatar(resident, 24, 0.75)
 
 	var kind := str(bubble["kind"])
 	var look := Protocol.bubble(kind)

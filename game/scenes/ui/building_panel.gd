@@ -46,9 +46,11 @@ var _form := PackageForm.new()
 var _footer_title := Label.new()
 var _footer_text := Label.new()
 var _back := Button.new()
-## The "What Jo is thinking" dropdowns, per task id: open or not, the text view
-## (rebuilt with the list), and where it was scrolled to (kept across rebuilds).
+## The "What Jo is thinking" dropdowns, per task id: open or not, technical details
+## shown or not, the parts that refresh (rebuilt with the list: {view, toggle, who}),
+## and where it was scrolled to (kept across rebuilds).
 var _thinking_open := {}
+var _thinking_details := {}
 var _thinking_views := {}
 var _thinking_scroll := {}  # task id -> [scroll value, was at the bottom]
 var _thinking_loaded := {}  # task ids whose stored history we've asked for
@@ -189,7 +191,7 @@ func _on_action() -> void:
 func _refresh() -> void:
 	# Remember where each open thinking view was scrolled, then rebuild.
 	for task_id in _thinking_views:
-		var bar: VScrollBar = _thinking_views[task_id].get_v_scroll_bar()
+		var bar: VScrollBar = _thinking_views[task_id]["view"].get_v_scroll_bar()
 		_thinking_scroll[task_id] = [bar.value, bar.value + bar.page >= bar.max_value - 2]
 	_thinking_views.clear()
 	for child in _list.get_children():
@@ -322,9 +324,11 @@ func _take_back_button(task: Dictionary) -> Button:
 	return button
 
 
-## "▸ What Jo is thinking": opens a scrolling view of the package's train of
-## thought (Net.thinking, from `thinking` events): every resident who carried it,
-## their thoughts in grey italics, tool calls as "›" lines, replies as plain text.
+## "▸ What Jo is thinking · read 2 files, ran 1 command": like a chat app's thinking
+## section. Closed, the toggle sums up what the residents did. Open, a scrolling view
+## reads like a story: thoughts in grey italics, each run of tool calls as one short
+## line, replies as plain text. "Show technical details" swaps in every tool call
+## with its raw part (the diff, the command, the input) in a code font.
 func _thinking_box(task: Dictionary, who: String) -> Control:
 	var task_id := str(task["id"])
 	var box := VBoxContainer.new()
@@ -332,7 +336,6 @@ func _thinking_box(task: Dictionary, who: String) -> Control:
 	var toggle := LinkButton.new()
 	toggle.add_theme_color_override("font_color", Color("4D5BD6"))
 	toggle.add_theme_font_size_override("font_size", 13)
-	toggle.text = ("▾ " if _thinking_open.get(task_id) else "▸ ") + "What %s is thinking" % who
 	box.add_child(toggle)
 
 	var view := RichTextLabel.new()
@@ -340,16 +343,26 @@ func _thinking_box(task: Dictionary, who: String) -> Control:
 	view.selection_enabled = true
 	view.scroll_active = true
 	view.custom_minimum_size = Vector2(0, 190)
-	view.add_theme_font_size_override("normal_font_size", 13)
-	view.add_theme_font_size_override("italics_font_size", 13)
-	view.add_theme_font_size_override("bold_font_size", 13)
+	for font in ["normal", "italics", "bold", "mono"]:
+		view.add_theme_font_size_override(font + "_font_size", 13 if font != "mono" else 12)
+	var mono := SystemFont.new()  # [code] text: the system's monospace font
+	mono.font_names = PackedStringArray(["Menlo", "Consolas", "DejaVu Sans Mono", "monospace"])
+	view.add_theme_font_override("mono_font", mono)
 	view.add_theme_color_override("default_color", INK)
+	var details := LinkButton.new()
+	details.add_theme_color_override("font_color", Color("68738B"))
+	details.add_theme_font_size_override("font_size", 12)
+	details.text = "Hide technical details" if _thinking_details.get(task_id) else "Show technical details"
+	var inside := VBoxContainer.new()
+	inside.add_theme_constant_override("separation", 6)
+	inside.add_child(view)
+	inside.add_child(details)
 	var frame := PanelContainer.new()
 	frame.add_theme_stylebox_override("panel", _box(CREAM, 12, LINE, 2, 0, false, Vector4(12, 10, 12, 10)))
-	frame.add_child(view)
+	frame.add_child(inside)
 	frame.visible = _thinking_open.get(task_id, false)
 	box.add_child(frame)
-	_thinking_views[task_id] = view
+	_thinking_views[task_id] = {"view": view, "toggle": toggle, "who": who}
 	_show_thinking(task_id)
 
 	toggle.pressed.connect(
@@ -357,31 +370,51 @@ func _thinking_box(task: Dictionary, who: String) -> Control:
 			var opening: bool = not _thinking_open.get(task_id, false)
 			_thinking_open[task_id] = opening
 			frame.visible = opening
-			toggle.text = ("▾ " if opening else "▸ ") + "What %s is thinking" % who
+			_thinking_scroll.erase(task_id)  # start at the newest
 			if opening:
-				_thinking_scroll.erase(task_id)  # start at the newest
 				_load_thinking_history(task_id)
-				_show_thinking(task_id)
+			_show_thinking(task_id)
+	)
+	details.pressed.connect(
+		func():
+			var showing: bool = not _thinking_details.get(task_id, false)
+			_thinking_details[task_id] = showing
+			details.text = "Hide technical details" if showing else "Show technical details"
+			_thinking_scroll.erase(task_id)
+			_show_thinking(task_id)
 	)
 	return box
 
 
-## Fill (or refresh) one thinking view from Net.thinking, keeping its scroll:
+## Fill (or refresh) one thinking dropdown from Net.thinking, keeping its scroll:
 ## at the bottom it follows new text; scrolled up, it stays put.
 func _show_thinking(task_id: String) -> void:
-	var view: RichTextLabel = _thinking_views.get(task_id)
-	if view == null or not is_instance_valid(view):
+	var parts_of: Dictionary = _thinking_views.get(task_id, {})
+	if parts_of.is_empty() or not is_instance_valid(parts_of["view"]):
 		return
+	var view: RichTextLabel = parts_of["view"]
+	var entries: Array = Net.thinking.get(task_id, [])
+	var summary := _tool_summary(entries.filter(func(e): return e["kind"] == "tool"))
+	var arrow := "▾ " if _thinking_open.get(task_id) else "▸ "
+	parts_of["toggle"].text = (arrow + "What %s is thinking" % parts_of["who"] + (" · " + summary if summary else ""))
 	var bar := view.get_v_scroll_bar()
 	var was: Array = _thinking_scroll.get(task_id, [bar.value, bar.value + bar.page >= bar.max_value - 2])
-	var entries: Array = Net.thinking.get(task_id, [])
 	view.clear()  # clear() + append_text() (not `text =`): redraws reliably while visible
 	if entries.is_empty():
 		view.append_text("[color=#68738B]Nothing yet. Thoughts show up here as the residents work.[/color]")
 		return
+	var technical: bool = _thinking_details.get(task_id, false)
 	var parts := PackedStringArray()
 	var speaker := ""
-	for e in entries:
+	var tools: Array = []  # a run of tool calls, summed up in one line when it ends
+	for e in entries + [{"agent": "", "kind": "end"}]:
+		if e["kind"] != "tool" or e["agent"] != speaker:
+			if tools:
+				var line := _tool_summary(tools)
+				parts.append("[color=#68738B]› %s[/color]\n" % _escape(line.left(1).to_upper() + line.substr(1)))
+				tools.clear()
+		if e["kind"] == "end":
+			break
 		if e["agent"] != speaker:
 			speaker = e["agent"]
 			parts.append("\n[b]%s[/b]\n" % _escape(str(Net.find_resident(speaker).get("name", speaker))))
@@ -390,7 +423,12 @@ func _show_thinking(task_id: String) -> void:
 			"thought":
 				parts.append("[i][color=#68738B]%s[/color][/i]\n" % text.strip_edges())
 			"tool":
+				if not technical:
+					tools.append(e)
+					continue
 				parts.append("[color=#68738B]› %s[/color]\n" % text.strip_edges())
+				if e.get("detail"):
+					parts.append("[code]%s[/code]\n" % _escape(str(e["detail"])).strip_edges())
 			_:
 				parts.append(text)
 	view.append_text("".join(parts).strip_edges())
@@ -404,6 +442,24 @@ func _show_thinking(task_id: String) -> void:
 			b.value = b.max_value if was[1] else was[0])
 		. call_deferred()
 	)
+
+
+## A few tool calls in plain words: "read 2 files · ran npm test". One call of a sort
+## shows its own title; several are counted.
+static func _tool_summary(tools: Array) -> String:
+	var by_sort := {}  # sort -> its tool entries, in the order first seen
+	for e in tools:
+		var sort := str(e.get("tool", "other"))
+		by_sort.get_or_add(sort if Protocol.TOOL_WORDS.has(sort) else "other", []).append(e)
+	var words := PackedStringArray()
+	for sort in by_sort:
+		var calls: Array = by_sort[sort]
+		if calls.size() == 1:
+			words.append(str(calls[0]["text"]).strip_edges().left(60))
+		else:
+			var verb_noun: Array = Protocol.TOOL_WORDS[sort]
+			words.append("%s %d %ss" % [verb_noun[0], calls.size(), verb_noun[1]])
+	return " · ".join(words)
 
 
 ## Opened mid-task: fetch what was thought before the game started listening.
@@ -433,16 +489,10 @@ static func _escape(text: String) -> String:
 	return text.replace("[", "[lb]")
 
 
-## One resident: initial, name, job · mood, what they're doing, and Answer if they need you.
+## One resident: Mii headshot, name, job · mood, what they're doing, and Answer if they need you.
 func _resident_card(r: Dictionary, here_id: String) -> Control:
 	var color := Color(str(r.get("color", "#8A8FA8")))
-	var avatar := PanelContainer.new()
-	avatar.custom_minimum_size = Vector2(44, 44)
-	avatar.add_theme_stylebox_override("panel", _box(color.lerp(Color.WHITE, 0.7), 22))
-	var initial := _text(str(r.get("name", "?")).left(1), 18, true)
-	initial.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	initial.add_theme_color_override("font_color", color.darkened(0.25))
-	avatar.add_child(initial)
+	var avatar := UI.avatar(r, 44)
 
 	var texts := VBoxContainer.new()
 	texts.add_theme_constant_override("separation", 2)
