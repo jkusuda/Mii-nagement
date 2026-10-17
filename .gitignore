@@ -26,4 +26,4 @@ game/builds/
 .DS_Store
 .vscode/
 .idea/
-.claude/
+.claude/.secrets.json

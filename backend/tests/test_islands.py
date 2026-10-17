@@ -1,4 +1,3 @@
-import dataclasses
 import json
 import subprocess
 from pathlib import Path
@@ -8,15 +7,17 @@ from asgiref.sync import sync_to_async
 from conftest import db_test, make_git_repo
 
 from mii import github, islands, residents
-from mii.config import config
 from mii.models import Building, Island, Road, island_snapshot
 
 pytestmark = db_test
 
 
 def use_root(monkeypatch, root):
-    """Point islands.py at another ISLANDS_ROOT (Config is frozen, so swap the whole object)."""
-    monkeypatch.setattr(islands, "config", dataclasses.replace(config, islands_root=root))
+    """Point islands.py at another ISLANDS_ROOT (the environment wins over saved settings)."""
+    if root is None:
+        monkeypatch.delenv("ISLANDS_ROOT", raising=False)
+    else:
+        monkeypatch.setenv("ISLANDS_ROOT", str(root))
 
 
 @pytest.fixture(autouse=True)

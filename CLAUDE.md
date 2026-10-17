@@ -31,7 +31,8 @@ for every message. Change it first, then update both halves to match.
 backend/manage.py Django CLI: migrate, makemigrations mii, seed [--reset|--loop], watch
 backend/mii/      one package = Django project + app
   settings.py     Django settings (reads config.py)
-  config.py       app settings loaded from the root .env (`config`)
+  config.py       developer overrides from the optional root .env (`config`) + defaults
+  prefs.py        user settings (Setting table) + API keys (OS keychain via `keyring`); env > saved > default
   asgi.py         ASGI entry: HTTP + WebSocket + lifespan (starts the engine worker)
   urls.py / views.py   async JSON endpoints: /health, /brains, /models, /islands/{id}, tasks, insights, replay
   consumers.py    the /ws WebSocket consumer (Channels, no channel layer)
@@ -154,6 +155,9 @@ On the Windows machine, Godot 4.7.2 lives in Downloads (use the `_console.exe` f
   server runs `migrate` at startup. `manage.py seed --reset` wipes the rows.
 - **Mock mode is the default** (`MOCK_AGENTS=1`): fake work, no API cost. Every
   feature should keep working in mock mode.
+- **No `.env` required.** Users change settings through `PUT /settings`
+  (`prefs.py`). Secrets go to the OS keychain, never the database or the
+  snapshot; the environment (a developer's `.env`) wins over saved values.
 - **No machine-specific defaults.** Paths come from `Path.home()` / `.env`, never
   from a hardcoded user folder, so the project runs on any macOS, Windows or Linux box.
 - **Safety:** agents may only read and write inside git worktrees of the

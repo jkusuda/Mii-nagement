@@ -128,6 +128,13 @@ class Step(models.Model):
         return (self.finished_at - self.started_at).total_seconds()
 
 
+class Setting(models.Model):
+    """One user setting (see prefs.py). Secrets are never stored here."""
+
+    key = models.CharField(primary_key=True, max_length=50)
+    value = models.JSONField(null=True)
+
+
 class Event(models.Model):
     """Every event sent to clients, kept for history and replay.py."""
 

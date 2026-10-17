@@ -38,6 +38,7 @@ from acp.schema import (
     WriteTextFileResponse,
 )
 
+from mii import prefs
 from mii.agents import AgentJob, StepResult, build_prompt, parse_verdict
 from mii.personality import build_system_prompt
 from mii.sandbox import SandboxError, is_inside
@@ -241,8 +242,10 @@ class AcpRunner:
             return StepResult("fail", str(e))
 
         # The SDK passes only a minimal environment by default; the agent needs the user's
-        # full one (PATH, HOME, keychain access, API keys). The OpenRouter key stays with us.
-        env = {k: v for k, v in os.environ.items() if k != "OPENROUTER_API_KEY"} | self.spec["env"]
+        # full one (PATH, HOME, keychain access). Vendor API keys saved in the app's keychain
+        # are added; the OpenRouter key stays with us.
+        env = {k: v for k, v in os.environ.items() if k != "OPENROUTER_API_KEY"}
+        env = prefs.secrets_env() | env | self.spec["env"]
         client = MiiClient(job, job.workdir)
         session_id: str | None = None
         conn = None

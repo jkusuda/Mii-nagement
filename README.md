@@ -43,8 +43,8 @@ With [uv](https://docs.astral.sh/uv) and Godot 4 installed:
 make
 ```
 
-That installs everything, creates `.env`, starts the backend and the simulator,
-and opens the game. Ctrl+C stops all three. Other targets: `make server`,
+That installs everything, starts the backend and the simulator, and opens the
+game. No configuration file is needed. Ctrl+C stops all three. Other targets: `make server`,
 `make sim`, `make watch`, `make game`, `make test`, `make reset`. If Godot isn't
 found, pass it: `make GODOT=/path/to/godot`.
 
@@ -59,16 +59,14 @@ brew install uv
 ```
 
 ```bash
-cp .env.example .env
-```
-
-```bash
 cd backend && uv sync
 ```
 
-- `.env` defaults to `MOCK_AGENTS=1`, which needs no API keys.
 - `uv sync` downloads Python 3.12 for this project only, creates `backend/.venv`,
   and installs the dependencies.
+- No `.env` is needed. The backend starts in mock mode; settings and API keys are
+  saved at runtime (see "Settings" below). Developers can still copy
+  `.env.example` to `.env` to force values.
 
 Optional: make `godot` a terminal command. The commands below use the full path,
 so this is only for convenience.
@@ -139,7 +137,8 @@ New to Godot? Read [docs/godot-tour.md](docs/godot-tour.md).
 
 ## Real agents
 
-Set `MOCK_AGENTS=0` in `.env`. Every island already has its own git repository
+Switch mock mode off (`PUT /settings {"settings": {"mock_agents": false}}`, or
+`MOCK_AGENTS=0` in `.env`). Every island already has its own git repository
 (the seed island's is created on first start under `~/Documents/Mii-nagement`,
 or `~/Mii-nagement` without a Documents folder; change the root with
 `ISLANDS_ROOT`). Each task gets its own git worktree of that repo and a
@@ -160,8 +159,20 @@ the default folder; add `"folder": "/some/dir"` to put it elsewhere or
 - `gemini`: install the Gemini CLI, run it once and log in with Google.
 - Or set `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` in `.env` instead.
 
-**OpenRouter brain (any model, no CLI):** set `OPENROUTER_API_KEY` in `.env`, give
-a resident `brain = "openrouter"` and a `model` from http://localhost:8000/models.
+**OpenRouter brain (any model, no CLI):** save the key with
+`PUT /settings {"secrets": {"openrouter_api_key": "sk-or-..."}}` (it goes into
+your OS keychain, never the database) or set `OPENROUTER_API_KEY` in `.env`, then
+give a resident `brain = "openrouter"` and a `model` from http://localhost:8000/models.
+
+## Settings
+
+`GET /settings` shows the effective settings (`mock_agents`, `islands_root`,
+`test_command`, `openrouter_model`, `keep_worktrees`), which ones `.env` locks,
+and which API keys are set. `PUT /settings` saves settings to the database and
+API keys (`openrouter_api_key`, `anthropic_api_key`, `openai_api_key`,
+`gemini_api_key`) to the OS keychain: macOS Keychain, Windows Credential
+Manager, or Linux Secret Service, with an owner-only file as the fallback. Keys
+are never sent back. Changes apply from the next task.
 
 Check which brains the backend can see: http://localhost:8000/brains
 

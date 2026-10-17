@@ -10,7 +10,7 @@ import logging
 from asgiref.sync import sync_to_async
 from django.core.management import call_command
 
-from mii import events, islands, seed
+from mii import events, islands, prefs, seed
 from mii.agents import make_runner
 from mii.config import config
 from mii.engine import WorkflowEngine
@@ -21,32 +21,46 @@ log = logging.getLogger(__name__)
 
 
 class Runtime:
+    """Built from defaults; start() and reload() apply the saved settings (prefs.py)."""
+
     def __init__(self):
-        # Mock mode never cuts worktrees; real mode works in worktrees of each island's repo.
-        self.sandboxes = None if config.mock_agents else Sandboxes(config.worktree_root)
+        self.mock_agents = config.mock_agents
+        self.sandboxes = None
         self.bus = events.EventBus()
         self.bubbles = events.Bubbles(self.bus)
-        runner = make_runner(
-            config.mock_agents,
-            openrouter_api_key=config.openrouter_api_key, openrouter_model=config.openrouter_default_model,
-        )
         self.workflow = WorkflowEngine(
-            self.bus, self.bubbles, runner, sandboxes=self.sandboxes,
+            self.bus, self.bubbles, make_runner(True), sandboxes=None,
             walk_seconds=config.walk_seconds, bubble_timeout=config.bubble_timeout,
             permission_timeout=config.permission_timeout, sleep_after=config.sleep_after,
-            step_timeout=config.step_timeout, test_command=config.test_command,
-            keep_worktrees=config.keep_worktrees, git_author=config.git_author,
+            step_timeout=config.step_timeout, git_author=config.git_author,
         )
         self.worker: asyncio.Task | None = None
 
     async def start(self) -> None:
-        """Create/upgrade the tables, seed the island if missing, resume the queue, start the worker."""
+        """Create/upgrade the tables, seed the island if missing, apply settings, resume the queue, start the worker."""
         await sync_to_async(call_command)("migrate", interactive=False, verbosity=0)
         await sync_to_async(seed.seed)()
+        await self.reload()
         await sync_to_async(self._ensure_island_repos)()
         await self.workflow.recover()
         self.worker = asyncio.create_task(self.workflow.run_forever())
-        log.info("Mii-nagement ready (%s agents)", "MOCK" if config.mock_agents else "REAL")
+        log.info("Mii-nagement ready (%s agents)", "MOCK" if self.mock_agents else "REAL")
+
+    async def reload(self) -> dict:
+        """Re-read settings + secrets and apply them. Takes effect from the next task. Returns the snapshot."""
+        snap = await sync_to_async(prefs.snapshot)()
+        settings = snap["settings"]
+        self.mock_agents = settings["mock_agents"]
+        # Mock mode never cuts worktrees; real mode works in worktrees of each island's repo.
+        self.sandboxes = None if self.mock_agents else Sandboxes(config.worktree_root)
+        self.workflow.sandboxes = self.sandboxes
+        self.workflow.runner = make_runner(
+            self.mock_agents,
+            openrouter_api_key=prefs.secret("openrouter_api_key"), openrouter_model=settings["openrouter_model"],
+        )
+        self.workflow.test_command = settings["test_command"]
+        self.workflow.keep_worktrees = settings["keep_worktrees"]
+        return snap
 
     @staticmethod
     def _ensure_island_repos() -> None:

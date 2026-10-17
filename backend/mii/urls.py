@@ -4,6 +4,7 @@ from mii import views
 
 urlpatterns = [
     path("health", views.health),
+    path("settings", views.settings_view),
     path("brains", views.brains),
     path("brains/detail", views.brains_detail),
     path("models", views.models_list),
