@@ -119,7 +119,7 @@ Bubbles sidebar, and every screen (`show_screen()` shows one).
 | Folder | What lives there |
 |---|---|
 | `scenes/` | `game.gd` / `game.tscn` (main screen), `protocol.gd` (`Protocol`: the shared vocabulary and bubble looks) |
-| `scenes/island/` | the 3D island: `island_3d.tscn`, `island_layout.gd` (data + rules + paths), `island_terrain.gd`, `island_builder.gd`, `seasons.gd`, `day_night.gd`, `camera_rig.gd`; residents: `island_residents.gd` (follows Net), `island_resident.gd` (one walker), `island_paths.gd`, `island_life.gd` + `life_lines.gd` (ambient life) |
+| `scenes/island/` | the 3D island: `island_3d.tscn`, `island_layout.gd` (data + rules + paths), `island_terrain.gd`, `island_builder.gd`, `seasons.gd`, `day_night.gd`, `camera_rig.gd`; residents: `island_residents.gd` (follows Net), `island_resident.gd` (one walker), `speech_bubble.gd` (its speech bubble), `island_paths.gd`, `island_life.gd` + `life_lines.gd` (ambient life) |
 | `scenes/buildings/` | one scene per building type, `building.gd`, `building_data.gd` (names, icons, colours), `building_picker.gd` (what's under the mouse) |
 | `scenes/plants/` | `apple_tree.tscn`, `bush.tscn`, `swaying_plant.gd` |
 | `scenes/build/` | `build_mode.gd`: the Build tool (land, lots, plants, steps, pond, season) |

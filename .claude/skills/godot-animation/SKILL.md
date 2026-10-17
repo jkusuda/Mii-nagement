@@ -14,7 +14,7 @@ The owner is new to Godot: explain each Godot concept the first time it appears 
 | File | What it animates |
 |---|---|
 | `game/scenes/mii/mii.gd` | The Mii body. `ANIMATIONS` names the three clips in `assets/models/mii.glb` (idle, walk, run); `play(what)` blends 0.2 s. Everything else is procedural (Tweens on `mii.position / rotation / scale`). |
-| `game/scenes/island/island_resident.gd` | One resident on the island: `walk(points)` (a chained Tween along path points, run on long routes), `settle()` per state (working = a hop loop `_start_working`, sleeping = "z Z"), `say(text, seconds)` (a Label3D speech line that fades), `emote(kind)` (hop, proud, frustrated, tired, confused, shift, wave), `look_toward(point)`, the mood word under the name tag, `stop_life()`. |
+| `game/scenes/island/island_resident.gd` | One resident on the island: `walk(points)` (a chained Tween along path points, run on long routes), `settle()` per state (working = a hop loop `_start_working`, sleeping = "z Z"), `say(text, seconds)` (a `SpeechBubble`, `speech_bubble.gd`: white pill with a tail), `emote(kind)` (hop, proud, frustrated, tired, confused, shift, wave), `look_toward(point)`, the mood word under the name tag, `stop_life()`. |
 | `game/scenes/island/island_residents.gd` | *Where* residents go: snapshot placement, `move` events → `_on_moved` → `IslandPaths.route`, `_line_up` slots at each building, `chat` events → `say()`. Owns the `Life` child. |
 | `game/scenes/island/island_life.gd` | Ambient Tomodachi-style life between packages: strolls, visits + chats, pond/tree gazing, muttering, sleep shifts, waves, and emotes on `mood` / `handoff` / `task done`. Weighted by personality sliders and `DayNight.night`. |
 | `game/scenes/island/life_lines.gd` | The canned lines (by vibe, job, weather, season) and short chat scripts. |
@@ -49,8 +49,8 @@ ignored, not errors (protocol rule 1).
 coroutine like `_stroll`: `_go(walker, point)` walks along the paths and returns false when
 the server interrupted; end by walking to `walker.home_spot`. Lines go in `life_lines.gd`.
 
-**Speech.** `walker.say(text, seconds)` on the speaker; `look_toward` the listener. The label
-wraps at 440 px; keep lines short. Fonts: `assets/font/DreamLife` has no emoji glyphs, so use
+**Speech.** `walker.say(text, seconds)` on the speaker; `look_toward` the listener. The bubble
+(names in orange) wraps at 460 px; keep lines short. Fonts: `assets/font/DreamLife` has no emoji glyphs, so use
 words, not emoji.
 
 **Faces, hair, hats.** See docs/mii-customization.md (`Resident.appearance` is stored and
