@@ -59,6 +59,7 @@ var build_mode := BuildMode.new()
 var screen := "island"
 ## True while the creator waits for the server to accept a resident.
 var _saving_resident := false
+var _saving_look := false  # the resident being saved carries an appearance
 ## The resident creator is making a draft for the island creator (not sent yet),
 ## and which of its residents it replaces (-1 = a new one).
 var _drafting := false
@@ -170,6 +171,7 @@ func _save_resident(resident: Dictionary) -> void:
 		return
 	if Net.send_resident(resident):
 		_saving_resident = true
+		_saving_look = resident.has("appearance")
 		return
 	if not resident.has("id"):
 		resident["id"] = "local_%d" % Time.get_ticks_msec()
@@ -183,6 +185,11 @@ func _on_resident_updated(resident: Dictionary) -> void:
 		residents_screen.add_or_update(resident)  # offline: Net.island doesn't have it
 	if _saving_resident:
 		_saving_resident = false
+		# A backend older than the Look page drops `appearance` without a word.
+		# Say so, instead of quietly showing the old look.
+		if _saving_look and not resident.has("appearance"):
+			creator.show_error("the backend didn't keep the look. Restart it so it picks up the new appearance field (it updates its database at startup).")
+			return
 		show_screen("residents")
 
 

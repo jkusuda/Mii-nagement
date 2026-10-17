@@ -23,6 +23,7 @@ async def test_create_keeps_every_creator_field(island):
         "name": "Bea", "job": "planner", "color": "#2fa37a", "catchphrase": "Tidy!",
         "brain": "openrouter", "model": "  ", "bluntness": 1.7, "caution": 0.25,
         "keys": {"edit": "yes"}, "gifts": ["docs", "browser", "docs"],
+        "appearance": {"skin": "#F2C6A0", "hair": 12, "eyes": 3},
     }
     r = await residents.create_resident("sunny", data)
     assert (r.color, r.brain, r.model, r.bluntness, r.caution) == ("#2FA37A", "openrouter", None, 1.0, 0.25)
@@ -31,6 +32,7 @@ async def test_create_keeps_every_creator_field(island):
     # ...and the snapshot sends it all to the game.
     sent = next(x for x in (await island_snapshot("sunny", []))["residents"] if x["id"] == r.id)
     assert sent["keys"]["edit"] == "yes" and sent["gifts"] == ["docs", "browser"] and sent["bluntness"] == 1.0
+    assert sent["appearance"] == {"skin": "#F2C6A0", "hair": 12, "eyes": 3}
 
 
 @pytest.mark.parametrize("bad", [
@@ -43,6 +45,10 @@ async def test_create_keeps_every_creator_field(island):
     {"name": "Mo", "keys": {"edit": "maybe"}},
     {"name": "Mo", "keys": {"launch": "yes"}},
     {"name": "Mo", "gifts": ["jetpack"]},
+    {"name": "Mo", "appearance": "bob"},
+    {"name": "Mo", "appearance": {"hair": {"style": 1}}},
+    {"name": "Mo", "appearance": {"hair": "x" * 21}},
+    {"name": "Mo", "appearance": {f"k{i}": 1 for i in range(25)}},
 ])
 async def test_create_rejects_bad_fields(island, bad):
     with pytest.raises(residents.ResidentError):
@@ -52,6 +58,7 @@ async def test_create_rejects_bad_fields(island, bad):
 async def test_update_changes_only_sent_fields(island):
     r = await residents.update_resident("sunny", {"id": "jun", "caution": 0.1, "gifts": ["github"]})
     assert (r.caution, r.gifts, r.name, r.job) == (0.1, ["github"], "Jun", "planner")
+    assert r.appearance == {}  # never set: the game picks a look from the id
     assert (await Resident.objects.aget(pk="jun")).gifts == ["github"]
     with pytest.raises(residents.ResidentError):
         await residents.update_resident("sunny", {"id": "nobody"})

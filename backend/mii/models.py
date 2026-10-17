@@ -66,6 +66,8 @@ class Resident(models.Model):
     # keys = what the agent may do without asking (honoured by the ACP runner), gifts = extra MCP server ids (stored only).
     keys = models.JSONField(default=default_keys)
     gifts = models.JSONField(default=list)
+    # How their Mii looks (skin, hair, eyes, ...). Only the game reads it; see MiiParts in the game.
+    appearance = models.JSONField(default=dict, blank=True)
 
     # Live state, shown in the game
     state = models.CharField(max_length=20, default="idle")  # idle | walking | working | sleeping
@@ -192,6 +194,7 @@ def resident_to_dict(r: Resident) -> dict:
         "creativity": r.creativity,
         "keys": r.keys,
         "gifts": r.gifts,
+        "appearance": r.appearance,
         "state": r.state,
         "building": r.building_id,
         "mood": r.mood,

@@ -99,7 +99,7 @@ func _process(delta: float) -> void:
 
 ## The resident fields the server accepts (docs/protocol.md, create_resident).
 const RESIDENT_FIELDS := ["id", "name", "job", "color", "catchphrase", "brain", "model",
-	"bluntness", "caution", "chattiness", "creativity", "keys", "gifts"]
+	"bluntness", "caution", "chattiness", "creativity", "keys", "gifts", "appearance"]
 
 
 ## Create a resident (no "id") or edit one (with "id"). The server answers with a

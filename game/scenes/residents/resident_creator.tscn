@@ -36,6 +36,36 @@ layout_mode = 2
 theme_type_variation = &"LabelMuted"
 text = "A new face. A little personality. Real work."
 
+[node name="PageTabs" type="PanelContainer" parent="Rows/Header"]
+layout_mode = 2
+size_flags_vertical = 4
+theme_type_variation = &"TabsPanel"
+
+[node name="Row" type="HBoxContainer" parent="Rows/Header/PageTabs"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="AboutTab" type="Button" parent="Rows/Header/PageTabs/Row"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(120, 30)
+layout_mode = 2
+focus_mode = 0
+theme_type_variation = &"TabActive"
+text = "About"
+
+[node name="LookTab" type="Button" parent="Rows/Header/PageTabs/Row"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(120, 30)
+layout_mode = 2
+focus_mode = 0
+theme_type_variation = &"TabInactive"
+text = "Look"
+
+[node name="TabsGap" type="Control" parent="Rows/Header"]
+custom_minimum_size = Vector2(12, 0)
+layout_mode = 2
+mouse_filter = 2
+
 [node name="MovingPill" type="PanelContainer" parent="Rows/Header"]
 layout_mode = 2
 size_flags_vertical = 4
@@ -143,68 +173,74 @@ theme_override_constants/icon_max_width = 14
 icon = ExtResource("6_chevron")
 icon_alignment = 1
 
-[node name="IdentityPanel" type="PanelContainer" parent="Rows/Columns"]
+[node name="AboutPage" type="HBoxContainer" parent="Rows/Columns"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+
+[node name="IdentityPanel" type="PanelContainer" parent="Rows/Columns/AboutPage"]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_stretch_ratio = 1.1
 theme_type_variation = &"SectionPanel"
 
-[node name="Rows" type="VBoxContainer" parent="Rows/Columns/IdentityPanel"]
+[node name="Rows" type="VBoxContainer" parent="Rows/Columns/AboutPage/IdentityPanel"]
 layout_mode = 2
 theme_override_constants/separation = 5
 
-[node name="NameLabel" type="Label" parent="Rows/Columns/IdentityPanel/Rows"]
+[node name="NameLabel" type="Label" parent="Rows/Columns/AboutPage/IdentityPanel/Rows"]
 layout_mode = 2
 theme_type_variation = &"FieldLabel"
 text = "Name"
 
-[node name="NameEdit" type="LineEdit" parent="Rows/Columns/IdentityPanel/Rows"]
+[node name="NameEdit" type="LineEdit" parent="Rows/Columns/AboutPage/IdentityPanel/Rows"]
 unique_name_in_owner = true
 layout_mode = 2
 placeholder_text = "Give them a name"
 max_length = 20
 
-[node name="ColourLabel" type="Label" parent="Rows/Columns/IdentityPanel/Rows"]
+[node name="ColourLabel" type="Label" parent="Rows/Columns/AboutPage/IdentityPanel/Rows"]
 layout_mode = 2
 theme_type_variation = &"FieldLabel"
 text = "Colour"
 
-[node name="Swatches" type="HBoxContainer" parent="Rows/Columns/IdentityPanel/Rows"]
+[node name="Swatches" type="HBoxContainer" parent="Rows/Columns/AboutPage/IdentityPanel/Rows"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 5
 
-[node name="CatchphraseLabel" type="Label" parent="Rows/Columns/IdentityPanel/Rows"]
+[node name="CatchphraseLabel" type="Label" parent="Rows/Columns/AboutPage/IdentityPanel/Rows"]
 layout_mode = 2
 theme_type_variation = &"FieldLabel"
 text = "Catchphrase"
 
-[node name="CatchphraseEdit" type="LineEdit" parent="Rows/Columns/IdentityPanel/Rows"]
+[node name="CatchphraseEdit" type="LineEdit" parent="Rows/Columns/AboutPage/IdentityPanel/Rows"]
 unique_name_in_owner = true
 layout_mode = 2
 placeholder_text = "Let me poke at it!"
 max_length = 40
 
-[node name="JobTitle" type="Label" parent="Rows/Columns/IdentityPanel/Rows"]
+[node name="JobTitle" type="Label" parent="Rows/Columns/AboutPage/IdentityPanel/Rows"]
 layout_mode = 2
 theme_type_variation = &"FieldLabel"
 text = "Job"
 
-[node name="Jobs" type="HBoxContainer" parent="Rows/Columns/IdentityPanel/Rows"]
+[node name="Jobs" type="HBoxContainer" parent="Rows/Columns/AboutPage/IdentityPanel/Rows"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="BrainLabel" type="Label" parent="Rows/Columns/IdentityPanel/Rows"]
+[node name="BrainLabel" type="Label" parent="Rows/Columns/AboutPage/IdentityPanel/Rows"]
 layout_mode = 2
 theme_type_variation = &"FieldLabel"
 text = "Brain"
 
-[node name="BrainRow" type="HBoxContainer" parent="Rows/Columns/IdentityPanel/Rows"]
+[node name="BrainRow" type="HBoxContainer" parent="Rows/Columns/AboutPage/IdentityPanel/Rows"]
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="BrainPicker" type="OptionButton" parent="Rows/Columns/IdentityPanel/Rows/BrainRow"]
+[node name="BrainPicker" type="OptionButton" parent="Rows/Columns/AboutPage/IdentityPanel/Rows/BrainRow"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 34)
 layout_mode = 2
@@ -214,7 +250,7 @@ tooltip_text = "The coding agent that runs this resident (over ACP)"
 theme_type_variation = &"OutlineButton"
 text_overrun_behavior = 3
 
-[node name="ModelEdit" type="LineEdit" parent="Rows/Columns/IdentityPanel/Rows/BrainRow"]
+[node name="ModelEdit" type="LineEdit" parent="Rows/Columns/AboutPage/IdentityPanel/Rows/BrainRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
@@ -222,45 +258,45 @@ tooltip_text = "Optional model override. Leave blank for the agent's default."
 theme_override_font_sizes/font_size = 13
 placeholder_text = "default model"
 
-[node name="PersonalityPanel" type="PanelContainer" parent="Rows/Columns"]
+[node name="PersonalityPanel" type="PanelContainer" parent="Rows/Columns/AboutPage"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"SectionPanel"
 
-[node name="Rows" type="VBoxContainer" parent="Rows/Columns/PersonalityPanel"]
+[node name="Rows" type="VBoxContainer" parent="Rows/Columns/AboutPage/PersonalityPanel"]
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="Title" type="Label" parent="Rows/Columns/PersonalityPanel/Rows"]
+[node name="Title" type="Label" parent="Rows/Columns/AboutPage/PersonalityPanel/Rows"]
 layout_mode = 2
 theme_type_variation = &"SectionTitle"
 text = "Personality"
 
-[node name="Sliders" type="VBoxContainer" parent="Rows/Columns/PersonalityPanel/Rows"]
+[node name="Sliders" type="VBoxContainer" parent="Rows/Columns/AboutPage/PersonalityPanel/Rows"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="Spacer" type="Control" parent="Rows/Columns/PersonalityPanel/Rows"]
+[node name="Spacer" type="Control" parent="Rows/Columns/AboutPage/PersonalityPanel/Rows"]
 layout_mode = 2
 size_flags_vertical = 3
 mouse_filter = 2
 
-[node name="NoteBox" type="PanelContainer" parent="Rows/Columns/PersonalityPanel/Rows"]
+[node name="NoteBox" type="PanelContainer" parent="Rows/Columns/AboutPage/PersonalityPanel/Rows"]
 layout_mode = 2
 theme_type_variation = &"NoteBox"
 
-[node name="Rows" type="VBoxContainer" parent="Rows/Columns/PersonalityPanel/Rows/NoteBox"]
+[node name="Rows" type="VBoxContainer" parent="Rows/Columns/AboutPage/PersonalityPanel/Rows/NoteBox"]
 layout_mode = 2
 theme_override_constants/separation = 2
 
-[node name="ActTitle" type="Label" parent="Rows/Columns/PersonalityPanel/Rows/NoteBox/Rows"]
+[node name="ActTitle" type="Label" parent="Rows/Columns/AboutPage/PersonalityPanel/Rows/NoteBox/Rows"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"FieldLabel"
 text = "How Mo will act"
 
-[node name="ActText" type="Label" parent="Rows/Columns/PersonalityPanel/Rows/NoteBox/Rows"]
+[node name="ActText" type="Label" parent="Rows/Columns/AboutPage/PersonalityPanel/Rows/NoteBox/Rows"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(1, 0)
 layout_mode = 2
@@ -269,60 +305,120 @@ theme_override_font_sizes/font_size = 13
 text = "Asks before anything risky, keeps notes short, sticks to well-known solutions, and is gentle with bad news."
 autowrap_mode = 3
 
-[node name="ToolsPanel" type="PanelContainer" parent="Rows/Columns"]
+[node name="ToolsPanel" type="PanelContainer" parent="Rows/Columns/AboutPage"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"SectionPanel"
 
-[node name="Rows" type="VBoxContainer" parent="Rows/Columns/ToolsPanel"]
+[node name="Rows" type="VBoxContainer" parent="Rows/Columns/AboutPage/ToolsPanel"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="GiftsHeader" type="HBoxContainer" parent="Rows/Columns/ToolsPanel/Rows"]
+[node name="GiftsHeader" type="HBoxContainer" parent="Rows/Columns/AboutPage/ToolsPanel/Rows"]
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="Title" type="Label" parent="Rows/Columns/ToolsPanel/Rows/GiftsHeader"]
+[node name="Title" type="Label" parent="Rows/Columns/AboutPage/ToolsPanel/Rows/GiftsHeader"]
 layout_mode = 2
 theme_type_variation = &"SectionTitle"
 text = "Gifts"
 
-[node name="Hint" type="Label" parent="Rows/Columns/ToolsPanel/Rows/GiftsHeader"]
+[node name="Hint" type="Label" parent="Rows/Columns/AboutPage/ToolsPanel/Rows/GiftsHeader"]
 layout_mode = 2
 size_flags_vertical = 8
 theme_type_variation = &"LabelMuted"
 theme_override_font_sizes/font_size = 11
 text = "extra MCP tools"
 
-[node name="Gifts" type="GridContainer" parent="Rows/Columns/ToolsPanel/Rows"]
+[node name="Gifts" type="GridContainer" parent="Rows/Columns/AboutPage/ToolsPanel/Rows"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/h_separation = 6
 theme_override_constants/v_separation = 6
 columns = 3
 
-[node name="KeysHeader" type="HBoxContainer" parent="Rows/Columns/ToolsPanel/Rows"]
+[node name="KeysHeader" type="HBoxContainer" parent="Rows/Columns/AboutPage/ToolsPanel/Rows"]
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="Title" type="Label" parent="Rows/Columns/ToolsPanel/Rows/KeysHeader"]
+[node name="Title" type="Label" parent="Rows/Columns/AboutPage/ToolsPanel/Rows/KeysHeader"]
 layout_mode = 2
 theme_type_variation = &"SectionTitle"
 text = "House keys"
 
-[node name="Hint" type="Label" parent="Rows/Columns/ToolsPanel/Rows/KeysHeader"]
+[node name="Hint" type="Label" parent="Rows/Columns/AboutPage/ToolsPanel/Rows/KeysHeader"]
 layout_mode = 2
 size_flags_vertical = 8
 theme_type_variation = &"LabelMuted"
 theme_override_font_sizes/font_size = 11
 text = "without asking you"
 
-[node name="Keys" type="GridContainer" parent="Rows/Columns/ToolsPanel/Rows"]
+[node name="Keys" type="GridContainer" parent="Rows/Columns/AboutPage/ToolsPanel/Rows"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/h_separation = 8
 theme_override_constants/v_separation = 6
 columns = 2
+
+[node name="LookPage" type="PanelContainer" parent="Rows/Columns"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"SectionPanel"
+
+[node name="Rows" type="VBoxContainer" parent="Rows/Columns/LookPage"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Colours" type="HBoxContainer" parent="Rows/Columns/LookPage/Rows"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="SkinLabel" type="Label" parent="Rows/Columns/LookPage/Rows/Colours"]
+layout_mode = 2
+theme_type_variation = &"FieldLabel"
+text = "Skin"
+
+[node name="SkinSwatches" type="HBoxContainer" parent="Rows/Columns/LookPage/Rows/Colours"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 5
+
+[node name="Gap" type="Control" parent="Rows/Columns/LookPage/Rows/Colours"]
+custom_minimum_size = Vector2(24, 0)
+layout_mode = 2
+mouse_filter = 2
+
+[node name="HairColourLabel" type="Label" parent="Rows/Columns/LookPage/Rows/Colours"]
+layout_mode = 2
+theme_type_variation = &"FieldLabel"
+text = "Hair colour"
+
+[node name="HairSwatches" type="HBoxContainer" parent="Rows/Columns/LookPage/Rows/Colours"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 5
+
+[node name="PartTabs" type="PanelContainer" parent="Rows/Columns/LookPage/Rows"]
+layout_mode = 2
+theme_type_variation = &"TabsPanel"
+
+[node name="PartTabRow" type="HBoxContainer" parent="Rows/Columns/LookPage/Rows/PartTabs"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="PartScroll" type="ScrollContainer" parent="Rows/Columns/LookPage/Rows"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="PartGrids" type="VBoxContainer" parent="Rows/Columns/LookPage/Rows/PartScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
 
 [node name="Footer" type="HBoxContainer" parent="Rows"]
 layout_mode = 2

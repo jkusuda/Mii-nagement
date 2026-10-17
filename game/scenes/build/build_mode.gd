@@ -23,6 +23,9 @@ extends Node3D
 ##   with the mouse wheel).
 ## - The green/red "ghosts" are meshes with a see-through material: a box over a
 ##   lot, or a see-through copy of the plant you're about to place.
+## - The Land tool's yellow squares are one MultiMeshInstance3D: a single mesh
+##   drawn many times (once per selected tile), which is much cheaper than one
+##   node per tile.
 
 signal opened
 signal closed
@@ -39,7 +42,7 @@ const TOOLS := [
 ]
 const TOOL_HINTS := [
 	"Drag a building or the pond to move it. While carrying a building, press R or scroll to turn it.",
-	"Click or drag on the map to add or remove land.",
+	"Drag over the map to select tiles (hold Shift to select more), then Add or Remove land.",
 	"Click to plant where the marker is green. Auto-arrange lets the island decide.",
 	"Pick the workflow steps this island has. Mailbox, Workshop, and Post Office are always needed.",
 	"Pick a pond size (or none). Move it with the Move tool.",
@@ -49,6 +52,9 @@ const POND_SIZES := {"None": Vector2i.ZERO, "Small": Vector2i(2, 2), "Medium": V
 const SEASON_NAMES := {"spring": "Spring", "summer": "Summer", "autumn": "Autumn", "winter": "Winter"}
 const AnswerButton := preload("res://scenes/ui/answer_button.gd")
 const INFO_ICON := preload("res://assets/icons/circle-help.svg")
+const PLUS_ICON := preload("res://assets/icons/plus.svg")
+const MINUS_ICON := preload("res://assets/icons/minus.svg")
+const CLEAR_ICON := preload("res://assets/icons/x.svg")
 const INK := Color("292E50")       # the theme's dark text color
 const PROBLEM := Color("D9453B")   # red, for "that won't work"
 const OPTIONS_BG := Color("FFF4D6")  # the soft yellow strip behind a tool's options
@@ -80,9 +86,12 @@ var _drag_spec := {}           # where the dragged thing would go now
 var _last_moved := ""          # the building R turns
 var _mouse := Vector2.ZERO     # the last mouse position over the island
 # Land tool
-var _land_add := true
-var _painting := false
-var _painted := false
+var _selected := {}                  # Vector2i -> true: the tiles Add / Remove land will change
+var _select_from := Vector2i(-1, -1)  # where the selection drag started (-1 = not dragging)
+var _select_before := {}             # the selection when the drag started (Shift adds to it)
+var _selection_marks: MultiMeshInstance3D
+var _select_material := StandardMaterial3D.new()
+var _land_buttons: Array[Button] = []  # Add, Remove, Clear: off while nothing is selected
 # Plants tool
 var _plant_kind := "tree"      # tree | bush | remove
 var _plant_preview: Node3D     # a see-through tree or bush under the mouse
@@ -124,6 +133,20 @@ func setup(island_builder: IslandBuilder, camera_rig: CameraRig, frame: Control)
 	_plant_ring.visible = false
 	add_child(_plant_ring)
 
+	# The Land tool's selection: one flat yellow square per selected tile.
+	_select_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_select_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_select_material.no_depth_test = true
+	_select_material.albedo_color = Color(1.0, 0.82, 0.1, 0.75)
+	var square := BoxMesh.new()
+	square.size = Vector3(IslandLayout.TILE * 0.86, 0.1, IslandLayout.TILE * 0.86)
+	square.material = _select_material
+	_selection_marks = MultiMeshInstance3D.new()
+	_selection_marks.multimesh = MultiMesh.new()
+	_selection_marks.multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	_selection_marks.multimesh.mesh = square
+	add_child(_selection_marks)
+
 	_build_toolbar(frame)
 
 
@@ -151,7 +174,7 @@ func cancel() -> void:
 func _close() -> void:
 	is_open = false
 	_dragging = ""
-	_painting = false
+	_clear_selection()
 	_hide_markers()
 	_panel.visible = false
 	rig.left_drag_pans = true
@@ -301,6 +324,8 @@ func _select_tool(which: Tool) -> void:
 	_tool = which
 	_highlight(_tool_buttons, which, &"TabActive", &"OutlineButton")
 	_dragging = ""
+	if which != Tool.LAND:
+		_clear_selection()
 	_hide_markers()
 	_options_title.text = "%s:" % TOOLS[which][0]
 	for child in _options.get_children():
@@ -309,11 +334,20 @@ func _select_tool(which: Tool) -> void:
 		Tool.MOVE:
 			_options.add_child(_option("Turn the last one", _turn_last))
 		Tool.LAND:
-			var add := _option("Add land", func(): _set_land_mode(true))
-			var remove := _option("Remove land", func(): _set_land_mode(false))
-			_options.add_child(add)
-			_options.add_child(remove)
-			_highlight([add, remove], 0 if _land_add else 1)
+			_land_buttons = [
+				_option("Add land", func(): _change_land(true)),
+				_option("Remove land", func(): _change_land(false)),
+				_option("Clear", _clear_selection),
+			]
+			var icons := [PLUS_ICON, MINUS_ICON, CLEAR_ICON]
+			for i in _land_buttons.size():
+				var button := _land_buttons[i]
+				button.icon = icons[i]
+				button.add_theme_constant_override("icon_max_width", 14)
+				for state in ["icon_normal_color", "icon_hover_color", "icon_pressed_color", "icon_disabled_color"]:
+					button.add_theme_color_override(state, INK)
+				_options.add_child(button)
+			_refresh_land_buttons()
 		Tool.PLANTS:
 			var kinds := ["tree", "bush", "remove"]
 			var row: Array[Button] = []
@@ -392,6 +426,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
 		_turn_carried(1 if event.button_index == MOUSE_BUTTON_WHEEL_UP else -1)
 		get_viewport().set_input_as_handled()  # turn, don't zoom
+	elif event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE \
+			and not _selected.is_empty():
+		_clear_selection()
+		get_viewport().set_input_as_handled()
 	elif event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_R:
 		if _carrying_building():
 			_turn_carried(1)
@@ -419,8 +457,9 @@ func _on_press(screen: Vector2) -> void:
 		Tool.MOVE:
 			_start_drag(tile)
 		Tool.LAND:
-			_painting = true
-			_paint(tile)
+			_select_before = _selected.duplicate() if Input.is_key_pressed(KEY_SHIFT) else {}
+			_select_from = _clamp_to_editable(tile)
+			_select_to(tile)
 		Tool.PLANTS:
 			_plant_at(IslandLayout.world_to_tile_units(_ground_point(screen)))
 			_show_plant_marker(screen)
@@ -433,9 +472,9 @@ func _on_hover(screen: Vector2) -> void:
 			if _dragging != "":
 				_drag_to(tile)
 		Tool.LAND:
-			_show_ghost(Rect2i(tile, Vector2i.ONE), draft.is_land(tile) != _land_add)
-			if _painting:
-				_paint(tile)
+			if _select_from.x >= 0:
+				_select_to(tile)
+			_show_ghost(Rect2i(tile, Vector2i.ONE), _is_editable(tile))
 		Tool.PLANTS:
 			_show_plant_marker(screen)
 		_:
@@ -445,11 +484,8 @@ func _on_hover(screen: Vector2) -> void:
 func _on_release() -> void:
 	if _tool == Tool.MOVE and _dragging != "":
 		_drop()
-	if _tool == Tool.LAND and _painting:
-		_painting = false
-		if _painted:
-			_painted = false
-			_rebuild()
+	if _tool == Tool.LAND:
+		_select_from = Vector2i(-1, -1)
 
 
 ## Show the see-through box over a rectangle of tiles: green if `ok`, red if not.
@@ -561,22 +597,82 @@ func _replace_building(spec: Dictionary) -> void:
 
 # --- Land ---------------------------------------------------------------------------
 
-func _set_land_mode(add: bool) -> void:
-	_land_add = add
-	_select_tool(Tool.LAND)
+## Tiles that can change: everything but the grid's outer ring (it stays sea).
+func _is_editable(tile: Vector2i) -> bool:
+	return tile.x >= 1 and tile.y >= 1 and tile.x <= IslandLayout.GRID_W - 2 and tile.y <= IslandLayout.GRID_H - 2
 
 
-func _paint(tile: Vector2i) -> void:
-	if draft.is_land(tile) == _land_add:
-		return
-	draft.set_land(tile, _land_add)
-	var problem := draft.problem()
-	if problem != "":
-		draft.set_land(tile, not _land_add)  # undo: that would break the island
-		_refresh_status(problem)
-		return
-	_painted = true
-	_refresh_status()
+func _clamp_to_editable(tile: Vector2i) -> Vector2i:
+	return tile.clamp(Vector2i.ONE, Vector2i(IslandLayout.GRID_W - 2, IslandLayout.GRID_H - 2))
+
+
+## While dragging: select the rectangle from where the drag started to `tile`
+## (plus what was selected before, when Shift was held).
+func _select_to(tile: Vector2i) -> void:
+	var corner := _clamp_to_editable(tile)
+	var low := _select_from.min(corner)
+	var high := _select_from.max(corner)
+	_selected = _select_before.duplicate()
+	for y in range(low.y, high.y + 1):
+		for x in range(low.x, high.x + 1):
+			_selected[Vector2i(x, y)] = true
+	_show_selection()
+
+
+func _clear_selection() -> void:
+	_selected.clear()
+	_select_from = Vector2i(-1, -1)
+	_show_selection()
+
+
+## Put a yellow square on every selected tile, and say how many there are.
+func _show_selection() -> void:
+	var multimesh := _selection_marks.multimesh
+	multimesh.instance_count = _selected.size()
+	var i := 0
+	for tile: Vector2i in _selected:
+		var middle := IslandLayout.tile_to_world(Vector2(tile) + Vector2(0.5, 0.5))
+		multimesh.set_instance_transform(i, Transform3D(Basis.IDENTITY, middle + Vector3(0, 0.12, 0)))
+		i += 1
+	_refresh_land_buttons()
+	if _tool == Tool.LAND and is_open:
+		if _selected.is_empty():
+			_refresh_status()
+		else:
+			var land := _selected.keys().filter(func(t): return draft.is_land(t)).size()
+			_status.text = "%d selected: %d land, %d sea. Add or Remove land, or Esc to clear." % [_selected.size(), land, _selected.size() - land]
+
+
+func _refresh_land_buttons() -> void:
+	for button in _land_buttons:
+		if is_instance_valid(button):
+			button.disabled = _selected.is_empty()
+
+
+## Add or remove land on every selected tile. Tiles that would break the island
+## (a building or the pond standing there, land cut in two, ...) are skipped.
+func _change_land(on: bool) -> void:
+	var tiles: Array = _selected.keys().filter(func(t): return draft.is_land(t) != on)
+	# Remove from the outside in, add from the inside out: that way each step
+	# keeps the island in one piece as long as possible.
+	var middle := Vector2(IslandLayout.GRID_W, IslandLayout.GRID_H) / 2.0
+	tiles.sort_custom(func(a, b):
+		var da := Vector2(a).distance_squared_to(middle)
+		var db := Vector2(b).distance_squared_to(middle)
+		return da > db if not on else da < db)
+	var skipped := 0
+	var reason := ""
+	for tile: Vector2i in tiles:
+		draft.set_land(tile, on)
+		var problem := draft.problem()
+		if problem != "":
+			draft.set_land(tile, not on)  # undo: that would break the island
+			skipped += 1
+			reason = problem
+	_clear_selection()
+	_rebuild()
+	if skipped > 0:
+		_refresh_status("%d tile%s stayed as they were: %s" % [skipped, "" if skipped == 1 else "s", reason])
 
 
 # --- Plants -------------------------------------------------------------------------

@@ -77,7 +77,9 @@ Backend design: [docs/architecture.md](docs/architecture.md).
       `friendships` in the snapshot, `friendship` event; game side to do)
 - [x] Cancel a task (`cancel_task` / `POST .../cancel`), create one over the socket
       (`create_task`), residents and islands can be deleted
-- [ ] Mii faces (with mood expressions), hats, hair, portraits ([docs/mii-customization.md](docs/mii-customization.md))
+- [x] Mii faces and hair from the Mii Maker parts, chosen on the creator's Look page
+- [x] Mii headshots on the resident cards (`Portraits` autoload)
+- [ ] Mood expressions, headshots in bubbles, body shape ([docs/mii-customization.md](docs/mii-customization.md))
 - [ ] Dreams, parties, apartment interiors
 - [ ] Blueprints (save and share island layouts as workflow templates)
 - [ ] Mock-mode web demo (Godot web export + hosted mock backend)

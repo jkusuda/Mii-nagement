@@ -63,6 +63,7 @@ The client should rebuild its view from scratch when it gets one.
         "bluntness": 0.3, "caution": 0.7, "chattiness": 0.6, "creativity": 0.5,
         "keys": {"read": "yes", "edit": "ask", "execute": "ask", "fetch": "no"},
         "gifts": [],
+        "appearance": {"skin": "#F2C6A0", "hair": 12, "hair_color": "#3B2418", "eyes": 3, "brows": 1, "nose": 0, "mouth": 2},
         "state": "idle", "building": "mailbox", "mood": "happy", "notebook": null
       }
     ],
@@ -109,6 +110,12 @@ The client should rebuild its view from scratch when it gets one.
   `database`, `terminal`) the resident brings to every ACP session (the `GIFTS`
   table in `backend/mii/agents/acp.py`). `GET /gifts` says which ones work on
   this machine. The `openrouter` brain has no MCP client, so it ignores them.
+- `residents[].appearance`: how the resident's Mii looks. Only the game reads it
+  (`MiiParts` in `game/scenes/mii/mii_parts.gd`): `skin` and `hair_color` are
+  `#RRGGBB`; `hair` (`-1` = bald, the last few are hats), `eyes`, `brows`,
+  `nose`, `mouth` are style numbers. `{}` until the creator sets it; the game
+  then picks a look from the resident's id. The server only checks it's a flat
+  object of at most 24 short keys with numbers, booleans, or short strings.
 - `residents[].notebook`: how full the agent's context window is, 0.0-1.0, or
   `null` until the agent reports it (see the `notebook` event).
 - `bubbles`: bubbles still waiting for an answer.
@@ -270,13 +277,15 @@ client.
     "brain": "claude-code", "model": null,
     "bluntness": 0.2, "caution": 0.8, "chattiness": 0.6, "creativity": 0.4,
     "keys": {"read": "yes", "edit": "ask", "execute": "ask", "fetch": "no"},
-    "gifts": ["docs"]
+    "gifts": ["docs"],
+    "appearance": {"skin": "#F2C6A0", "hair": 12, "hair_color": "#3B2418", "eyes": 3, "brows": 1, "nose": 0, "mouth": 2}
   }
 }
 ```
 `name` is required (1-20 characters). Every other field is optional and gets a
 default. `brain` is one of `mock`, `claude-code`, `codex`, `gemini`, `openrouter`.
-Unknown `job`, `brain`, key values, or gifts are rejected with `error`.
+Unknown `job`, `brain`, key values, or gifts, and an `appearance` that isn't a
+small flat object, are rejected with `error`.
 
 A new resident takes over the buildings of their job that nobody works at yet.
 To put them to work outright, add `"buildings": ["workshop", "lab"]` (building

@@ -1,6 +1,6 @@
 class_name ResidentCard
 extends PanelContainer
-## One card on the Residents screen: face, name, status tag, what they're up to,
+## One card on the Residents screen: Mii headshot, name, status tag, what they're up to,
 ## how full their notebook (context window) is, and their catchphrase.
 
 signal edit_pressed(resident: Dictionary)
@@ -15,8 +15,7 @@ func setup(data: Dictionary) -> void:
 	var ink := accent.darkened(0.2)  # a darker shade for text on a light background
 
 	%Name.text = str(data.get("name", "?"))
-	%Initial.text = %Name.text.left(1)  # TODO(stretch): a rendered Mii portrait (docs/mii-customization.md)
-	%Initial.add_theme_color_override("font_color", ink)
+	%Portrait.texture = Portraits.of(data)  # a headshot of their Mii (portraits.gd)
 	%Role.text = ResidentData.role_line(data)
 	%TagLabel.text = ResidentData.status_text(data)
 	%TagLabel.add_theme_color_override("font_color", ink)

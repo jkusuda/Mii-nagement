@@ -1,7 +1,8 @@
 class_name ResidentCreator
 extends PanelContainer
 ## The resident creator: name, colour, catchphrase, job, brain (ACP agent), the
-## four personality sliders, gifts (MCP servers), and house keys (permissions).
+## four personality sliders, gifts (MCP servers), and house keys (permissions)
+## on the About page; skin, hair, eyes, brows, nose and mouth on the Look page.
 ## A live 3D preview of the Mii on the left follows every change.
 ##
 ## The same screen edits an existing resident: open() it with their data.
@@ -39,12 +40,23 @@ var _sliders := {}
 var _gift_buttons := {}
 var _key_pickers := {}
 var _brain_ids: Array = ResidentData.BRAINS.keys()
+var _part_tiles := {}  # kind -> Array of tile buttons, index = style (hair: index 0 is "none")
+var _part_grids := {}  # kind -> GridContainer
+var _part_tabs := {}  # kind -> tab button
+
+## The Look page's tabs: [appearance key, label, the style shown as the tab's icon]. See MiiParts.
+const PART_TABS := [["hair", "Hair", 0], ["eyes", "Eyes", 0], ["brows", "Brows", 1], ["nose", "Nose", 4], ["mouth", "Mouth", 2]]
+const ABOUT_ICON := preload("res://assets/icons/user.svg")
+const LOOK_ICON := preload("res://assets/icons/smile.svg")
+const INK := Color("292E50")  # the theme's dark text colour
+const PART_COLUMNS := 14
 
 @onready var preview: MiiPreview = %Preview
 
 
 func _ready() -> void:
 	_build_swatches()
+	_build_look()
 	_build_jobs()
 	_build_brains()
 	_build_sliders()
@@ -61,6 +73,11 @@ func _ready() -> void:
 		_refresh())
 	%ModelEdit.text_changed.connect(func(text: String):
 		_data["model"] = text if text.strip_edges() else null)
+	# The page tabs get white Lucide icons, tinted dark like the text.
+	for pair in [[%AboutTab, ABOUT_ICON], [%LookTab, LOOK_ICON]]:
+		_set_tab_icon(pair[0], pair[1], INK, 18)
+	%AboutTab.pressed.connect(_show_page.bind(false))
+	%LookTab.pressed.connect(_show_page.bind(true))
 	%SurpriseButton.pressed.connect(_surprise)
 	%NextAnimButton.pressed.connect(preview.next_animation)
 	%CancelButton.pressed.connect(cancelled.emit)
@@ -72,10 +89,13 @@ func _ready() -> void:
 func open(resident: Dictionary = {}, island_name := "Pebble Cove") -> void:
 	_editing = not resident.is_empty()
 	_data = ResidentData.blank().merged(resident, true)
+	# Someone made before faces existed gets the look they already have on the island.
+	_data["appearance"] = MiiParts.for_resident(resident) if _editing else MiiParts.random()
 	%Title.text = "Edit %s" % resident.get("name", "") if _editing else "Create a resident"
 	%MovingLabel.text = ("Lives on %s" if _editing else "Moving to %s") % island_name
 	%MoveInButton.text = "Save" if _editing else "Move in"
 	%MoveInButton.disabled = false
+	_show_page(false)
 	_load_widgets()
 	_refresh()
 	_check_brains()
@@ -95,6 +115,14 @@ func _load_widgets() -> void:
 	for key in _key_pickers:
 		var choices: Array = ResidentData.KEY_CHOICES.keys()
 		_key_pickers[key].select(choices.find(_data["keys"].get(key, "ask")))
+	for kind in _part_tiles:
+		# Hair's tile 0 is "None" (style -1), so its tiles are shifted by one.
+		var index := int(_data["appearance"][kind]) + (1 if kind == "hair" else 0)
+		var tiles: Array = _part_tiles[kind]
+		index = clampi(index, 0, tiles.size() - 1)
+		# set_pressed_no_signal() doesn't release the rest of a ButtonGroup, so set every tile.
+		for i in tiles.size():
+			tiles[i].set_pressed_no_signal(i == index)
 
 
 ## Update everything that depends on _data: preview, labels, colours.
@@ -102,6 +130,7 @@ func _refresh() -> void:
 	var color := Color(str(_data["color"]))
 	var shown_name: String = _data["name"] if _data["name"] else "New friend"
 	preview.set_color(color)
+	preview.set_appearance(_data["appearance"])
 	%PreviewName.text = shown_name
 	%Speech.text = "“%s”" % (_data["catchphrase"] if _data["catchphrase"] else "Hi there!")
 	%JobLabel.text = str(_data["job"]).capitalize()
@@ -117,8 +146,11 @@ func _refresh() -> void:
 	_tint(%PreviewPanel, "SectionPanel", color.lerp(Color.WHITE, 0.82))
 	_tint(%JobPill, "TagPill", color.darkened(0.1))
 	for swatch in _swatches:
+		# Each swatch knows which field it sets: "color", or "skin" / "hair_color" in appearance.
+		var field: String = swatch.get_meta("field")
+		var current = _data[field] if field == "color" else _data["appearance"][field]
 		var style: StyleBoxFlat = swatch.get_theme_stylebox("normal")
-		var selected := Color(swatch.get_meta("color")) == color
+		var selected := Color(swatch.get_meta("color")) == Color(str(current))
 		style.border_color = Color("292E50") if selected else Color.WHITE
 
 
@@ -133,8 +165,16 @@ func _describe() -> String:
 	return text.left(1).to_upper() + text.substr(1)
 
 
+## "Surprise me": on the Look page, a new look only. On the About page, a new
+## everything, except that someone you're editing keeps their name.
 func _surprise() -> void:
-	_data["name"] = SURPRISE_NAMES.pick_random()
+	_data["appearance"] = MiiParts.random()
+	if %LookPage.visible:
+		_load_widgets()
+		_refresh()
+		return
+	if not _editing:
+		_data["name"] = SURPRISE_NAMES.pick_random()
 	_data["catchphrase"] = SURPRISE_PHRASES.pick_random()
 	_data["color"] = ResidentData.COLORS.pick_random()
 	_data["job"] = ResidentData.JOBS.pick_random()
@@ -166,22 +206,125 @@ func show_error(message: String) -> void:
 
 func _build_swatches() -> void:
 	for hex in ResidentData.COLORS:
-		var swatch := Button.new()
-		swatch.custom_minimum_size = Vector2(26, 26)
-		swatch.focus_mode = Control.FOCUS_NONE
-		swatch.set_meta("color", hex)
-		swatch.tooltip_text = hex
-		var style: StyleBoxFlat = get_theme_stylebox("panel", "AvatarCircle").duplicate()
-		style.bg_color = Color(hex)
-		style.set_border_width_all(3)
-		style.set_corner_radius_all(13)
-		for state in ["normal", "hover", "pressed", "hover_pressed"]:
-			swatch.add_theme_stylebox_override(state, style)
-		swatch.pressed.connect(func():
+		_add_swatch(%Swatches, "color", hex)
+
+
+## A round colour button that sets `field`: "color", or "skin" / "hair_color" in appearance.
+func _add_swatch(row: Container, field: String, hex: String) -> void:
+	var swatch := Button.new()
+	swatch.custom_minimum_size = Vector2(26, 26)
+	swatch.focus_mode = Control.FOCUS_NONE
+	swatch.set_meta("color", hex)
+	swatch.set_meta("field", field)
+	swatch.tooltip_text = hex
+	var style: StyleBoxFlat = get_theme_stylebox("panel", "AvatarCircle").duplicate()
+	style.bg_color = Color(hex)
+	style.set_border_width_all(3)
+	style.set_corner_radius_all(13)
+	for state in ["normal", "hover", "pressed", "hover_pressed"]:
+		swatch.add_theme_stylebox_override(state, style)
+	swatch.pressed.connect(func():
+		if field == "color":
 			_data["color"] = hex
-			_refresh())
-		%Swatches.add_child(swatch)
-		_swatches.append(swatch)
+		else:
+			_data["appearance"][field] = hex
+		_refresh())
+	row.add_child(swatch)
+	_swatches.append(swatch)
+
+
+# --- The Look page ---------------------------------------------------------------
+
+## Show the About page (false) or the Look page (true). On the Look page the
+## preview camera moves in close to the face.
+func _show_page(look: bool) -> void:
+	%AboutPage.visible = not look
+	%LookPage.visible = look
+	%AboutTab.theme_type_variation = &"TabInactive" if look else &"TabActive"
+	%LookTab.theme_type_variation = &"TabActive" if look else &"TabInactive"
+	preview.focus_face(look)
+
+
+## Give a tab button an icon left of its text. `tint` multiplies the icon in every
+## state (theme styles would otherwise recolour it); `width` is its size in px.
+func _set_tab_icon(button: Button, icon: Texture2D, tint: Color, width: int) -> void:
+	button.icon = icon
+	button.expand_icon = true
+	button.add_theme_constant_override("icon_max_width", width)
+	button.add_theme_constant_override("h_separation", 6)
+	for state in ["icon_normal_color", "icon_hover_color", "icon_pressed_color", "icon_hover_pressed_color", "icon_focus_color"]:
+		button.add_theme_color_override(state, tint)
+
+
+## Show one part's tiles (hair, eyes, ...).
+func _show_part(kind: String) -> void:
+	for k in _part_grids:
+		_part_grids[k].visible = k == kind
+		_part_tabs[k].theme_type_variation = &"TabActive" if k == kind else &"TabInactive"
+	%PartScroll.scroll_vertical = 0
+
+
+func _build_look() -> void:
+	for hex in MiiParts.SKIN_TONES:
+		_add_swatch(%SkinSwatches, "skin", hex)
+	for hex in MiiParts.HAIR_COLORS:
+		_add_swatch(%HairSwatches, "hair_color", hex)
+
+	for tab in PART_TABS:
+		var kind: String = tab[0]
+		var button := Button.new()
+		button.text = tab[1]
+		button.custom_minimum_size = Vector2(0, 62)
+		# The icon is a real part from the atlas (an eye on the Eyes tab, ...), untinted,
+		# above the label.
+		_set_tab_icon(button, MiiParts.icon(kind, tab[2]), Color.WHITE, 40)
+		button.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		button.vertical_icon_alignment = VERTICAL_ALIGNMENT_TOP
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.focus_mode = Control.FOCUS_NONE
+		button.pressed.connect(_show_part.bind(kind))
+		%PartTabRow.add_child(button)
+		_part_tabs[kind] = button
+
+		var grid := GridContainer.new()
+		grid.columns = PART_COLUMNS
+		grid.add_theme_constant_override("h_separation", 6)
+		grid.add_theme_constant_override("v_separation", 6)
+		%PartGrids.add_child(grid)
+		_part_grids[kind] = grid
+		# One toggle tile per style, in a ButtonGroup so only one is picked.
+		var group := ButtonGroup.new()
+		var tiles := []
+		var first := MiiParts.NO_HAIR if kind == "hair" else 0
+		for style in range(first, MiiParts.count(kind)):
+			var tile := Button.new()
+			tile.toggle_mode = true
+			tile.button_group = group
+			tile.theme_type_variation = &"GiftTile"
+			tile.custom_minimum_size = Vector2(62, 62)
+			tile.focus_mode = Control.FOCUS_NONE
+			if style == MiiParts.NO_HAIR:
+				tile.text = "None"
+				tile.tooltip_text = "No hair"
+			else:
+				# expand_icon lets the 128 px thumbnail shrink to fit the tile. GiftTile
+				# caps and tints icons (its Lucide icons are white), so undo both here.
+				tile.icon = MiiParts.icon(kind, style)
+				tile.expand_icon = true
+				tile.add_theme_constant_override("icon_max_width", 56)
+				for state in ["icon_normal_color", "icon_hover_color", "icon_pressed_color", "icon_hover_pressed_color", "icon_focus_color"]:
+					tile.add_theme_color_override(state, Color.WHITE)
+				tile.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+				var hat := kind == "hair" and MiiParts.is_hat(style)
+				tile.tooltip_text = "Hat" if hat else "%s %d" % [tab[1], style + 1]
+			tile.toggled.connect(func(on: bool):
+				if on:
+					_data["appearance"][kind] = style
+					_refresh())
+			grid.add_child(tile)
+			tiles.append(tile)
+		_part_tiles[kind] = tiles
+	_show_part("hair")
 
 
 func _build_jobs() -> void:
