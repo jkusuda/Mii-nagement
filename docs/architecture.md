@@ -74,6 +74,8 @@ backend/mii/
     openrouter.py  OpenRouterRunner + list_models()
   github.py        issue in / PR out, via the `gh` CLI
   insights.py      stats from the Step table
+  judge.py         small typed decisions (mood, missing verdict, flaky test re-run, tip, who helps):
+                   RuleJudge (default, offline) or JevJudge (TypeSafe Jev, falls back to the rules)
   replay.py        replay a recorded task into the game
   seed.py          seed island + mock simulator (used by `manage.py seed`)
   watch.py         prints the event stream (used by `manage.py watch`)
@@ -85,11 +87,11 @@ backend/mii/
 | Table | What it holds |
 |---|---|
 | `Island` | id, name, GitHub repo, `repo_path` (its local git repository), branch, town plan, house rules, `map` (land tiles, pond, plants, season) |
-| `Resident` | name, job, 4 personality sliders, `brain`, optional `model`, catchphrase, color, house `keys`, `gifts`, live state / building / mood / `notebook` |
+| `Resident` | name, job, 4 personality sliders, `brain`, optional `model`, catchphrase, color, house `keys`, `gifts`, live state / building / mood / `notebook` / `activity`, `appearance`, `notes` (the diary: `REMEMBER:` lines from their own replies) |
 | `Building` | type, name, lot (`x`, `y`, `facing`), resident |
 | `Road` | from, to, condition |
 | `Task` | title, status, where the package is, who carries it, `issue_number`, `branch`, `pr_url`, `merged_at`, `created_at` / `finished_at` |
-| `Step` | one building visit: task, building, resident, brain, outcome, timed out?, bubbles raised, start/finish time |
+| `Step` | one building visit: task, building, resident, brain, outcome, timed out?, bubbles raised, `flaky` (tests passed on the re-run), `helped` (a help visit: who asked), start/finish time |
 | `Event` | every event sent to the game (history + replay) |
 | `Setting` | user settings saved from the game (never secrets: those live in the OS keychain) |
 
@@ -140,6 +142,38 @@ resident's house keys tightened by the island's house rules
 makes commands that look like an install ask). The OpenRouter brain applies
 the same keys and rules to its `run_command` tool.
 
+## The judge, help visits, chat and the diary
+
+`judge.py` answers the small questions the engine used to settle with hard-coded rules.
+`RuleJudge` *is* those rules (the default, offline, deterministic). With a TypeSafe key
+saved (`typesafe_api_key`, env `TYPESAFE_API_KEY`) and the `judge` setting not `off`,
+`JevJudge` asks Jev, a fast typed-decision model (one HTTPS call per decision, ~100-500 ms,
+pick-one / score / yes-no probability over a state dict), and falls back to the rules on
+any error. Mock mode included: the calls cost a fraction of a cent and are the demo.
+`GET /health` says which judge is active. The judge never decides permissions.
+
+| decision | when | with Jev | with the rules |
+|---|---|---|---|
+| mood | after every step | reads the resident, building, outcome and reply | happy / frustrated, tired on timeout |
+| verdict | the reply had no `VERDICT` line | "did the agent finish?" < 0.4 → fail | pass (as before) |
+| flaky | the Lab's `TEST_COMMAND` failed | "flaky or environmental?" ≥ 0.7 → run once more (`Step.flaky`) | never re-run |
+| tip | `GET .../insights` | picks among the tips whose rule applies | the first rule that applies |
+| needs help | a step failed | "would a teammate unblock this?" ≥ 0.6 | a second fail at the same building, or a 💦 bubble |
+| helper | help is needed | picks among the free neighbours (or nobody) | same job as the building, else the best friend |
+
+**Help visits.** A resident can write `HELP: <what I'm stuck on>` in a reply (or the judge
+decides they are stuck). A free neighbour (idle or asleep) walks over, runs the same
+building with the request on top of the normal instructions, in the same worktree; their
+outcome picks the road, the Workshop commits their work as usual. Both get a `chat`
+event (the request, then the first words of the helper's report), the friendship meter
+grows, the helper goes idle. At most `MAX_HELPS` (2) per task; a visit counts toward the
+20-step cap. **Notes:** `SAY TO <Name>: <message>` becomes a `chat` event and shows up
+under "Messages from your neighbours" in that resident's next prompt on the task.
+**Diary:** `REMEMBER: <line>` lines go to `Resident.notes` (oldest lines dropped past
+~1500 characters) and open every future prompt of that resident. Every brain gets the same
+three lines explained at the end of its prompt (`agents.build_prompt`); `parse_verdict`
+strips them from the summary.
+
 ## Safety
 
 - Agents only run inside a git worktree of the island's own repository (`sandbox.py`).
@@ -159,7 +193,7 @@ the same keys and rules to its `run_command` tool.
 | Endpoint | Purpose |
 |---|---|
 | `WS /ws?island=<id>` | snapshot + live events; the game sends `answer_bubble`, `create_resident`, `update_resident`, `delete_resident`, `create_task`, `cancel_task`, `set_layout`, `update_island` |
-| `GET /health` | is the server up, which mode |
+| `GET /health` | is the server up, which mode, which judge (`rules` / `jev`) |
 | `GET /meta` | the vocabulary the game shows pickers for: jobs, traits, brains, gifts, keys, building types, road conditions, town plans, house rules, bubble kinds, moods, states, task statuses, weather kinds |
 | `GET /brains` | `{brain: true/false}`: which brains can run here (the creator greys out the rest) |
 | `GET /brains/detail` | per brain: `ok`, `installed`, `logged_in` (best effort), `api_key`, `hint` |
@@ -181,7 +215,7 @@ the same keys and rules to its `run_command` tool.
 | `GET /islands/{id}/insights?range=week` | stats for the Insights screen and News' "This week" (`today` / `week` / `month`) |
 | `GET /islands/{id}/events?limit=200` | stored events, oldest first, for the News tab (see "Events history") |
 | `PUT /islands/{id}/layout` | build mode over HTTP: `{"buildings", "roads"}` → the saved layout (same rules as `set_layout` in protocol.md); or the game's form `{"map", "buildings": [{type, x, y, facing}]}` → the new snapshot (also broadcast), 400 / 409 (steps changing during a task), see protocol.md "Island map" |
-| `GET /settings` | effective settings, what `.env` locks, which API keys are set |
+| `GET /settings` | effective settings (incl. `judge`, `godot_path`), what `.env` locks, which API keys are set (incl. `typesafe_api_key`) |
 | `PUT /settings` | `{"settings": {...}, "secrets": {"openrouter_api_key": "sk-..." \| null}}`; keys go to the keychain and are never echoed |
 | `POST /replay/{task_id}?speed=4` | replay a recorded task (demo safety net) |
 
@@ -281,10 +315,21 @@ out (against the island's branch), Lab test runs, the full insights payload,
 events history, build mode (`set_layout`), replay. Real-mode runs against the
 live CLIs still need a hands-on check (see README "Real agents").
 
+## Two people, one island
+
+Today a second Godot client is a full co-pilot: start the backend with
+`uvicorn ... --host 0.0.0.0`, run the game elsewhere on the LAN with
+`MII_SERVER=<host-ip>:8000`, and both players get the same broadcasts, answer the same
+bubbles and send packages to the same island. Everything still runs on the host: the
+agents, the host's CLI logins and keychain keys, `gh`, the repositories. Two *accounts*
+on one island (each resident on its owner's subscription, each player's own house keys)
+would need a login on the socket, per-user brains (agents run as the host today), `wss://`
+in `net.gd`, and island ownership. Parked on purpose; the co-pilot mode covers pairing.
+
 ## Not in scope (on purpose)
 
-LangChain or other direct-API runners beyond OpenRouter, friendship scores, the
-ML team router, several tasks at once on one island. (Islands run in parallel:
+LangChain or other direct-API runners beyond OpenRouter, the ML team router, several
+tasks at once on one island, multi-account islands (see above). (Islands run in parallel:
 `run_forever` hands each task to its island's `Lane`, which runs that island's
 packages one at a time. Island News is written by the game from stored events;
 the backend only serves them, see "Events history".)

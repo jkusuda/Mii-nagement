@@ -126,6 +126,16 @@ GIFTS = {
         "label": "Terminal", "command": ["npx", "-y", "mcp-server-commands"],
         "hint": "an extra shell tool (the ACP agents have their own too)",
     },
+    # Animation and video work (the island's own game lives in game/, a Godot 4 project).
+    "godot": {
+        "label": "Godot", "command": ["npx", "-y", "godot-mcp-runtime"],
+        "needs_env": "GODOT_PATH",
+        "hint": "run, script and screenshot a Godot 4 project (set GODOT_PATH, the Godot executable, in settings)",
+    },
+    "video": {
+        "label": "Video", "command": ["npx", "-y", "ffmpeg-mcp"], "needs": "ffmpeg",
+        "hint": "convert, trim and thumbnail media with ffmpeg",
+    },
 }
 
 # ACP tool kind -> house key (Resident.keys: "yes" = allow by itself, "ask" = ✋ bubble, "no" = reject).

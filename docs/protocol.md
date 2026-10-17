@@ -120,7 +120,7 @@ The client should rebuild its view from scratch when it gets one.
   or `no`. The ACP runner honours them: `yes` answers the agent's own
   "allow once" option, `ask` shows a ✋ bubble, `no` rejects.
 - `residents[].gifts`: ids of extra MCP servers (`browser`, `github`, `docs`,
-  `database`, `terminal`) the resident brings to every ACP session (the `GIFTS`
+  `database`, `terminal`, `godot`, `video`) the resident brings to every ACP session (the `GIFTS`
   table in `backend/mii/agents/acp.py`). `GET /gifts` says which ones work on
   this machine. The `openrouter` brain has no MCP client, so it ignores them.
 - `residents[].notebook`: how full the agent's context window is, 0.0-1.0, or
@@ -207,7 +207,10 @@ A resident's mood changed.
 ```json
 {"type": "mood", "agent": "sydney", "mood": "proud"}
 ```
-`mood`: `happy | focused | confused | frustrated | tired | proud`.
+`mood`: `happy | focused | confused | frustrated | tired | proud`. The list may grow;
+show an unknown mood neutrally. (With a TypeSafe key saved, the backend's judge reads the
+mood off what the resident just did; otherwise simple rules pick it. The game adds a few
+"vibes" of its own on top, such as sleepy or bored, from the snapshot alone.)
 
 | mood         | suggested emoji |
 |--------------|-----------------|
@@ -274,6 +277,14 @@ The island's header changed (renamed, a repo linked, branch or house rules
 edited, by any client). Same fields as the top of the snapshot: replace them.
 ```json
 {"type": "island", "island": {"id": "sunny", "name": "Sunnier Isle", "repo": "me/sunny", "path": "/home/you/Documents/Mii-nagement/sunny", "branch": "main", "plan": "classic", "rules": {"merge_pr": true, "install_packages": true, "shell": false}, "created_at": "2026-10-04T09:12:00+00:00"}}
+```
+
+### `chat`
+One resident said something to another: a request for help, the helper's reply, or a
+note left with a `SAY TO <Name>:` line. Show a speech bubble over `from`; there is
+nothing to answer. Residents see what was said to them on their next step of that task.
+```json
+{"type": "chat", "from": "carlos", "to": "jun", "task": "t_12", "text": "I'm stuck at the Lab on 'Fix login typo'. Can you take a look?"}
 ```
 
 ### `weather`
@@ -477,6 +488,11 @@ For each building the package visits:
    waits for `answer_bubble` or a timeout, then `bubble_resolved`). A step that
    runs past the step timeout is stopped and counts as `fail`.
 5. `mood`
+5b. If the step failed and the resident is stuck (a `HELP:` line in their reply, or the
+   judge's call after a bounce), a free neighbour may come over, at most twice per task:
+   `chat` (asker → helper), the helper's `move` + `agent_state: walking` / `working`, their
+   own `activity` and `bubble`s, `chat` back (helper → asker), `friendship`, `mood`,
+   `agent_state: idle`. The helper's outcome is the one that picks the road.
 6. The step finishes with an outcome (`pass` or `fail`), and the engine picks the
    next road:
    - a road whose `condition` matches the outcome wins;

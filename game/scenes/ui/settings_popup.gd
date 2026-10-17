@@ -20,10 +20,13 @@ const SETTINGS := [
 	["islands_root", "Folder for new islands", "Where new island repositories go.", "text"],
 	["openrouter_model", "Default OpenRouter model", "For OpenRouter residents without a model of their own.", "text"],
 	["keep_worktrees", "Keep worktrees", "Leave each task's git worktree behind afterwards, for debugging.", "bool"],
+	["judge", "Judge", "auto: moods, help and flaky re-runs ask Jev when a TypeSafe key is saved. off: rules only.", "text"],
+	["godot_path", "Godot executable", "For the Godot gift: the Godot 4 binary residents may run.", "text"],
 ]
 ## [secret, label]. Must match SECRETS in backend/mii/prefs.py.
 const SECRETS := [
 	["openrouter_api_key", "OpenRouter"],
+	["typesafe_api_key", "TypeSafe (Jev: moods, helpers, flaky tests)"],
 	["anthropic_api_key", "Anthropic (Claude Code)"],
 	["openai_api_key", "OpenAI (Codex)"],
 	["gemini_api_key", "Google (Gemini CLI)"],

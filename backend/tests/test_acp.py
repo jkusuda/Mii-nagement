@@ -110,7 +110,7 @@ async def test_acp_runner_hands_over_gifts_and_fills_the_notebook(sandbox, monke
 def test_gifts_table_and_what_is_missing(monkeypatch):
     import shutil
 
-    assert set(GIFTS) == {"browser", "github", "docs", "database", "terminal"}
+    assert set(GIFTS) == {"browser", "github", "docs", "database", "terminal", "godot", "video"}
     monkeypatch.setattr(shutil, "which", lambda name: None)
     assert all(not g["ok"] and "install" in g["hint"] for g in available_gifts().values())
     servers, skipped = gift_servers(["docs", "jetpack"])

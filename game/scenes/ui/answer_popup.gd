@@ -148,7 +148,7 @@ func _header(bubble: Dictionary, resident: Dictionary) -> Control:
 	text.add_child(_label(job + (" · at the %s" % place if place else ""), &"BodyText"))
 	var mood_row := HBoxContainer.new()
 	mood_row.add_theme_constant_override("separation", 8)
-	mood_row.add_child(_label("Mood: %s" % str(resident.get("mood", "happy")).capitalize(), &"LabelMuted"))
+	mood_row.add_child(_label("Mood: %s" % ResidentData.vibe_word(resident).capitalize(), &"LabelMuted"))
 	mood_row.add_child(_tag(tag[0], tag[1], tag_color))
 	text.add_child(mood_row)
 	row.add_child(text)

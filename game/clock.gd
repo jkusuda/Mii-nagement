@@ -65,7 +65,8 @@ func day_number(created_at: String) -> int:
 
 ## Today's weather on an island: picked from the island id and the date, so it
 ## stays the same all day and differs between islands.
-## TODO(stretch): weather from island health (rain after failing tests?).
+## The backend sends real weather from the island's recent work (`weather` in the
+## snapshot); game.gd prefers that and uses this roll as the fallback.
 func weather(island_id: String) -> String:
 	var roll := hash("%s:%d" % [island_id, _local_day(Time.get_unix_time_from_system())])
 	var total := 0

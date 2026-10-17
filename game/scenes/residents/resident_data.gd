@@ -54,7 +54,21 @@ const GIFTS := [
 	["docs", "Docs", preload("res://assets/icons/book-open.svg")],
 	["database", "Database", preload("res://assets/icons/database.svg")],
 	["terminal", "Terminal", preload("res://assets/icons/terminal.svg")],
+	["godot", "Godot", preload("res://assets/icons/code.svg")],
+	["video", "Video", preload("res://assets/icons/smile.svg")],
 ]
+
+## How a resident feels, as the island shows it: the backend's six moods (docs/protocol.md)
+## plus a few "vibes" the game reads off the snapshot itself (see vibe()). word, colour.
+const VIBES := {
+	"happy": ["happy", Color("2FA37A")], "focused": ["focused", Color("3E7FCB")],
+	"confused": ["puzzled", Color("7553DF")], "frustrated": ["grumpy", Color("E36F1E")],
+	"tired": ["tired", Color("C57722")], "proud": ["proud", Color("009D85")],
+	"sleepy": ["sleepy", Color("8A8FA8")], "bored": ["bored", Color("8A8FA8")],
+	"lonely": ["lonely", Color("7553DF")], "excited": ["excited", Color("E39537")],
+	"relaxed": ["relaxed", Color("2FA37A")],
+}
+const BORED_AFTER := 180.0  # seconds idle before a resident looks bored
 
 ## The creator's colour swatches.
 const COLORS := ["#9B87F5", "#EE7C93", "#2FA37A", "#3E7FCB", "#E39537", "#F2C230", "#2A9D8F", "#8A8FA8"]
@@ -127,15 +141,61 @@ static func default_keys() -> Dictionary:
 
 ## "Coder · Puzzled"
 static func role_line(resident: Dictionary) -> String:
+	return "%s · %s" % [str(resident.get("job", "")).capitalize(), vibe_word(resident).capitalize()]
+
+
+## The vibe a resident shows right now. The backend sends six moods; the game adds a few
+## it can read off the snapshot itself (no backend, no AI): sleepy, excited, lonely, bored,
+## relaxed. Unknown moods from a newer server fall through unchanged (protocol rule 1).
+static func vibe(resident: Dictionary, island: Dictionary = {}) -> String:
+	if island.is_empty():
+		island = Net.island
+	var state := str(resident.get("state", "idle"))
 	var mood := str(resident.get("mood", "happy"))
-	return "%s · %s" % [str(resident.get("job", "")).capitalize(), mood.capitalize()]
+	if state == "sleeping":
+		return "sleepy"
+	if state != "idle":
+		return mood
+	var id := str(resident.get("id", ""))
+	# A package waits in the Mailbox and they run it: something to do soon.
+	for t in island.get("tasks", []):
+		if t.get("status") == "queued" and runs_building_type(id, "mailbox", island):
+			return "excited"
+	# Everyone else has made a friend and they haven't.
+	var friendships: Array = island.get("friendships", [])
+	if not friendships.is_empty() and best_friend(id, friendships).is_empty():
+		return "lonely"
+	var since := float(resident.get("idle_since", 0.0))
+	if since > 0.0 and Time.get_unix_time_from_system() - since > BORED_AFTER:
+		return "bored"
+	if island.get("weather", "") == "sunny" and mood in ["happy", "proud"]:
+		return "relaxed"
+	return mood
 
 
-## "2 happy · 1 tired": the two most common moods (sleeping counts as sleepy).
+static func vibe_word(resident: Dictionary, island: Dictionary = {}) -> String:
+	var v := vibe(resident, island)
+	return VIBES[v][0] if VIBES.has(v) else v
+
+
+static func vibe_color(resident: Dictionary, island: Dictionary = {}) -> Color:
+	var v := vibe(resident, island)
+	return VIBES[v][1] if VIBES.has(v) else Color("8A8FA8")
+
+
+## Does this resident run a building of this type on the island?
+static func runs_building_type(resident_id: String, type: String, island: Dictionary) -> bool:
+	for b in island.get("buildings", []):
+		if b.get("type") == type and b.get("resident") == resident_id:
+			return true
+	return false
+
+
+## "2 happy · 1 tired": the two most common vibes.
 static func mood_summary(residents: Array) -> String:
 	var moods := {}
 	for r in residents:
-		var mood := "sleepy" if r.get("state") == "sleeping" else str(r.get("mood", "happy"))
+		var mood := vibe_word(r)
 		moods[mood] = moods.get(mood, 0) + 1
 	var common: Array = moods.keys()
 	common.sort_custom(func(a, b): return moods[a] > moods[b])

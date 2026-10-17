@@ -123,7 +123,7 @@ async def test_events_history_endpoint(island, fake_runtime):
 
 async def test_gifts_endpoint():
     data = (await AsyncClient().get("/gifts")).json()
-    assert set(data) == {"browser", "github", "docs", "database", "terminal"}
+    assert set(data) == {"browser", "github", "docs", "database", "terminal", "godot", "video"}
     assert {"ok", "label", "hint"} <= set(data["docs"]) and isinstance(data["docs"]["ok"], bool)
 
 
@@ -209,7 +209,7 @@ async def test_meta_lists_the_vocabulary():
     assert data["jobs"] == ["planner", "coder", "reviewer"]
     assert set(data["traits"]) == {"bluntness", "caution", "chattiness", "creativity"} and data["traits"]["caution"]["high"]
     assert "openrouter" in data["brains"] and "mock" in data["brains"]
-    assert set(data["gifts"]) == {"browser", "github", "docs", "database", "terminal"}
+    assert set(data["gifts"]) == {"browser", "github", "docs", "database", "terminal", "godot", "video"}
     assert data["keys"]["values"] == ["yes", "ask", "no"] and data["keys"]["defaults"]["read"] == "yes"
     assert len(data["plans"]["classic"]["steps"]) == 5 and data["building_types"] == ["mailbox", "workshop", "lab", "courthouse", "post_office"]
     assert data["bubble_kinds"] == ["confused", "struggling", "permission", "ready", "tired"]
