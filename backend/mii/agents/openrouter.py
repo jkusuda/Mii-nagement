@@ -13,7 +13,7 @@ from pathlib import Path
 
 import httpx
 
-from mii.agents import AgentJob, StepResult, build_prompt, parse_verdict
+from mii.agents import AgentJob, StepResult, build_prompt, parse_verdict, permission_for
 from mii.personality import build_system_prompt
 from mii.sandbox import SandboxError, is_inside
 
@@ -135,8 +135,10 @@ class OpenRouterRunner:
                 return f"wrote {path.relative_to(workdir)}"
             if name == "run_command":
                 command = args.get("command", "")
-                answer = await job.ask("permission", f"May I run `{command}`?", ["Allow", "Deny"])
-                if answer != "Allow":
+                key = permission_for(job, "execute", command)  # house keys + house rules
+                if key == "no":
+                    return "denied: this resident's house key says no to running commands"
+                if key == "ask" and await job.ask("permission", f"May I run `{command}`?", ["Allow", "Deny"]) != "Allow":
                     return "denied: the user did not allow this command"
                 return await _run(command, workdir)
             if name == "ask_user":

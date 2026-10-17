@@ -34,8 +34,9 @@ def bubble(agent: str, kind: str, bubble_id: str, text: str, options: list[str] 
     return event
 
 
-def bubble_resolved(bubble_id: str) -> dict:
-    return {"type": "bubble_resolved", "id": bubble_id}
+def bubble_resolved(bubble_id: str, answered: bool = False, response: str | None = None) -> dict:
+    """`answered` is False when the bubble timed out. insights.py counts answers from these."""
+    return {"type": "bubble_resolved", "id": bubble_id, "answered": answered, "response": response}
 
 
 def handoff(from_agent: str, to_agent: str, task: str, outcome: str) -> dict:
@@ -58,8 +59,12 @@ def resident(r) -> dict:
     return {"type": "resident", "resident": resident_to_dict(r)}
 
 
-def resident(r) -> dict:
-    return {"type": "resident", "resident": resident_to_dict(r)}
+def notebook(agent: str, value: float) -> dict:
+    return {"type": "notebook", "agent": agent, "value": value}
+
+
+def layout(buildings: list[dict], roads: list[dict]) -> dict:
+    return {"type": "layout", "buildings": buildings, "roads": roads}
 
 
 def error(message: str) -> dict:
@@ -137,13 +142,15 @@ class Bubbles:
         future = asyncio.get_running_loop().create_future()
         self.open[bubble_id] = OpenBubble(bubble_id, island_id, agent, kind, text, options, future)
         await self.bus.emit(island_id, bubble(agent, kind, bubble_id, text, options))
+        response: str | None = None
         try:
-            return await asyncio.wait_for(future, timeout)
+            response = await asyncio.wait_for(future, timeout)
+            return response
         except TimeoutError:
             return None
         finally:
             del self.open[bubble_id]
-            await self.bus.emit(island_id, bubble_resolved(bubble_id))
+            await self.bus.emit(island_id, bubble_resolved(bubble_id, response is not None, response))
 
     def answer(self, bubble_id: str, response: str) -> bool:
         """Deliver an answer. Returns False if the bubble is unknown or already closed."""

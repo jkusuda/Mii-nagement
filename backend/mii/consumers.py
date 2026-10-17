@@ -7,10 +7,11 @@ the EventBus keeps the connected consumers in memory and calls send_json().
 
 from urllib.parse import parse_qs
 
+from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 
-from mii import events, residents
-from mii.models import Island, island_snapshot
+from mii import events, layout, residents
+from mii.models import Island, island_layout, island_snapshot
 from mii.runtime import get_runtime
 
 
@@ -37,6 +38,15 @@ async def handle_message(runtime, island_id: str, message) -> dict | None:
         except residents.ResidentError as e:
             return events.error(str(e))
         await runtime.bus.emit(island_id, events.resident(resident))  # every client, including the sender
+        if "buildings" in data:  # who works where changed too
+            await runtime.bus.emit(island_id, events.layout(**await island_layout(island_id)))
+    elif kind == "set_layout":
+        try:
+            buildings, roads = layout.clean_layout(island_id, message)
+            saved = await sync_to_async(layout.save_layout)(island_id, buildings, roads)
+        except layout.LayoutError as e:
+            return events.error(str(e))
+        await runtime.bus.emit(island_id, events.layout(**saved))
     return None
 
 

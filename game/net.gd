@@ -187,6 +187,13 @@ func _handle_message(text: String) -> void:
 		"activity":
 			_patch_resident(event["agent"], {"activity": event["text"]})
 			activity_reported.emit(str(event["agent"]), str(event["text"]))
+		"notebook":
+			# How full the resident's context window is (0-1); resident_card shows it.
+			_patch_resident(event["agent"], {"notebook": event["value"]})
+		"layout":
+			# Build mode or the creator changed who works where: replace buildings + roads.
+			island["buildings"] = event["buildings"]
+			island["roads"] = event["roads"]
 		"task":
 			_remember_task(event)
 			task_updated.emit(event)

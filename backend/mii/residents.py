@@ -1,15 +1,19 @@
 """Creating and editing residents (`create_resident` / `update_resident`).
 
-The resident creator in the game sends these over the WebSocket. New residents
-move into the building of their job on the island (mailbox / workshop /
-courthouse). They're placeholders for the workflow for now: the engine keeps
-using the resident each building points at (Building.resident).
+The resident creator in the game sends these over the WebSocket. A new resident
+moves into their job's buildings (mailbox / workshop / courthouse) and takes
+over the ones nobody works at yet. `buildings` (a list of building ids) makes
+them the worker at those buildings outright, taking over from whoever was there:
+the engine always uses the resident each building points at (Building.resident).
 """
 
 import re
 import uuid
 
-from mii.agents.acp import BRAINS
+from asgiref.sync import sync_to_async
+
+from mii.agents.acp import BRAINS, GIFTS
+from mii.layout import LayoutError, assign_buildings
 from mii.models import DEFAULT_KEYS, Building, Resident
 from mii.personality import JOBS
 
@@ -17,7 +21,6 @@ from mii.personality import JOBS
 JOB_BUILDINGS = {"planner": ["mailbox", "post_office"], "coder": ["workshop", "lab"], "reviewer": ["courthouse"]}
 SLIDERS = ("bluntness", "caution", "chattiness", "creativity")
 KEY_VALUES = ("yes", "ask", "no")
-GIFTS = ("browser", "github", "docs", "database", "terminal")  # TODO(mvp): an MCP server table, like BRAINS
 MAX_NAME = 20
 HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
@@ -77,6 +80,15 @@ def clean_fields(data: dict, partial: bool) -> dict:
     return out
 
 
+async def _work_at(island_id: str, resident: Resident, data: dict) -> None:
+    if "buildings" not in data:
+        return
+    try:
+        await sync_to_async(assign_buildings)(island_id, resident.id, data["buildings"])
+    except LayoutError as e:
+        raise ResidentError(str(e)) from None
+
+
 async def create_resident(island_id: str, data: dict) -> Resident:
     fields = clean_fields(data, partial=False)
     job = fields.setdefault("job", "coder")
@@ -91,6 +103,7 @@ async def create_resident(island_id: str, data: dict) -> Resident:
         if b.resident_id is None:
             b.resident_id = resident.id
             await b.asave(update_fields=["resident_id"])
+    await _work_at(island_id, resident, data)
     return resident
 
 
@@ -103,4 +116,5 @@ async def update_resident(island_id: str, data: dict) -> Resident:
         setattr(resident, field, value)
     if changes:
         await resident.asave(update_fields=list(changes))
+    await _work_at(island_id, resident, data)
     return resident

@@ -3,14 +3,19 @@
     GET  /health                       is the server up? which mode?
     GET  /brains                       {brain: true/false} (what the game's creator greys out)
     GET  /brains/detail                per brain: installed, logged_in, api_key, hint
+    GET  /gifts                        per gift (MCP server): ok, label, hint (what the creator greys out)
     GET  /models                       the OpenRouter model catalogue (needs OPENROUTER_API_KEY)
     GET  /islands                      every island + the default folder for new repositories
     POST /islands                      found an island {"name", "repo", "branch", "plan", "rules", "folder", "existing_repo"}
     GET  /github/repos?q=              the user's repos (via gh), for the island creator
     GET  /github/branches?repo=        a repo's branches (via gh)
     GET  /islands/{id}                 the island snapshot
-    POST /islands/{id}/tasks           {"title": "...", "description": "..."} or {"issue": 42}
-    GET  /islands/{id}/insights        stats for the Insights screen
+    GET  /islands/{id}/tasks           the island's tasks with their steps (?status=done,failed&limit=50)
+    POST /islands/{id}/tasks           {"title": "...", "description": "..."} or {"issue": 42} -> runs through the island
+    GET  /islands/{id}/tasks/{task}    one task: steps (what each resident reported) + the events while it ran
+    GET  /islands/{id}/insights        stats for the Insights screen (?range=today|week|month)
+    GET  /islands/{id}/events          stored events, oldest first (?limit=200), for the News tab
+    PUT  /islands/{id}/layout          build mode: {"buildings": [...], "roads": [...]} -> the saved layout
     GET  /settings                     settings + which API keys are set (never the keys themselves)
     PUT  /settings                     {"settings": {...}, "secrets": {"openrouter_api_key": "sk-..."|null}}
     POST /replay/{task_id}?speed=4     replay a recorded task into the game
@@ -23,11 +28,13 @@ from django.http import HttpRequest, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
-from mii import github, islands, prefs
-from mii.agents.acp import available_brains
+from asgiref.sync import sync_to_async
+
+from mii import events, github, islands, layout, prefs
+from mii.agents.acp import available_brains, available_gifts
 from mii.agents.openrouter import list_models
-from mii.insights import island_insights
-from mii.models import Island, island_snapshot, task_to_dict
+from mii.insights import RANGES, island_insights
+from mii.models import Event, Island, Step, Task, island_snapshot, step_to_dict, task_detail_dict, task_to_dict
 from mii.replay import ReplayError, replay_task
 from mii.runtime import get_runtime
 
@@ -53,6 +60,11 @@ async def brains(request: HttpRequest) -> JsonResponse:
 @require_GET
 async def brains_detail(request: HttpRequest) -> JsonResponse:
     return JsonResponse(available_brains(prefs.secret("openrouter_api_key")))
+
+
+@require_GET
+async def gifts(request: HttpRequest) -> JsonResponse:
+    return JsonResponse(await asyncio.to_thread(available_gifts))
 
 
 @require_GET
@@ -121,11 +133,21 @@ async def get_island(request: HttpRequest, island_id: str) -> JsonResponse:
 
 
 @csrf_exempt
-@require_POST
-async def create_task(request: HttpRequest, island_id: str) -> JsonResponse:
+async def tasks_view(request: HttpRequest, island_id: str) -> JsonResponse:
+    """GET: the island's tasks, newest first. POST: send a task package to the mailbox.
+
+    A posted task is queued and run by the engine worker: each building's resident
+    does their step through their brain (Claude Code, Codex, Gemini over ACP, or
+    OpenRouter; the mock brain while `mock_agents` is on). Follow it over the
+    WebSocket, or poll GET /islands/{id}/tasks/{task_id}.
+    """
     island = await _island_or_none(island_id)
     if island is None:
         return _error(f"no island {island_id!r}", 404)
+    if request.method == "GET":
+        return await _list_tasks(request, island_id)
+    if request.method != "POST":
+        return _error("GET or POST", 405)
     try:
         body = json.loads(request.body or b"{}")
     except json.JSONDecodeError:
@@ -148,11 +170,100 @@ async def create_task(request: HttpRequest, island_id: str) -> JsonResponse:
     return JsonResponse(task_to_dict(task))
 
 
+async def _list_tasks(request: HttpRequest, island_id: str) -> JsonResponse:
+    statuses = [s for s in request.GET.get("status", "").split(",") if s]
+    try:
+        limit = max(1, int(request.GET.get("limit", "50")))
+    except ValueError:
+        return _error("limit must be a number", 400)
+    rows = Task.objects.filter(island_id=island_id).order_by("-created_at", "-id")
+    if statuses:
+        rows = rows.filter(status__in=statuses)
+    tasks = [t async for t in rows[:limit]]
+    steps = await _steps_by_task([t.id for t in tasks])
+    return JsonResponse({"tasks": [task_detail_dict(t, steps.get(t.id, [])) for t in tasks]})
+
+
+@require_GET
+async def get_task(request: HttpRequest, island_id: str, task_id: str) -> JsonResponse:
+    task = await Task.objects.filter(pk=task_id, island_id=island_id).afirst()
+    if task is None:
+        return _error(f"no task {task_id!r} on island {island_id!r}", 404)
+    steps = await _steps_by_task([task.id])
+    return JsonResponse({**task_detail_dict(task, steps.get(task.id, [])), "events": await _task_events(task)})
+
+
+async def _steps_by_task(task_ids: list[str]) -> dict[str, list[Step]]:
+    """task id -> its Step rows, oldest first."""
+    steps: dict[str, list[Step]] = {}
+    async for s in Step.objects.filter(task_id__in=task_ids).order_by("id"):
+        steps.setdefault(s.task_id, []).append(s)
+    return steps
+
+
+async def _task_events(task: Task, limit: int = 200) -> list[dict]:
+    """The island's stored events while this task ran: activity lines, bubbles, moods, handoffs.
+
+    Events aren't tagged with a task, but the engine runs one task at a time, so
+    everything between the task's `in_progress` event and its `done`/`failed`
+    event belongs to it. Same shape as the planned GET /islands/{id}/events:
+    the stored payload plus `event_id`, oldest first, the newest `limit` rows.
+    """
+    marks = Event.objects.filter(island_id=task.island_id, type="task", payload__id=task.id).order_by("id")
+    first = await marks.filter(payload__status="in_progress").afirst()
+    if first is None:
+        return []  # still queued
+    rows = Event.objects.filter(island_id=task.island_id, id__gte=first.id)
+    last = await marks.filter(payload__status__in=["done", "failed"]).alast()
+    if last is not None:
+        rows = rows.filter(id__lte=last.id)
+    newest = [{"event_id": e.id, **e.payload} async for e in rows.order_by("-id")[:limit]]
+    return newest[::-1]
+
+
 @require_GET
 async def get_insights(request: HttpRequest, island_id: str) -> JsonResponse:
     if await _island_or_none(island_id) is None:
         return _error(f"no island {island_id!r}", 404)
-    return JsonResponse(await island_insights(island_id))
+    range_name = request.GET.get("range", "week")
+    if range_name not in RANGES:
+        return _error(f"range must be one of {list(RANGES)}", 400)
+    return JsonResponse(await island_insights(island_id, range_name))
+
+
+@require_GET
+async def get_events(request: HttpRequest, island_id: str) -> JsonResponse:
+    """The newest `limit` stored events, oldest first: the stored payload plus `event_id`."""
+    if await _island_or_none(island_id) is None:
+        return _error(f"no island {island_id!r}", 404)
+    try:
+        limit = min(max(1, int(request.GET.get("limit", "200"))), 2000)
+    except ValueError:
+        return _error("limit must be a number", 400)
+    newest = [{"event_id": e.id, **e.payload} async for e in Event.objects.filter(island_id=island_id).order_by("-id")[:limit]]
+    return JsonResponse({"events": newest[::-1]})
+
+
+@csrf_exempt
+async def layout_view(request: HttpRequest, island_id: str) -> JsonResponse:
+    """PUT: replace the island's buildings and roads (build mode), then tell every client."""
+    if request.method != "PUT":
+        return _error("PUT", 405)
+    if await _island_or_none(island_id) is None:
+        return _error(f"no island {island_id!r}", 404)
+    try:
+        body = json.loads(request.body or b"{}")
+    except json.JSONDecodeError:
+        return _error("body is not valid JSON", 400)
+    if not isinstance(body, dict):
+        return _error("body must be a JSON object", 400)
+    try:
+        buildings, roads = layout.clean_layout(island_id, body)
+        saved = await sync_to_async(layout.save_layout)(island_id, buildings, roads)
+    except layout.LayoutError as e:
+        return _error(str(e), 400)
+    await get_runtime().bus.emit(island_id, events.layout(**saved))
+    return JsonResponse(saved)
 
 
 @csrf_exempt

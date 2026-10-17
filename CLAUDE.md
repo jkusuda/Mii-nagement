@@ -43,13 +43,14 @@ backend/mii/      one package = Django project + app
   personality.py  Resident -> prompt preamble
   events.py       event bus (persist to SQLite + broadcast) + bubbles
   engine.py       island graph + building handlers (commit, test run, PR) + task loop
-  residents.py    create_resident / update_resident (the resident creator)
+  residents.py    create_resident / update_resident (the resident creator; `buildings` = works at)
+  layout.py       build mode: validate + save buildings/roads (set_layout, PUT /islands/{id}/layout)
   islands.py      found an island: town plan + a git repo per island (POST /islands)
   sandbox.py      Sandboxes (one per island repo) + worktree per task + commit_all/diff_stat + is_inside()
-  agents/         __init__ (AgentJob, BrainRunner, make_runner, parse_verdict), mock.py,
-                  acp.py (AcpRunner + BRAINS table), openrouter.py (OpenRouterRunner)
+  agents/         __init__ (AgentJob, BrainRunner, make_runner, parse_verdict, permission_for), mock.py,
+                  acp.py (AcpRunner + BRAINS + GIFTS tables), openrouter.py (OpenRouterRunner)
   github.py       repo + branch lists via `gh`; issue in / PR out
-  insights.py     stats from the Step table
+  insights.py     the Insights payload: Step + Task tables + stored bubble events, per range
   replay.py       replay a recorded task into the game
   seed.py         seed island + simulator (via `manage.py seed`)
   watch.py        tiny WebSocket client that prints events (via `manage.py watch`)
