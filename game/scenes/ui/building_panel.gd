@@ -253,7 +253,7 @@ func _task_card(task: Dictionary, with_activity: bool) -> Control:
 	texts.add_theme_constant_override("separation", 2)
 	texts.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	texts.add_child(_text(str(task.get("title", "A package")), 17, true))
-	texts.add_child(_text(" · ".join(parts), 13, false))
+	texts.add_child(_detail(" · ".join(parts), 13))
 	if with_activity and resident.get("activity"):
 		texts.add_child(_activity(str(resident["activity"])))
 	var right := VBoxContainer.new()
@@ -302,7 +302,7 @@ func _resident_card(r: Dictionary, here_id: String) -> Control:
 	var about := "%s · feeling %s" % [str(r.get("job", "")).capitalize(), r.get("mood", "fine")]
 	if r.get("building") != here_id:
 		about += " · works here, now at the %s" % Net.find_building(str(r.get("building", ""))).get("name", "island")
-	texts.add_child(_text(about, 13, false))
+	texts.add_child(_detail(about, 13))
 	if r.get("activity"):
 		texts.add_child(_activity(str(r["activity"])))
 
@@ -511,9 +511,8 @@ func _next_stops(from_id: String) -> String:
 
 
 func _activity(text: String) -> Label:
-	var label := _text("“%s”" % text, 12, false)
+	var label := _detail("“%s”" % text, 12)
 	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	label.add_theme_color_override("font_color", Color("6B7390"))
 	label.tooltip_text = text
 	label.mouse_filter = Control.MOUSE_FILTER_PASS
 	return label
@@ -539,6 +538,13 @@ func _text(text: String, size: int, strong: bool) -> Label:
 	label.theme_type_variation = &"LabelStrong" if strong else &"LabelMuted"
 	label.add_theme_font_size_override("font_size", size)
 	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	return label
+
+
+## A detail line inside a card: the title's ink (not the muted grey), so it reads on white.
+func _detail(text: String, size: int) -> Label:
+	var label := _text(text, size, false)
+	label.add_theme_color_override("font_color", INK)
 	return label
 
 
