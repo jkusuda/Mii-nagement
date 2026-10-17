@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mii-nagement</title>
+<meta name="description" content="A Tomodachi Life-style manager for teams of coding agents doing real software work.">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<meta property="og:title" content="Mii-nagement">
+<meta property="og:description" content="Little lives. Real work. A cozy island where coding agents do your real software work.">
+<meta property="og:image" content="https://mii-nagement.work/island.jpg">
+<style>
+  @font-face {
+    font-family: "DreamLife";
+    src: url("dreamlife.ttf") format("truetype");
+    font-display: swap;
+  }
+  :root {
+    --ink: #222433;
+    --ink-soft: #55586b;
+    --line: #e4e4ea;
+    --page: #ffffff;
+    --tint: #f5f5f8;
+    --navy: #292e50;
+    --sea: #0b2a8f;
+    --yellow: #ffec01;
+    --yellow-hover: #fff36b;
+    --cream: #fff8dc;
+    --mint: #e6f5ee;
+    --lavender: #efecfa;
+    --peach: #ffefe2;
+    --sky: #e3f4fb;
+    --radius: 16px;
+    --display: "DreamLife", ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+    --body: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--page); color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.55; }
+  a { color: var(--sea); }
+  img { max-width: 100%; height: auto; display: block; }
+  h1, h2, h3 { font-family: var(--display); font-weight: normal; color: var(--navy); }
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 0 16px; }
+  .skip { position: absolute; left: -999px; top: 8px; background: var(--yellow); padding: 8px 12px; border-radius: 8px; z-index: 10; }
+  .skip:focus { left: 8px; }
+
+  /* Site header */
+  .site-header { border-bottom: 1px solid var(--line); background: var(--page); position: sticky; top: 0; z-index: 5; }
+  .site-header .wrap { display: flex; align-items: center; gap: 24px; height: 64px; }
+  .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--navy); }
+  .brand img { width: 34px; height: 34px; }
+  .brand span { font-family: var(--display); font-size: 24px; }
+  .site-nav { display: flex; gap: 22px; margin-left: 8px; }
+  .site-nav a { color: var(--ink); text-decoration: none; font-weight: 600; font-size: 15px; }
+  .site-nav a:hover { color: var(--sea); }
+  .header-cta { margin-left: auto; }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    border-radius: 999px; padding: 12px 26px; font: 600 16px var(--body);
+    text-decoration: none; cursor: pointer; border: 2px solid transparent; transition: background .12s ease;
+  }
+  .btn-primary { background: var(--yellow); color: var(--navy); border-color: var(--navy); }
+  .btn-primary:hover { background: var(--yellow-hover); }
+  .btn-outline { background: var(--page); color: var(--navy); border-color: var(--navy); }
+  .btn-outline:hover { background: var(--tint); }
+  .btn-small { padding: 8px 18px; font-size: 14px; }
+  .btn-block { width: 100%; padding: 15px 26px; font-size: 17px; }
+  .btn:focus-visible, .thumb:focus-visible, .arrow:focus-visible, .edition button:focus-visible { outline: 3px solid var(--sea); outline-offset: 2px; }
+
+  /* Breadcrumb */
+  .crumbs { font-size: 14px; color: var(--ink-soft); padding: 16px 0 8px; }
+  .crumbs ol { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; }
+  .crumbs li + li::before { content: "›"; margin-right: 6px; color: #9a9cab; }
+  .crumbs a { color: var(--ink-soft); text-decoration: none; }
+  .crumbs a:hover { text-decoration: underline; }
+
+  /* Product hero: gallery + info panel */
+  .product { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(300px, 1fr); gap: 40px; padding: 8px 0 48px; }
+  .stage { position: relative; border-radius: var(--radius); overflow: hidden; background: var(--tint); aspect-ratio: 16 / 9; }
+  .stage img { width: 100%; height: 100%; object-fit: cover; }
+  .arrow {
+    position: absolute; top: 50%; transform: translateY(-50%); width: 44px; height: 44px; border-radius: 50%;
+    border: 0; background: rgba(255, 255, 255, .92); color: var(--navy); font-size: 22px; cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .2); display: grid; place-items: center;
+  }
+  .arrow.prev { left: 12px; } .arrow.next { right: 12px; }
+  .counter { position: absolute; right: 12px; bottom: 12px; background: rgba(34, 36, 51, .75); color: #fff; font-size: 13px; padding: 3px 10px; border-radius: 999px; }
+  .thumbs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 12px; }
+  .thumb { padding: 0; border: 3px solid transparent; border-radius: 10px; overflow: hidden; cursor: pointer; background: none; aspect-ratio: 16 / 9; }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .thumb[aria-current="true"] { border-color: var(--navy); }
+
+  .info { align-self: start; position: sticky; top: 84px; }
+  .info .kind { font-size: 14px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .06em; }
+  .info h1 { font-size: 44px; line-height: 1.05; margin: 6px 0 4px; }
+  .info .platforms { color: var(--ink-soft); margin: 0 0 20px; }
+  .edition-label { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+  .edition { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 20px; }
+  .edition button {
+    font: 600 15px var(--body); padding: 12px 10px; border-radius: 12px; cursor: pointer;
+    background: var(--page); color: var(--ink); border: 2px solid var(--line); text-align: left;
+  }
+  .edition button small { display: block; font-weight: 400; color: var(--ink-soft); font-size: 13px; }
+  .edition button[aria-pressed="true"] { border-color: var(--navy); background: var(--cream); }
+  .price { font-family: var(--display); font-size: 30px; color: var(--navy); margin: 0 0 14px; }
+  .price small { font-family: var(--body); font-size: 14px; color: var(--ink-soft); margin-left: 6px; }
+  .info .alt { display: block; text-align: center; margin-top: 12px; font-weight: 600; font-size: 15px; }
+  .info .note { font-size: 14px; color: var(--ink-soft); margin: 14px 0 0; }
+  .facts { list-style: none; margin: 22px 0 0; padding: 18px 0 0; border-top: 1px solid var(--line); display: grid; gap: 12px; }
+  .facts li { display: flex; gap: 12px; align-items: flex-start; font-size: 15px; }
+  .facts .ic { flex: none; width: 34px; height: 34px; border-radius: 50%; background: var(--tint); display: grid; place-items: center; font-size: 17px; }
+  .facts b { display: block; font-size: 13px; color: var(--ink-soft); font-weight: 600; }
+
+  /* Intro */
+  .intro { text-align: center; padding: 56px 0 24px; }
+  .intro .logo { font-family: var(--display); font-size: clamp(42px, 7vw, 68px); color: var(--navy); line-height: 1; margin: 0; }
+  .intro .tag { font-family: var(--display); font-size: clamp(22px, 3vw, 30px); color: var(--sea); margin: 10px 0 14px; }
+  .intro p { max-width: 640px; margin: 0 auto; color: var(--ink-soft); font-size: 18px; }
+
+  /* Section heading */
+  .section { padding: 40px 0; }
+  .section h2 { font-size: clamp(30px, 4vw, 42px); text-align: center; margin: 0 0 8px; line-height: 1.1; }
+  .section .lede { text-align: center; color: var(--ink-soft); max-width: 620px; margin: 0 auto 32px; }
+
+  /* Three cards */
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .card { border-radius: var(--radius); padding: 26px 22px; text-align: center; }
+  .card .big { font-size: 44px; line-height: 1; }
+  .card h3 { font-size: 24px; margin: 14px 0 6px; }
+  .card p { margin: 0; color: #3e4155; }
+  .bg-cream { background: var(--cream); } .bg-mint { background: var(--mint); } .bg-lavender { background: var(--lavender); }
+
+  /* Wavy band with alternating rows */
+  .band { background: var(--sky); position: relative; margin: 40px 0; padding: 30px 0 40px; }
+  .wave { display: block; width: 100%; height: 40px; position: absolute; left: 0; }
+  .wave.top { top: -39px; } .wave.bottom { bottom: -39px; transform: rotate(180deg); }
+  .row { display: grid; grid-template-columns: 1.2fr 1fr; gap: 40px; align-items: center; padding: 26px 0; }
+  .row.flip .media { order: 2; }
+  .media { background: var(--page); padding: 10px; border-radius: 20px; box-shadow: 0 6px 0 rgba(41, 46, 80, .12); }
+  .media img { border-radius: 12px; }
+  .row h3 { font-size: clamp(28px, 3.4vw, 36px); margin: 0 0 10px; line-height: 1.1; }
+  .row p { margin: 0 0 10px; color: #3e4155; font-size: 17px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .chips span { background: var(--page); border: 1px solid #c9dbe6; border-radius: 999px; padding: 4px 12px; font-size: 14px; font-weight: 600; }
+
+  /* Town map list */
+  .town { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
+  .stop { border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+  .stop .n { width: 28px; height: 28px; border-radius: 50%; background: var(--navy); color: var(--yellow); display: grid; place-items: center; font-weight: 700; font-size: 14px; }
+  .stop b { display: block; font-family: var(--display); font-weight: normal; font-size: 21px; color: var(--navy); margin: 10px 0 2px; }
+  .stop span { font-size: 14px; color: var(--ink-soft); }
+
+  /* Get it */
+  .getit { background: var(--tint); border-radius: 24px; padding: 36px 28px; display: grid; grid-template-columns: 1fr 1.2fr; gap: 32px; }
+  .getit h2 { text-align: left; }
+  .getit .lede { text-align: left; margin: 0 0 18px; }
+  .why { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+  .why li { display: flex; gap: 10px; }
+  .why li::before { content: "✓"; flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--yellow); border: 2px solid var(--navy); display: grid; place-items: center; font-size: 13px; font-weight: 700; }
+  .steps { display: grid; gap: 12px; counter-reset: step; }
+  .step { background: var(--page); border-radius: 14px; padding: 14px 14px 14px 54px; position: relative; border: 1px solid var(--line); }
+  .step::before { counter-increment: step; content: counter(step); position: absolute; left: 14px; top: 14px; width: 28px; height: 28px; border-radius: 50%; background: var(--navy); color: var(--yellow); display: grid; place-items: center; font-weight: 700; font-size: 14px; }
+  .step b { display: block; margin-bottom: 6px; }
+  .step small { display: block; color: var(--ink-soft); margin-top: 6px; }
+  .code { display: flex; align-items: center; gap: 8px; background: var(--navy); color: #f3f4ff; border-radius: 10px; padding: 9px 9px 9px 12px; overflow-x: auto; }
+  .code code { font: 14px ui-monospace, "SF Mono", Menlo, Consolas, monospace; white-space: pre; flex: 1; }
+  .copy { flex: none; font: 600 13px var(--body); border: 0; border-radius: 8px; background: var(--yellow); color: var(--navy); padding: 4px 10px; cursor: pointer; }
+
+  /* About this item */
+  .about { border-top: 1px solid var(--line); }
+  .about h2 { text-align: left; }
+  .specs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 32px; margin: 0; }
+  .specs div { padding: 14px 0; border-bottom: 1px solid var(--line); }
+  .specs dt { font-weight: 700; font-size: 14px; }
+  .specs dd { margin: 4px 0 0; color: var(--ink-soft); }
+  .tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
+  .tags a { border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; text-decoration: none; color: var(--ink); font-size: 14px; font-weight: 600; }
+  .tags a:hover { border-color: var(--navy); }
+
+  /* Footer */
+  footer { background: var(--navy); color: #cfd2ea; margin-top: 56px; padding: 40px 0 28px; font-size: 14px; }
+  .cols { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; }
+  footer h4 { color: #fff; margin: 0 0 10px; font-size: 15px; }
+  footer ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  footer a { color: #cfd2ea; text-decoration: none; }
+  footer a:hover { color: #fff; text-decoration: underline; }
+  .legal { border-top: 1px solid rgba(255, 255, 255, .15); margin-top: 28px; padding-top: 18px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; }
+
+  @media (max-width: 960px) {
+    .product, .row, .getit { grid-template-columns: 1fr; }
+    .row.flip .media { order: 0; }
+    .info { position: static; }
+    .town { grid-template-columns: repeat(2, 1fr); }
+    .specs { grid-template-columns: 1fr 1fr; }
+    .cols { grid-template-columns: 1fr 1fr; }
+    .site-nav { display: none; }
+  }
+  @media (max-width: 600px) {
+    .cards, .specs { grid-template-columns: 1fr; }
+    .town { grid-template-columns: 1fr; }
+    .info h1 { font-size: 36px; }
+    .getit { padding: 26px 16px; }
+    .header-cta { display: none; }
+    .arrow { width: 36px; height: 36px; font-size: 18px; }
+  }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="/"><img src="icon.svg" alt=""><span>Mii-nagement</span></a>
+    <nav class="site-nav" aria-label="Main">
+      <a href="#how">How it works</a>
+      <a href="#get">Get it</a>
+      <a href="#about">Details</a>
+      <a href="https://github.com/jkusuda/Mii-nagement">GitHub</a>
+    </nav>
+    <a class="btn btn-outline btn-small header-cta" href="/app/">Play in browser</a>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+  <nav class="crumbs" aria-label="Breadcrumb">
+    <ol><li><a href="/">Home</a></li><li><a href="https://github.com/jkusuda/Mii-nagement">Projects</a></li><li aria-current="page">Mii-nagement</li></ol>
+  </nav>
+
+  <section class="product" aria-label="Mii-nagement">
+    <div class="gallery">
+      <div class="stage">
+        <img id="stage-img" src="island.jpg" alt="" width="1280" height="720">
+        <button class="arrow prev" type="button" aria-label="Previous picture">‹</button>
+        <button class="arrow next" type="button" aria-label="Next picture">›</button>
+        <span class="counter" id="counter" aria-live="polite">1 of 4</span>
+      </div>
+      <div class="thumbs" id="thumbs">
+        <button class="thumb" type="button" aria-current="true" data-alt="Build mode: the island up close, with houses, a pond, trees and sleeping residents"><img src="island.jpg" alt="Island"></button>
+        <button class="thumb" type="button" data-alt="Residents: three Miis with jobs and moods"><img src="residents.jpg" alt="Residents"></button>
+        <button class="thumb" type="button" data-alt="The Sunny Isle Gazette, the island's daily newspaper"><img src="gazette.jpg" alt="Island News"></button>
+        <button class="thumb" type="button" data-alt="The Archipelago: every island in one sea"><img src="archipelago.jpg" alt="Archipelago"></button>
+      </div>
+    </div>
+
+    <aside class="info">
+      <div class="kind">Desktop app · Hackathon project</div>
+      <h1>Mii-nagement</h1>
+      <p class="platforms">macOS · Windows · Linux</p>
+
+      <div class="edition-label" id="edition-label">Version</div>
+      <div class="edition" role="group" aria-labelledby="edition-label">
+        <button type="button" data-edition="desktop" aria-pressed="true">Desktop<small>Recommended</small></button>
+        <button type="button" data-edition="web" aria-pressed="false">Browser<small>Lighter demo</small></button>
+      </div>
+
+      <p class="price">Free<small>source on GitHub</small></p>
+      <a class="btn btn-primary btn-block" id="main-cta" href="#get">Get the desktop version</a>
+      <a class="alt" id="alt-cta" href="/app/">Or try it in your browser</a>
+      <p class="note" id="edition-note">Runs real coding agents with the logins you already have. Smooth 3D, full textures.</p>
+
+      <ul class="facts">
+        <li><span class="ic">🧠</span><span><b>Brains</b>Claude Code, Codex, Gemini CLI, OpenRouter</span></li>
+        <li><span class="ic">🎮</span><span><b>Play modes</b>Mock agents (free) or real agents</span></li>
+        <li><span class="ic">👥</span><span><b>Players</b>You, your team, and your residents</span></li>
+      </ul>
+    </aside>
+  </section>
+
+  <section class="intro">
+    <p class="logo">Mii-nagement</p>
+    <p class="tag">Little lives. Real work.</p>
+    <p>A cozy island where your coding agents live, carry tasks from building to building, and ship real pull requests. You keep them happy and answer when they need you.</p>
+  </section>
+
+  <section class="section" id="how">
+    <h2>Your project is an island</h2>
+    <p class="lede">The town layout is the workflow. Residents walk your task down the roads, one building at a time.</p>
+    <div class="cards">
+      <div class="card bg-cream"><div class="big">🏝️</div><h3>Found an island</h3><p>Every island is a git repository: a new one, a GitHub clone, or a folder you already have.</p></div>
+      <div class="card bg-mint"><div class="big">💬</div><h3>Answer bubbles</h3><p>When a resident needs a decision or permission to run a command, a bubble pops up over their head.</p></div>
+      <div class="card bg-lavender"><div class="big">📮</div><h3>Ship pull requests</h3><p>Finished work leaves the island at the Post Office as a pull request on GitHub.</p></div>
+    </div>
+  </section>
+</main>
+
+<div class="band">
+  <svg class="wave top" viewBox="0 0 1440 40" preserveAspectRatio="none" aria-hidden="true"><path d="M0 40 C 240 0, 480 0, 720 20 S 1200 40, 1440 10 L 1440 40 Z" fill="#e3f4fb"/></svg>
+  <div class="wrap">
+    <div class="row">
+      <div class="media"><img src="residents.jpg" alt="The Residents screen: Carlos the Coder, Jun the Planner and Sydney the Reviewer" width="1280" height="720" loading="lazy"></div>
+      <div>
+        <h3>Meet the residents</h3>
+        <p>Each resident has a job, a personality and a brain. Sliders set how blunt, careful, chatty or creative they are, and their mood changes as they work: happy, focused, confused, tired or proud.</p>
+        <div class="chips"><span>Planner</span><span>Coder</span><span>Reviewer</span></div>
+      </div>
+    </div>
+    <div class="row flip">
+      <div class="media"><img src="gazette.jpg" alt="The Sunny Isle Gazette with today's stories and weekly stats" width="1280" height="720" loading="lazy"></div>
+      <div>
+        <h3>Read the island news</h3>
+        <p>Every island prints its own gazette: who shipped what, who fell asleep at the Courthouse, and how many pull requests went out this week.</p>
+        <p>Insights shows packages done per day, the test pass rate and how fast you answer bubbles.</p>
+      </div>
+    </div>
+    <div class="row">
+      <div class="media"><img src="archipelago.jpg" alt="The Archipelago: an island in a blue sea, with room for a new island" width="1280" height="720" loading="lazy"></div>
+      <div>
+        <h3>Grow an archipelago</h3>
+        <p>One island per project, all in the same sea. The "Waiting on you" list gathers every bubble from every island in one place.</p>
+      </div>
+    </div>
+  </div>
+  <svg class="wave bottom" viewBox="0 0 1440 40" preserveAspectRatio="none" aria-hidden="true"><path d="M0 40 C 240 0, 480 0, 720 20 S 1200 40, 1440 10 L 1440 40 Z" fill="#e3f4fb"/></svg>
+</div>
+
+<div class="wrap">
+  <section class="section">
+    <h2>Around town</h2>
+    <p class="lede">The classic town plan. Build your own in build mode, and choose which roads a package takes when a step passes or fails.</p>
+    <div class="town">
+      <div class="stop"><span class="n">1</span><b>Mailbox</b><span>Tasks arrive and get planned.</span></div>
+      <div class="stop"><span class="n">2</span><b>Workshop</b><span>The code gets written.</span></div>
+      <div class="stop"><span class="n">3</span><b>Lab</b><span>The tests run.</span></div>
+      <div class="stop"><span class="n">4</span><b>Courthouse</b><span>A reviewer reads the change.</span></div>
+      <div class="stop"><span class="n">5</span><b>Post Office</b><span>Out it goes as a pull request.</span></div>
+    </div>
+  </section>
+
+  <section class="section" id="get">
+    <div class="getit">
+      <div>
+        <h2>Get the desktop version</h2>
+        <p class="lede">The island runs best on your own computer.</p>
+        <ul class="why">
+          <li>Smooth 3D with the full renderer and textures</li>
+          <li>Real agents, using the Claude Code, Codex or Gemini CLI logins you already have</li>
+          <li>Islands are git repositories on your machine; agents work in their own worktrees</li>
+          <li>Mock mode to try it first, at no cost</li>
+        </ul>
+      </div>
+      <div class="steps">
+        <div class="step">
+          <b>Install uv and Godot 4</b>
+          <div class="code"><code>brew install uv</code><button class="copy" type="button">Copy</button></div>
+          <small>Then Godot 4.4 or newer from <a href="https://godotengine.org/download">godotengine.org</a>. Linux and Windows: see the README.</small>
+        </div>
+        <div class="step">
+          <b>Get the code</b>
+          <div class="code"><code>git clone https://github.com/jkusuda/Mii-nagement.git
+cd Mii-nagement</code><button class="copy" type="button">Copy</button></div>
+        </div>
+        <div class="step">
+          <b>Start the island</b>
+          <div class="code"><code>make dev</code><button class="copy" type="button">Copy</button></div>
+          <small><code>make dev</code> uses pretend agents; <code>make</code> uses real ones.</small>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section about" id="about">
+    <h2>About this project</h2>
+    <dl class="specs">
+      <div><dt>Platforms</dt><dd>macOS, Windows, Linux; a lighter browser demo</dd></div>
+      <div><dt>Game</dt><dd>Godot 4 (display and input only)</dd></div>
+      <div><dt>Backend</dt><dd>Python, Django + Channels, SQLite or TimescaleDB</dd></div>
+      <div><dt>Brains</dt><dd>Claude Code, Codex, Gemini CLI over the Agent Client Protocol; OpenRouter</dd></div>
+      <div><dt>Safety</dt><dd>Agents only touch git worktrees of the island's repo; commands wait for your ✋</dd></div>
+      <div><dt>Login</dt><dd>Auth0, for shared servers</dd></div>
+      <div><dt>Hosting</dt><dd>Vultr</dd></div>
+      <div><dt>Built at</dt><dd>SwampHacks XII</dd></div>
+      <div><dt>Price</dt><dd>Free</dd></div>
+    </dl>
+    <div class="tags">
+      <a href="https://github.com/jkusuda/Mii-nagement">GitHub</a>
+      <a href="https://github.com/jkusuda/Mii-nagement/blob/main/README.md">README</a>
+      <a href="https://github.com/jkusuda/Mii-nagement/blob/main/docs/architecture.md">Architecture</a>
+      <a href="/app/">Browser demo</a>
+    </div>
+  </section>
+</div>
+
+<footer>
+  <div class="wrap">
+    <div class="cols">
+      <div><h4>Play</h4><ul><li><a href="#get">Desktop version</a></li><li><a href="/app/">Browser demo</a></li></ul></div>
+      <div><h4>Project</h4><ul><li><a href="https://github.com/jkusuda/Mii-nagement">GitHub</a></li><li><a href="https://github.com/jkusuda/Mii-nagement/blob/main/README.md">README</a></li><li><a href="https://github.com/jkusuda/Mii-nagement/blob/main/TODO.md">Roadmap</a></li></ul></div>
+      <div><h4>Learn</h4><ul><li><a href="#how">How it works</a></li><li><a href="https://github.com/jkusuda/Mii-nagement/blob/main/docs/architecture.md">Architecture</a></li><li><a href="https://agentclientprotocol.com">Agent Client Protocol</a></li></ul></div>
+      <div><h4>Built at</h4><ul><li>SwampHacks XII</li><li>University of Florida</li></ul></div>
+    </div>
+    <div class="legal">
+      <span>Mii-nagement is a fan-made hackathon project, not affiliated with or endorsed by Nintendo.</span>
+      <a href="https://github.com/jkusuda/Mii-nagement">github.com/jkusuda/Mii-nagement</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // Gallery: arrows and thumbnails swap the big picture.
+  const thumbs = [...document.querySelectorAll(".thumb")];
+  const stage = document.getElementById("stage-img");
+  const counter = document.getElementById("counter");
+  let current = 0;
+  function show(i) {
+    current = (i + thumbs.length) % thumbs.length;
+    const thumb = thumbs[current];
+    stage.src = thumb.querySelector("img").src;
+    stage.alt = thumb.dataset.alt;
+    counter.textContent = `${current + 1} of ${thumbs.length}`;
+    thumbs.forEach((t, j) => t.setAttribute("aria-current", j === current ? "true" : "false"));
+  }
+  thumbs.forEach((t, i) => t.addEventListener("click", () => show(i)));
+  document.querySelector(".arrow.prev").addEventListener("click", () => show(current - 1));
+  document.querySelector(".arrow.next").addEventListener("click", () => show(current + 1));
+  show(0);
+
+  // Version picker: desktop or browser changes the main button.
+  const editions = {
+    desktop: { cta: "Get the desktop version", href: "#get", alt: "Or try it in your browser", altHref: "/app/",
+      note: "Runs real coding agents with the logins you already have. Smooth 3D, full textures." },
+    web: { cta: "Play in your browser", href: "/app/", alt: "Or get the desktop version", altHref: "#get",
+      note: "Pretend agents, nothing to install. It's slower and loads about 50 MB the first time." },
+  };
+  document.querySelectorAll(".edition button").forEach((button) => {
+    button.addEventListener("click", () => {
+      document.querySelectorAll(".edition button").forEach((b) => b.setAttribute("aria-pressed", b === button ? "true" : "false"));
+      const e = editions[button.dataset.edition];
+      const cta = document.getElementById("main-cta"), alt = document.getElementById("alt-cta");
+      cta.textContent = e.cta; cta.href = e.href; alt.textContent = e.alt; alt.href = e.altHref;
+      document.getElementById("edition-note").textContent = e.note;
+    });
+  });
+
+  // Copy buttons: copy the command next to them.
+  document.querySelectorAll(".copy").forEach((button) => {
+    button.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(button.previousElementSibling.textContent);
+        button.textContent = "Copied";
+      } catch {
+        button.textContent = "Select it";
+      }
+      setTimeout(() => (button.textContent = "Copy"), 1500);
+    });
+  });
+</script>
+</body>
+</html>

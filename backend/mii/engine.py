@@ -869,7 +869,9 @@ class WorkflowEngine:
 
         async def ask(kind: str, text: str, options: list[str] | None = None, detail: str | None = None) -> str | None:
             nonlocal bubbles_raised
-            if self.master_key:  # shown and closed at once, so News still tells the story
+            # The master key (the setting, or this resident's own): the bubble is shown and
+            # closed at once with its answer, so News still tells the story.
+            if self.master_key or (resident.keys or {}).get("master") == "yes":
                 auto = master_key_answer(options)
                 return await self.bubbles.ask(
                     task.island_id, resident.id, kind, text, 0, options, task.id, detail, auto

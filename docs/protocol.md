@@ -127,7 +127,11 @@ The client should rebuild its view from scratch when it gets one.
 - `residents[].keys`: house keys, what the resident may do without asking.
   Keys `read`, `edit`, `execute`, `fetch` (ACP tool kinds), each `yes`, `ask`,
   or `no`. The ACP runner honours them: `yes` answers the agent's own
-  "allow once" option, `ask` shows a ✋ bubble, `no` rejects.
+  "allow once" option, `ask` shows a ✋ bubble, `no` rejects. `master` (`yes`
+  or `no`, default `no`) is the resident's own master key: `yes` opens every
+  door, whatever the other keys, the island's house rules or the tool kind say,
+  and every bubble of theirs answers itself (✋ granted, ✅ approved, ❓ "carry
+  on"), like the `master_key` setting but for this one resident.
 - `residents[].gifts`: ids of extra MCP servers (`browser`, `github`, `docs`,
   `database`, `terminal`, `godot`, `video`) the resident brings to every ACP session (the `GIFTS`
   table in `backend/mii/agents/acp.py`). `GET /gifts` says which ones work on

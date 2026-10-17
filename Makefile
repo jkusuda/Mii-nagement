@@ -14,6 +14,7 @@
 #   make test      backend tests + Godot script check
 #   make godot-check   load the game headless and fail on any script error
 #   make reset     wipe the database (stop the server first)
+#   make web       export the game for browsers into game/builds/web (deploy/README.md)
 #
 # Needs: uv (https://docs.astral.sh/uv) and Godot 4. Godot is found on PATH or in
 # /Applications; anywhere else, pass it: `make GODOT=/path/to/godot check`.
@@ -30,12 +31,12 @@ UVICORN_LOOP := $(if $(filter Windows_NT,$(OS)),--loop asyncio:ProactorEventLoop
 # Find Godot: $GODOT, then `godot` on PATH, then the macOS app bundle.
 GODOT ?= $(shell command -v godot 2>/dev/null || ([ -x /Applications/Godot.app/Contents/MacOS/Godot ] && echo /Applications/Godot.app/Contents/MacOS/Godot))
 
-.PHONY: all help up dev setup server sim watch game check lint fmt test godot-check reset check-tools
+.PHONY: all help up dev setup server sim watch game check lint fmt test godot-check reset check-tools web
 
 all: up
 
 help:
-	@sed -n '2,20p' Makefile | sed 's/^#//'
+	@sed -n '2,21p' Makefile | sed 's/^#//'
 
 check-tools:
 	@command -v $(UV) >/dev/null || { echo "uv is missing. macOS: brew install uv   Linux: curl -LsSf https://astral.sh/uv/install.sh | sh   Windows: winget install astral-sh.uv"; exit 1; }
@@ -98,3 +99,19 @@ godot-check:
 
 reset:
 	cd $(BACKEND) && $(UV) run python manage.py seed --reset
+
+# Needs Godot's web export templates (Editor > Manage Export Templates). Exports from a
+# copy of the game (.web-src, kept between runs so only changes re-import) made lighter for
+# browsers: building textures capped at 1024 px, and the models (not the Mii) without
+# shadow meshes and LODs. The desktop keeps all of it; the download is ~50 MB, not ~330.
+web:
+	@[ -n "$(GODOT)" ] || { echo "Godot not found (set GODOT=/path/to/godot)"; exit 1; }
+	@rsync -a --delete --exclude .godot --exclude builds game/ .web-src/
+	@sed -i.bak 's/^process\/size_limit=0$$/process\/size_limit=1024/' .web-src/assets/models/*.jpg.import
+	@for f in .web-src/assets/models/*.glb.import; do [ "$${f##*/}" = mii.glb.import ] || sed -i.bak \
+		-e 's/^meshes\/create_shadow_meshes=true$$/meshes\/create_shadow_meshes=false/' \
+		-e 's/^meshes\/generate_lods=true$$/meshes\/generate_lods=false/' "$$f"; done
+	@rm -f .web-src/assets/models/*.bak
+	@mkdir -p game/builds/web
+	"$(GODOT)" --headless --path .web-src --import >/dev/null 2>&1 || true
+	"$(GODOT)" --headless --path .web-src --export-release Web "$(CURDIR)/game/builds/web/index.html"

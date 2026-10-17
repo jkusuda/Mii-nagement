@@ -124,7 +124,7 @@ Bubbles sidebar, and every screen (`show_screen()` shows one).
 | Folder | What lives there |
 |---|---|
 | `scenes/` | `game.gd` / `game.tscn` (main screen), `protocol.gd` (`Protocol`: the shared vocabulary and bubble looks) |
-| `scenes/island/` | the 3D island: `island_3d.tscn`, `island_layout.gd` (data + rules + paths), `island_terrain.gd`, `island_builder.gd`, `seasons.gd`, `day_night.gd`, `camera_rig.gd`; residents: `island_residents.gd` (follows Net), `island_resident.gd` (one walker), `speech_bubble.gd` (its speech bubble), `island_paths.gd`, `island_life.gd` + `life_lines.gd` (ambient life) |
+| `scenes/island/` | the 3D island: `island_3d.tscn`, `island_layout.gd` (data + rules + paths), `island_terrain.gd`, `island_builder.gd`, `seasons.gd`, `day_night.gd`, `camera_rig.gd`; residents: `island_residents.gd` (follows Net), `island_resident.gd` (one walker), `speech_bubble.gd` (its speech bubble), `island_paths.gd` (working and delivering walk the paths), `island_life.gd` + `life_lines.gd` (ambient life: idle residents roam open ground, `IslandLayout.can_roam` / `roam_route` keep them off the water, buildings, pond and plants) |
 | `scenes/buildings/` | one scene per building type, `building.gd`, `building_data.gd` (names, icons, colours), `building_picker.gd` (what's under the mouse) |
 | `scenes/plants/` | `apple_tree.tscn`, `bush.tscn`, `swaying_plant.gd` |
 | `scenes/build/` | `build_mode.gd`: the Build tool (land, lots, plants, steps, pond, season) |
@@ -132,7 +132,7 @@ Bubbles sidebar, and every screen (`show_screen()` shows one).
 | `scenes/residents/` | Residents tab, resident cards, the resident creator, `resident_data.gd` (jobs, brains, gifts, vibes) |
 | `scenes/mii/` | the 3D Mii (`mii.gd`), its parts (`mii_parts.gd`), the creator's preview stage |
 | `scenes/news/`, `scenes/insights/` | the News tab (`news_stories.gd` writes the stories) and the Insights tab |
-| `scenes/ui/` | sidebar, bubble cards, the answer popup, building panel, the talk popup (`talk_popup.gd` + `talk_room.gd`), settings, toasts, `ui.gd` (`UI.label`) |
+| `scenes/ui/` | sidebar, bubble cards, the answer popup, building panel, the talk popup (`talk_popup.gd` + `talk_room.gd`; the bubble types its text in via `visible_characters`, a click skips), settings, toasts, `ui.gd` (`UI.label`) |
 | `ui/theme.tres`, `shaders/`, `assets/` | every colour and style, the GPU shaders, models / icons / fonts / Mii parts |
 
 **`Net` signals and who listens** (every screen also redraws on `island_changed`):
@@ -361,6 +361,11 @@ lives in `spectator/`; this is not a game message, so protocol.md doesn't list i
   private (owner + `members`). Only the owner may abandon an island while login is on.
 - The public demo (`PUBLIC_DEMO=1`) locks `PUT /settings`, refuses `folder` /
   `existing_repo` on `POST /islands`, and refuses abandoning public islands.
+- With login on, the lookups that use the server's own `gh` and agent CLIs
+  (`/github/*`, `/brains/{brain}/models`) need a token too. The game logs in from
+  Settings (Auth0 device code) and sends the token on every call (`Net.token`).
+- The web deployment (`deploy/README.md`) runs with `PUBLIC_DEMO=1`, and `push.sh`
+  refuses real agents there without Auth0.
 
 ## Tables
 

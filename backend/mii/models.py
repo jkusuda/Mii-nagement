@@ -25,7 +25,9 @@ def utcnow() -> datetime:
 # --- Tables -----------------------------------------------------------------
 
 # House keys: ACP tool kind group -> "yes" | "ask" | "no" (docs/protocol.md). Used by agents/acp.py.
-DEFAULT_KEYS = {"read": "yes", "edit": "ask", "execute": "ask", "fetch": "no"}
+# `master` ("yes" | "no") is the resident's own master key: every door opens and nothing is ever
+# asked (permissions, reviews, questions); the other keys are ignored while it is "yes".
+DEFAULT_KEYS = {"master": "no", "read": "yes", "edit": "ask", "execute": "ask", "fetch": "no"}
 
 
 def default_keys() -> dict:

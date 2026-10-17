@@ -3,7 +3,8 @@ extends Node
 ## Tomodachi-style island life: what residents do between packages.
 ##
 ## Every idle resident the server isn't using lives a little loop of their own:
-## wander to a random spot on the paths, linger, then pick the next thing — another
+## wander to a random spot anywhere on the grass (never into the water, a
+## building, the pond or a plant), linger, then pick the next thing — another
 ## stroll, a visit to a friend with a short chat, a look at the pond or a tree, a
 ## muttered thought, or a rest back at their building. Sleeping residents roll
 ## over now and then. It also reacts to server events with little emotes (a hop on
@@ -102,7 +103,7 @@ func _live(id: String) -> void:
 		var resident := Net.find_resident(id)
 		match _pick_action(resident):
 			"stroll":
-				await _go(walker, IslandPaths.random_point(_residents.layout(), _rng))
+				await _go(walker, _random_spot())
 			"visit":
 				await _visit(resident, walker)
 			"pond":
@@ -117,6 +118,18 @@ func _live(id: String) -> void:
 			break
 		await _pause(_linger(resident))
 	_finish(id)
+
+
+## A random place to stroll to: anywhere open on the island, or INF when there is none.
+func _random_spot() -> Vector3:
+	var layout := _residents.layout()
+	for attempt in 60:
+		var p := Vector2(
+			_rng.randf_range(1.0, IslandLayout.GRID_W - 1.0), _rng.randf_range(1.0, IslandLayout.GRID_H - 1.0)
+		)
+		if layout.can_roam(p):
+			return IslandLayout.tile_to_world(p)
+	return Vector3.INF
 
 
 ## Weighted pick, shaped by personality and the time of day.
@@ -187,11 +200,17 @@ func _wait_while_held(walker: IslandResident) -> void:
 		await _pause(0.3)
 
 
-## Walk (never run: there's no hurry) along the paths to a point, or the nearest
-## clear spot to it. Returns false if the server interrupted us.
+## Walk (never run: there's no hurry) over open ground to a point, or the nearest
+## clear spot to it, going round the water, buildings and plants. Returns false
+## if the server interrupted us.
 func _go(walker: IslandResident, to: Vector3) -> bool:
-	to = _residents.free_spot(walker, to)
-	var points: Array[Vector3] = IslandPaths.route(_residents.layout(), walker.global_position, to)
+	var layout := _residents.layout()
+	if to == Vector3.INF:
+		return _still(walker)  # nowhere to go
+	to = _residents.free_spot(walker, to, true)
+	if not layout.can_roam(IslandLayout.world_to_tile_units(to)):
+		to = layout.nearest_open_point(to)
+	var points := layout.roam_route(walker.global_position, to)
 	# Already there? walk() would emit `arrived` before we could await it, and we'd wait forever.
 	if points.is_empty() or walker.route_length(points) < 0.05:
 		return _still(walker)
@@ -210,7 +229,7 @@ func _pause(seconds: float) -> void:
 func _pond(walker: IslandResident) -> void:
 	var pond: Dictionary = _residents.layout().pond
 	var center := IslandLayout.tile_to_world(Vector2(pond["x"] + pond["w"] / 2.0, pond["y"] + pond["h"] / 2.0))
-	if not await _go(walker, IslandPaths.nearest(_residents.layout(), center)):
+	if not await _go(walker, _residents.layout().nearest_open_point(center)):
 		return
 	walker.look_toward(center)
 	if _rng.randf() < 0.6:
@@ -221,7 +240,7 @@ func _pond(walker: IslandResident) -> void:
 func _tree(walker: IslandResident) -> void:
 	var plants: Node3D = _residents.plants()
 	var tree: Node3D = plants.get_child(_rng.randi() % plants.get_child_count())
-	if not await _go(walker, IslandPaths.nearest(_residents.layout(), tree.global_position)):
+	if not await _go(walker, _residents.layout().nearest_open_point(tree.global_position)):
 		return
 	walker.look_toward(tree.global_position)
 	if _rng.randf() < 0.5:

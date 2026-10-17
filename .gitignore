@@ -33,3 +33,7 @@ game/builds/
 .idea/
 backend/.secrets.json   # API keys when there is no OS keychain (prefs.py)
 .claude/settings.local.json
+
+# --- Web deployment ---
+deploy/server.env
+.web-src/

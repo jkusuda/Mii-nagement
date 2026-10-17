@@ -32,6 +32,7 @@ const FEET_AT := 0.88  # where the Mii's feet stand, as a fraction of the window
 const HEAD_TOP := 0.15  # the top of the hair, as a fraction of the stage height
 const BUBBLE_MAX_WIDTH := 760.0
 const BUBBLE_MAX_TEXT := 230.0  # tallest the bubble's text gets before it scrolls
+const TYPE_SPEED := 60.0  # characters per second in the speech bubble
 const FIRST_ANSWERS := ["What are you working on?", "How's it going?"]
 const LATER_ANSWERS := ["Tell me more.", "Thanks! That's all."]  # the second one says goodbye
 
@@ -65,6 +66,8 @@ var _arrow := ArrowPill.new()
 var _building_icon := TextureRect.new()
 var _building_disc := PanelContainer.new()
 var _dots := 0.0  # the "…" animation while waiting
+var _typed := 0.0  # characters of the bubble shown so far (the typewriter)
+var _typed_text := ""  # the bubble's plain text last time; new text that continues it keeps typing
 
 
 func _init() -> void:
@@ -183,7 +186,11 @@ func _unhandled_input(event: InputEvent) -> void:
 func _process(delta: float) -> void:
 	if visible and _pending != "" and _partial == "":  # dots until the first words arrive
 		_dots += delta * 2.5
+		_bubble_text.visible_characters = -1  # -1 = show everything
 		_bubble_text.text = "[center]%s[/center]" % ".".repeat(1 + int(_dots) % 3)
+	elif _bubble_text.visible_characters >= 0:  # typewriter: reveal a few more characters
+		_typed += delta * TYPE_SPEED
+		_apply_typed()
 
 
 # --- Talking ---------------------------------------------------------------------
@@ -208,6 +215,8 @@ func _send_text(text: String) -> void:
 	_you_said.text = "You: " + text
 	_you_said.visible = true
 	_dots = 0.0
+	_typed = 0.0  # the reply types in from zero, whatever the greeting did
+	_typed_text = ""
 	_set_status("%s is thinking..." % _name())
 	_update_inputs()
 	_layout.call_deferred()
@@ -362,7 +371,28 @@ func _say(text: String) -> void:
 	var size_px := 30 if text.length() < 90 else (25 if text.length() < 260 else 21)
 	_bubble_text.add_theme_font_size_override("normal_font_size", size_px)
 	_bubble_text.text = "[center]%s[/center]" % _highlight_names(_escape(text.strip_edges()))
+	# Typewriter: text that continues what's showing keeps going; anything else restarts.
+	var plain := _bubble_text.get_parsed_text()
+	if not plain.begins_with(_typed_text):
+		_typed = 0.0
+	_typed_text = plain
+	_apply_typed()
 	_layout.call_deferred()
+
+
+## Show only the first `_typed` characters of the bubble (-1 once all are out, so _process idles).
+func _apply_typed() -> void:
+	if _typed >= _bubble_text.get_total_character_count():
+		_bubble_text.visible_characters = -1
+	else:
+		_bubble_text.visible_characters = int(_typed)
+
+
+## A click on the bubble skips to the end of the text that has arrived.
+func _on_bubble_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		_typed = INF
+		_apply_typed()
 
 
 func _show_answers(texts: Array) -> void:
@@ -470,6 +500,10 @@ func _build_bubble() -> void:
 	_bubble.add_theme_stylebox_override(
 		"panel", _box(Color.WHITE, 64, Color.TRANSPARENT, 0, 18, Vector4(56, 26, 56, 26))
 	)
+	# Clicks pass through the scroll and text up to the bubble, which skips the typewriter.
+	_bubble.gui_input.connect(_on_bubble_input)
+	_bubble_scroll.mouse_filter = Control.MOUSE_FILTER_PASS
+	_bubble_text.mouse_filter = Control.MOUSE_FILTER_PASS
 	_bubble_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_bubble_scroll.custom_minimum_size.x = 380
 	_bubble_text.bbcode_enabled = true

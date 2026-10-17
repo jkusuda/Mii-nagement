@@ -81,8 +81,9 @@ func home_spot(resident: Dictionary) -> Vector3:
 
 ## The spot nearest `wanted`, on a path tile, where `walker` won't stand on anyone:
 ## at least PERSONAL_SPACE from where every other visible resident stands or is
-## headed. `wanted` itself when it is clear (or when nothing nearby is).
-func free_spot(walker: IslandResident, wanted: Vector3) -> Vector3:
+## headed. `wanted` itself when it is clear (or when nothing nearby is). With
+## `anywhere` (idle strolls) any open ground counts, not just the path.
+func free_spot(walker: IslandResident, wanted: Vector3, anywhere := false) -> Vector3:
 	var taken: Array[Vector3] = []
 	for other: IslandResident in _walkers.values():
 		if other != walker and not other.inside:
@@ -91,7 +92,12 @@ func free_spot(walker: IslandResident, wanted: Vector3) -> Vector3:
 	for i in range(-NUDGE_RINGS, NUDGE_RINGS + 1):
 		for j in range(-NUDGE_RINGS, NUDGE_RINGS + 1):
 			var p := wanted + Vector3(i * NUDGE, 0, j * NUDGE)
-			if island.layout.path_tiles.has(IslandLayout.world_to_tile(p)):
+			var ok := (
+				island.layout.can_roam(IslandLayout.world_to_tile_units(p))
+				if anywhere
+				else island.layout.path_tiles.has(IslandLayout.world_to_tile(p))
+			)
+			if ok:
 				tries.append(p)
 	tries.sort_custom(func(a, b): return a.distance_squared_to(wanted) < b.distance_squared_to(wanted))
 	for p in tries:

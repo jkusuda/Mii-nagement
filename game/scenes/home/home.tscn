@@ -249,12 +249,12 @@ text = "New island"
 icon = ExtResource("4_plus")
 
 [node name="Caretaker" type="Button" parent="Margin/Columns/Left/NavRow/NavTray/Buttons"]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(180, 50)
 layout_mode = 2
-tooltip_text = "Coming soon"
 theme_type_variation = &"NavButton"
-disabled = true
-text = "Caretaker"
+text = "Log in"
+text_overrun_behavior = 3
 icon = ExtResource("5_user")
 
 [node name="Settings" type="Button" parent="Margin/Columns/Left/NavRow/NavTray/Buttons"]
