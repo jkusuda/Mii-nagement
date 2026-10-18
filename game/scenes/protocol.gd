@@ -12,8 +12,6 @@ const STEP_NAMES := {
 	"mailbox": "Mailbox", "workshop": "Workshop", "lab": "Lab", "courthouse": "Courthouse", "post_office": "Post Office"
 }
 const SEASONS := ["spring", "summer", "autumn", "winter"]
-const STATES := ["idle", "walking", "working", "sleeping"]
-const MOODS := ["happy", "focused", "confused", "frustrated", "tired", "proud"]
 ## A `thinking` event's tool sorts (vocab.TOOL_SORTS), worded for the dropdown's summary:
 ## [verb, noun]: "read 3 files", "ran 2 commands".
 const TOOL_WORDS := {
@@ -27,8 +25,6 @@ const TOOL_WORDS := {
 	"think": ["thought", "time"],
 	"other": ["used", "tool"],
 }
-## The snapshot's `tasks` only holds packages with one of these statuses.
-const OPEN_TASK_STATUSES := ["queued", "in_progress"]
 
 const HELP_ICON := preload("res://assets/icons/circle-help.svg")
 

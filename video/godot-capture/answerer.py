@@ -1,5 +1,7 @@
-# Answers every bubble a few seconds after it appears, and keeps packages coming.
-import asyncio, json, random, websockets, urllib.request
+# Answers every bubble a few seconds after it appears, and keeps packages coming
+# (one every CAPTURE_EVERY seconds, default 12: real agents work on each, so mind the cost).
+import asyncio, json, os, random, websockets, urllib.request
+EVERY = float(os.environ.get("CAPTURE_EVERY", "12"))
 TITLES = ["Add a dark mode toggle", "Fix the login redirect", "Write tests for the parser", "Speed up the search page",
           "Add a CSV export", "Fix the flaky date test", "Translate the settings page", "Add rate limiting"]
 def post_task(title):
@@ -15,7 +17,7 @@ async def feeder():
     i = 0
     while True:
         post_task(TITLES[i % len(TITLES)]); i += 1
-        await asyncio.sleep(12)
+        await asyncio.sleep(EVERY)
 async def main():
     asyncio.create_task(feeder())
     async with websockets.connect("ws://127.0.0.1:8011/ws?island=sunny_isle") as ws:

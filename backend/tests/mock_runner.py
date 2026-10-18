@@ -58,7 +58,7 @@ class MockRunner:
         "The owner likes short PR descriptions.",
     ]
 
-    # Fake thoughts, so the game's "thinking" dropdown has something in mock mode too.
+    # Fake thoughts, for the `thinking` events.
     THOUGHTS = {
         "mailbox": "Let me read the request carefully and split it into small steps. ",
         "workshop": "I'll start with the smallest change that could work, then tidy up. ",

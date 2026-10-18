@@ -140,13 +140,21 @@ async def open_conversation(runtime, island_id: str, message: dict, send: SendFn
         _conversations[conv_id] = conv
         runtime.workflow.holds.hold(resident.id)
         conv.watchdog = asyncio.create_task(_expire(runtime, conv))
-        package = await _package(island_id, resident)
-        # The agent at work answers itself (a fork of its session) when it can: nothing to start.
-        if not (package and can_side_chat(conv.runner, package.id, resident.id)) and await _open_workdir(
-            runtime, conv, island, resident, package
-        ):
-            job = _job(resident, island, building, conv.task_id, "", "", send, [], conv.workdir, conv.sandbox)
-            conv.warming = asyncio.create_task(prepare(conv.runner, job))
+        conv.busy = True  # a close while we set up cleans up after us (below), not before
+        try:
+            package = await _package(island_id, resident)
+            # The agent at work answers itself (a fork of its session) when it can: nothing to start.
+            if not (package and can_side_chat(conv.runner, package.id, resident.id)) and await _open_workdir(
+                runtime, conv, island, package
+            ):
+                job = _job(resident, island, building, conv.task_id, "", "", send, [], conv.workdir, conv.sandbox)
+                conv.warming = asyncio.create_task(prepare(conv.runner, job))
+        finally:
+            conv.busy = False
+            if conv.closed:
+                await _cleanup(runtime, conv)
+        if conv.closed:
+            raise TalkError("We stopped talking.")
         await send(talk_ready(conv_id, resident.id))
     except TalkError as e:
         await send(talk_error(conv_id, agent, str(e)))
@@ -156,7 +164,7 @@ async def open_conversation(runtime, island_id: str, message: dict, send: SendFn
         await send(talk_error(conv_id, agent, "Something went wrong; try again."))
 
 
-async def _open_workdir(runtime, conv: Conversation, island: Island, resident: Resident, package: Task | None) -> bool:
+async def _open_workdir(runtime, conv: Conversation, island: Island, package: Task | None) -> bool:
     """Give the conversation a worktree for a fresh agent of its own: the package's, else a
     throwaway one. True when it has one. Raises TalkError (and closes it)."""
     if conv.sandbox is not None:
@@ -165,9 +173,10 @@ async def _open_workdir(runtime, conv: Conversation, island: Island, resident: R
         return False
     try:
         conv.sandbox = runtime.sandboxes.for_island(island)
-        conv.workdir, conv.own_worktree = await asyncio.to_thread(
-            _working_copy, conv.sandbox, package, conv.worktree_id, island.branch
-        )
+        async with runtime.workflow.git_lock:
+            conv.workdir, conv.own_worktree = await asyncio.to_thread(
+                _working_copy, conv.sandbox, package, conv.worktree_id, island.branch
+            )
     except SandboxError as e:
         conv.sandbox = None
         await close_conversation(runtime, conv.id)
@@ -175,12 +184,16 @@ async def _open_workdir(runtime, conv: Conversation, island: Island, resident: R
     return True
 
 
-async def close_conversation(runtime, conv_id: str, message: str | None = None) -> None:
+async def close_conversation(
+    runtime, conv_id: str, message: str | None = None, opened_by: SendFn | None = None
+) -> None:
     """`talk_close` (or a disconnect, or silence): let the resident go, end the agent, drop the
-    worktree. `message`: also tell the client why (`talk_closed`)."""
-    conv = _conversations.pop(conv_id, None)
-    if conv is None:
+    worktree. `message`: also tell the client why (`talk_closed`). `opened_by`: only close it
+    if that client opened it (a `talk_close` from the game)."""
+    conv = _conversations.get(conv_id)
+    if conv is None or (opened_by is not None and conv.send != opened_by):
         return
+    del _conversations[conv_id]
     conv.closed = True
     runtime.workflow.holds.release(conv.resident_id)
     if conv.watchdog is not None and conv.watchdog is not asyncio.current_task():
@@ -189,7 +202,7 @@ async def close_conversation(runtime, conv_id: str, message: str | None = None) 
         with suppress(Exception):
             await conv.send(talk_closed(conv.id, conv.resident_id, message))
     if not conv.busy:  # a reply in progress cleans up when it finishes
-        await _cleanup(conv)
+        await _cleanup(runtime, conv)
 
 
 async def close_all(runtime, send: SendFn) -> None:
@@ -198,7 +211,7 @@ async def close_all(runtime, send: SendFn) -> None:
         await close_conversation(runtime, conv.id)
 
 
-async def _cleanup(conv: Conversation) -> None:
+async def _cleanup(runtime, conv: Conversation) -> None:
     if conv.cleaned:
         return
     conv.cleaned = True
@@ -210,7 +223,8 @@ async def _cleanup(conv: Conversation) -> None:
         await end_task(conv.runner, conv.task_id)
     if conv.sandbox is not None and conv.own_worktree:  # the package's own worktree stays: it's still working
         try:
-            await asyncio.to_thread(conv.sandbox.remove_worktree, conv.worktree_id, True)
+            async with runtime.workflow.git_lock:
+                await asyncio.to_thread(conv.sandbox.remove_worktree, conv.worktree_id, True)
         except SandboxError as e:
             log.warning("could not remove talk worktree %s: %s", conv.worktree_id, e)
 
@@ -388,10 +402,12 @@ async def _answer(runtime, island_id: str, message: dict, talk_id: str, agent: s
     if conv is None:
         return await _one_off(runtime, resident, island, building, package, context, talk_id, history, text, send)
 
-    await _open_workdir(runtime, conv, island, resident, package)  # the side chat couldn't: a fresh agent needs one
-    conv.busy = True
+    if conv.closed:
+        raise TalkError("We stopped talking.")
+    conv.busy = True  # from here a close leaves the cleanup to the finally below
     conv.last_active = time.monotonic()
     try:
+        await _open_workdir(runtime, conv, island, package)  # the side chat couldn't: a fresh agent needs one
         if conv.warming is not None:
             with suppress(Exception):
                 await conv.warming  # the agent is still starting: the first reply waits for it
@@ -403,7 +419,7 @@ async def _answer(runtime, island_id: str, message: dict, talk_id: str, agent: s
         conv.busy = False
         conv.last_active = time.monotonic()
         if conv.closed:  # closed while the reply was being written
-            await _cleanup(conv)
+            await _cleanup(runtime, conv)
     await _store(island_id, building.id, resident.id, package, text, reply)
     return reply
 
@@ -428,7 +444,7 @@ async def _btw(runtime, conv, resident, island, building, package, talk_id, hist
             conv.busy = False
             conv.last_active = time.monotonic()
             if conv.closed:
-                await _cleanup(conv)
+                await _cleanup(runtime, conv)
     if result is None:
         return None
     if result.outcome == "fail":
@@ -445,7 +461,8 @@ async def _one_off(runtime, resident, island, building, package, context, talk_i
     if runtime.sandboxes is not None:
         try:
             sandbox = runtime.sandboxes.for_island(island)
-            workdir, own = await asyncio.to_thread(_working_copy, sandbox, package, worktree_id, island.branch)
+            async with runtime.workflow.git_lock:
+                workdir, own = await asyncio.to_thread(_working_copy, sandbox, package, worktree_id, island.branch)
         except SandboxError as e:
             raise TalkError(f"Can't open the island's repository: {e}") from None
     job = _job(resident, island, building, f"talk_{talk_id}", talk_id, text, send, history, workdir, sandbox, context)
@@ -455,7 +472,11 @@ async def _one_off(runtime, resident, island, building, package, context, talk_i
         with suppress(Exception):
             await end_task(runner, job.task.id)
         if sandbox is not None and own:
-            await asyncio.to_thread(sandbox.remove_worktree, worktree_id, True)
+            try:
+                async with runtime.workflow.git_lock:
+                    await asyncio.to_thread(sandbox.remove_worktree, worktree_id, True)
+            except SandboxError as e:  # the reply is still good
+                log.warning("could not remove talk worktree %s: %s", worktree_id, e)
     await _store(island.id, building.id, resident.id, package, text, reply)
     return reply
 

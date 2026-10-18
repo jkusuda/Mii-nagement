@@ -531,6 +531,7 @@ async def get_events(request: HttpRequest, island_id: str) -> JsonResponse:
 
 
 @require_GET
+@island_guard
 async def talks_view(request: HttpRequest, island_id: str) -> JsonResponse:
     """GET ?building=<id>: what was said in talks at that building, oldest first (talk.history)."""
     island = await _island_or_404(island_id)

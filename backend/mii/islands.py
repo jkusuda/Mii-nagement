@@ -33,7 +33,7 @@ from mii.island_map import (
     validate_steps,
 )
 from mii.models import Building, Island, Resident, Road, Task
-from mii.vocab import JOB_BUILDINGS, PLANS, RULES, SEASONS, STEP_NAMES, STEP_ORDER  # noqa: F401  (same)
+from mii.vocab import JOB_BUILDINGS, PLANS, RULES, SEASONS, STEP_NAMES, STEP_ORDER  # noqa: F401  (STEP_ORDER: for the tests)
 
 REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 MAX_ISLAND_NAME = 30
@@ -56,11 +56,12 @@ def default_folder() -> Path:
     return (documents if documents.is_dir() else Path.home()) / "Mii-nagement"
 
 
-def unique_island_id(name: str) -> str:
-    """A readable id from the name, made unique ("fern_harbor", "fern_harbor_2")."""
+def unique_island_id(name: str, folder: Path | None = None) -> str:
+    """A readable id from the name, made unique ("fern_harbor", "fern_harbor_2"). With a
+    `folder`, also skip ids whose repository is still there (from an abandoned island)."""
     base = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_") or "island"
     island_id, n = base, 1
-    while Island.objects.filter(pk=island_id).exists():
+    while Island.objects.filter(pk=island_id).exists() or (folder is not None and (folder / island_id).exists()):
         n += 1
         island_id = f"{base}_{n}"
     return island_id
@@ -97,8 +98,10 @@ def create_island(data: dict, owner: str | None = None) -> Island:
     rules = _clean_rules(data.get("rules", {}))
     test_command = _clean_test_command(data.get("test_command"))
 
-    island_id = unique_island_id(name)
     folder = Path(str(data["folder"])).expanduser().resolve() if data.get("folder") else default_folder()
+    # Locally, founding an island again under its old name picks its repository back up. On the
+    # public demo that repository may be someone else's abandoned island: start a new one.
+    island_id = unique_island_id(name, folder if config.public_demo else None)
     if data.get("existing_repo"):
         path, repo, branch = repos.adopt_repo(Path(str(data["existing_repo"])).expanduser().resolve(), repo, branch)
     elif repo:

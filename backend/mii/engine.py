@@ -34,7 +34,7 @@ MAX_STEPS = 20  # safety net against packages bouncing forever
 MAX_VISITS = 3  # visits to one building per task; one more and the task fails ("gave up at the Workshop: ...")
 FLAKY_RERUN_AT = 0.7  # the judge's "this failure looks flaky" probability that earns the tests one more run
 MAX_HELPS = 2  # help visits per task (a stuck resident gets a neighbour's hand this many times)
-RERUN_MIN_LEFT = 10.0  # seconds of step budget a flaky re-run needs before it is worth starting
+RERUN_MIN_LEFT = 10.0  # seconds of step budget a test run (a flaky re-run, the Workshop pre-check) needs
 NOTES_CHARS = 1500  # a resident's diary (Resident.notes) keeps about this much; the oldest lines go first
 CHAT_CHARS = 200  # how much of a helper's report is said out loud (the `chat` back)
 PRETEST_RETRIES = 2  # the Workshop's own test run may send the work back to the coder this many times per visit
@@ -139,14 +139,20 @@ class Workshop(BuildingHandler):
         )
 
     async def run(self, job: AgentJob, runner: AgentRunner, engine: "WorkflowEngine") -> StepResult:
+        started = time.monotonic()
         result = await self._code(job, runner, engine)
         asked, failing = job.instructions, None
         command = engine.test_command_for(job.island)
         for retry in range(1, PRETEST_RETRIES + 1):
             if result.outcome != "pass" or not (command and job.workdir):
                 break
+            # The check fits in what's left of the step budget (_run_step's wait_for is the hard
+            # cap); with too little left the Lab tests it instead, and the commit stands.
+            left = engine.step_timeout - (time.monotonic() - started)
+            if left <= RERUN_MIN_LEFT:
+                break
             await job.report(f"Checking before the handoff: {command}")
-            code, output = await run_shell(command, job.workdir, timeout=engine.step_timeout)
+            code, output = await run_shell(command, job.workdir, timeout=left - 1.0)
             if code == 0:
                 result.summary += " The tests pass."
                 break
@@ -463,7 +469,7 @@ class WorkflowEngine:
         self._activity: dict[str, str] = {}  # resident id -> the last activity line we saved
         self._claimed: dict[str, str] = {}  # resident id -> the task they are doing a step for right now
         self._freed = asyncio.Event()  # set (and replaced) whenever a resident is released
-        self._git = asyncio.Lock()  # one `git worktree add/remove` at a time (they share the repo's files)
+        self.git_lock = asyncio.Lock()  # one `git worktree add/remove` at a time, talk.py included
 
     # --- Public API -----------------------------------------------------------
 
@@ -532,7 +538,7 @@ class WorkflowEngine:
         if self.sandboxes is None:
             raise ValueError("this server doesn't use git, so there is nothing to merge")
         sandbox = self.sandboxes.for_island(island)
-        async with self._git:
+        async with self.git_lock:
             branch, conflicts = await asyncio.to_thread(sandbox.merge_into_checkout, task.id, self.git_author)
             if not conflicts:
                 return branch, [], None
@@ -563,23 +569,30 @@ class WorkflowEngine:
         try:
             while True:
                 try:
-                    task_id = await asyncio.wait_for(self.queue.get(), timeout=self.sleep_after)
-                except TimeoutError:
-                    await self._put_idle_residents_to_sleep()
-                    continue
-                task = await Task.objects.filter(pk=task_id, status="queued").afirst()
-                if task is None:
-                    continue  # cancelled while waiting, or its island was deleted
-                lane = self.lanes.setdefault(task.island_id, Lane())
-                lane.queue.put_nowait(task_id)
-                lane.wake.set()
-                if lane.worker is None or lane.worker.done():
-                    lane.worker = asyncio.create_task(self._work_lane(lane))
+                    await self._dispatch_next()
+                except Exception:  # e.g. "database is locked": log it, keep dispatching
+                    log.exception("dispatcher error")
+                    await asyncio.sleep(1)
         finally:  # the server is shutting down: stop every island's worker and package too
             runs = [run for lane in self.lanes.values() for run in [lane.worker, *lane.running.values()] if run]
             for run in runs:
                 run.cancel()
             await asyncio.gather(*runs, return_exceptions=True)
+
+    async def _dispatch_next(self) -> None:
+        try:
+            task_id = await asyncio.wait_for(self.queue.get(), timeout=self.sleep_after)
+        except TimeoutError:
+            await self._put_idle_residents_to_sleep()
+            return
+        task = await Task.objects.filter(pk=task_id, status="queued").afirst()
+        if task is None:
+            return  # cancelled while waiting, or its island was deleted
+        lane = self.lanes.setdefault(task.island_id, Lane())
+        lane.queue.put_nowait(task_id)
+        lane.wake.set()
+        if lane.worker is None or lane.worker.done():
+            lane.worker = asyncio.create_task(self._work_lane(lane))
 
     async def _work_lane(self, lane: Lane) -> None:
         """One island's worker: start its packages in order, up to `parallel` at once, until none are left."""
@@ -607,6 +620,9 @@ class WorkflowEngine:
             log.exception("task %s crashed", task_id)
             task = await self._update(Task, task_id, status="failed", finished_at=utcnow())
             await self._emit(task, events.task(task))
+            if task.agent_id:  # the carrier would otherwise stay "working" until a restart
+                with suppress(Exception):
+                    await self._rest(await self._get(Resident, task.agent_id))
         finally:
             lane.running.pop(task_id, None)
             lane.wake.set()
@@ -631,7 +647,10 @@ class WorkflowEngine:
         return task
 
     async def run_task(self, task_id: str) -> Task:
-        task = await self._update(Task, task_id, status="in_progress")
+        # Only a task still queued starts: a cancel() just before this must win.
+        if not await Task.objects.filter(pk=task_id, status="queued").aupdate(status="in_progress"):
+            return await self._get(Task, task_id)
+        task = await self._get(Task, task_id)
         await self._emit(task, events.task(task))
         sandbox = await self._sandbox_for(task)
         runner = self.runner  # one runner for the whole task, even if settings swap self.runner meanwhile
@@ -650,7 +669,7 @@ class WorkflowEngine:
             # On shutdown the worktree stays, so the resumed task finds its uncommitted work.
             if sandbox and not self.keep_worktrees and not shutting_down:
                 try:
-                    async with self._git:
+                    async with self.git_lock:
                         await asyncio.to_thread(sandbox.remove_worktree, task.id)
                 except SandboxError as e:
                     log.warning("could not remove worktree for %s: %s", task.id, e)
@@ -671,7 +690,7 @@ class WorkflowEngine:
         if self.sandboxes is None:
             return None
         island = await Island.objects.aget(pk=task.island_id)
-        return self.sandboxes.for_island(island)  # raises SandboxError -> run_forever marks the task failed
+        return self.sandboxes.for_island(island)  # raises SandboxError -> _run_in_lane marks the task failed
 
     async def _run_task(self, task: Task, sandbox: Sandbox | None, runner: AgentRunner) -> Task:
         island = await Island.objects.aget(pk=task.island_id)
@@ -679,7 +698,7 @@ class WorkflowEngine:
         # The task branch starts from the island's branch (`main` unless the creator chose another).
         workdir = None
         if sandbox:
-            async with self._git:
+            async with self.git_lock:
                 workdir = await asyncio.to_thread(sandbox.create_worktree, task.id, island.branch)
         if workdir:
             task = await self._update(Task, task.id, branch=f"mii/{task.id}")
@@ -739,6 +758,9 @@ class WorkflowEngine:
                 gave_up = f"Gave up at the {building.name}"
             if gave_up:
                 gave_up += f": {_first_words(last_failure, CHAT_CHARS)}" if last_failure else "."
+                break
+            if building.resident_id is None:
+                gave_up = f"Nobody works at the {building.name}: give it a resident."
                 break
             owner = await self._get(Resident, building.resident_id)
             visits[building_id] = visits.get(building_id, 0) + 1
@@ -814,12 +836,14 @@ class WorkflowEngine:
                     helped=helped,
                     feedback=feedback,
                 )
+                # You're talking to them: they finish the chat before moving on, still booked so
+                # another package can't walk them out mid-conversation.
+                if self.holds.held(resident.id):
+                    await self._report(task, resident, "Chatting with you; the package waits until you're done")
+                    await self.holds.wait(resident.id)
             finally:
                 self._release(resident)
             feedback = None
-            if self.holds.held(resident.id):  # you're talking to them: they finish the chat before moving on
-                await self._report(task, resident, "Chatting with you; the package waits until you're done")
-                await self.holds.wait(resident.id)
             if building.type == "workshop":
                 coder = building_id
             did = f"helped {owner.name} at" if helped else "at"

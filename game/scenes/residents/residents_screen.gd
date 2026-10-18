@@ -38,7 +38,7 @@ func _ready() -> void:
 	_rebuild()
 
 
-## Show the residents from a protocol snapshot (Net.snapshot_received).
+## Show the residents of a snapshot-shaped island (game.gd passes Net.island).
 func show_snapshot(island: Dictionary) -> void:
 	island_name = str(island.get("name", island_name))
 	# Attach each waiting bubble to its resident, so the card can show it.

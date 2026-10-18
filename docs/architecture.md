@@ -56,7 +56,7 @@ Start from the change you want, open the files in the order given, then run the 
 | island map rules (land, lots, doors) | `island_map.py` `validate_map` **and** `game/scenes/island/island_layout.gd` `problem()`: keep them in step | `uv run pytest tests/test_island_map.py` + `make godot-check` |
 | founding an island, repos | `islands.py` (`create_island`) → `repos.py` (git) → `github.py` (`gh`) | `uv run pytest tests/test_islands.py` |
 | a screen or popup | `game/scenes/game.gd` (`show_screen`, the nav) → the screen's folder below; build UI in code with `UI.label` and the theme in `ui/theme.tres` | `make godot-check`, then play it |
-| how residents move, emote, talk | the `godot-animation` skill (`.claude/skills/godot-animation/SKILL.md`) | play it |
+| how residents move, emote, talk | `island_residents.gd` (follows Net) → `island_resident.gd` (one walker) → `island_life.gd` + `life_lines.gd` (idle life) → `speech_bubble.gd` | play it |
 
 Rules that save time:
 
@@ -161,6 +161,8 @@ Bubbles sidebar, and every screen (`show_screen()` shows one).
 | `DELETE /islands/{id}` | `home/island_dropdown.gd` |
 | `POST /islands/{id}/tasks` | `ui/package_form.gd` |
 | `GET /islands/{id}/tasks/{task}` | `ui/building_panel.gd` (a package's thinking history) |
+| `GET /islands/{id}/talks` | `ui/talk_popup.gd` (what was said at that building before) |
+| `GET /usage` | `ui/bubbles_sidebar.gd` (today's use per brain) |
 | `GET /islands/{id}/events`, `GET .../insights?range=week`, `POST .../tasks/{task}/merge` | `news/news_screen.gd` |
 | `GET /islands/{id}/insights` | `insights/insights_screen.gd` |
 | `PUT /islands/{id}/layout` | `build/build_mode.gd` |
@@ -341,8 +343,8 @@ strips them from the summary.
 `chat`, `weather` and `mood` events (stored shape, plus `island`) to that URL with
 `Authorization: Bearer <spectator_secret>`. Outbound only: the hook just enqueues (200
 events at most, extra ones are dropped) and one background task posts them, 3 s timeout,
-one warning while the feed is down. A dead feed never slows the engine. The page itself
-lives in `spectator/`; this is not a game message, so protocol.md doesn't list it.
+one warning while the feed is down. A dead feed never slows the engine. The feed is not a
+game message, so protocol.md doesn't list it.
 
 ## Safety
 
@@ -357,9 +359,14 @@ lives in `spectator/`; this is not a game message, so protocol.md doesn't list i
 - Permission requests become bubbles; file requests are path-checked. Shell
   commands are gated by a bubble, not path-restricted.
 - Every step has a timeout, and a package can visit at most 20 buildings (3 visits to one building).
-- The OpenRouter, TypeSafe and spectator keys are never passed to agent processes
-  (`prefs.PRIVATE_ENV`). API keys live in the OS keychain (or an owner-only file where
-  there is none), never in the database.
+- The OpenRouter, TypeSafe and spectator keys and the server's own secrets are never passed
+  to agent processes or test commands (`config.PRIVATE_ENV`). API keys live in the OS
+  keychain (or an owner-only file where there is none), never in the database.
+- Web pages can't drive the backend: `asgi.py` answers 403 to any request with an `Origin`
+  header (browsers send one; the game and curl don't) and to Host names other than
+  localhost, IP addresses and `MII_DOMAIN` / `MII_HOSTS` (DNS rebinding).
+- A socket only acts on its own island: `answer_bubble`, `cancel_task` and `set_layout`
+  refuse bubbles, tasks and building ids of other islands.
 - Login (optional, `auth.py`): islands without an `owner` are **public**: anyone who can
   reach the server sees them and can send packages there. Only owned islands are
   private (owner + `members`). Only the owner may abandon an island while login is on.
@@ -405,7 +412,7 @@ After changing a model: `uv run python manage.py makemigrations mii`, then
   gdlint (`.gdlintrc`), static types on new code, `class_name` on scripts other scripts use.
 - Comments say what and why in a line or two; Godot concepts get a short explanation the
   first time a file uses them. No history ("we used to..."): that is what git is for.
-- Open work is `TODO(mvp)` / `TODO(stretch)` in the code and listed in [TODO.md](../TODO.md).
+- Open work is marked `TODO(mvp)` / `TODO(stretch)` in the code.
 - Migrations are Django's and checked in; the server migrates at startup.
 
 ## Two people, one island

@@ -34,7 +34,7 @@ const BAR_MAX_HEIGHT := 150.0
 var _range := "week"
 var _data := {}  # the last insights response ({} = none yet)
 var _reachable := true  # did the last request work?
-var _loading := false
+var _request := 0  # counts requests: only the newest answer is shown (the range or island may change)
 var _stats := {}  # stat key -> [value label, note label]
 
 
@@ -65,15 +65,16 @@ func _ready() -> void:
 ## Ask the backend for fresh numbers (and redraw the live parts right away).
 func refresh() -> void:
 	_show_live()
-	if _loading or Net.island.is_empty():
+	if Net.island.is_empty():
 		return
-	_loading = true
+	_request += 1
 	var path := "/islands/%s/insights?range=%s" % [str(Net.island["id"]).uri_encode(), _range]
-	Net.request_json(path, _on_response)
+	Net.request_json(path, _on_response.bind(_request))
 
 
-func _on_response(ok: bool, data: Dictionary) -> void:
-	_loading = false
+func _on_response(ok: bool, data: Dictionary, request: int) -> void:
+	if request != _request:
+		return  # an older request: a newer one is on its way
 	_reachable = ok
 	_data = data if ok else {}
 	_show()

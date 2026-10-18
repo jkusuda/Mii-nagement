@@ -44,6 +44,7 @@ var _lines: Array = []  # everything said at this building ({"agent", "from", "t
 var _conversation := ""  # the open conversation's id ("" = none)
 var _ready := false  # the server said talk_ready: we may send
 var _pending := ""  # the talk id we're waiting on ("" = none)
+var _opens := 0  # counts open() calls, so a goodbye timer only closes the talk it said goodbye to
 var _partial := ""  # the reply so far, while it streams in
 var _history := PanelContainer.new()
 var _history_list := VBoxContainer.new()
@@ -101,8 +102,8 @@ func _init() -> void:
 	Net.talk_failed.connect(_on_failed)
 	Net.talk_closed.connect(_on_closed)
 	Net.island_changed.connect(_on_island_changed)
-	Net.connected.connect(_update_inputs)
-	Net.disconnected.connect(_update_inputs)
+	Net.connected.connect(_on_connected)
+	Net.disconnected.connect(_on_disconnected)
 
 
 ## Open a fresh conversation with a resident inside a building (ids from Net.island).
@@ -111,6 +112,7 @@ func open(new_resident: String, new_building: String) -> void:
 	if r.is_empty():
 		return
 	Audio.sfx("popup_open")
+	_opens += 1
 	_end_conversation()  # a talk still open with someone else
 	resident_id = new_resident
 	building_id = new_building
@@ -227,7 +229,12 @@ func _on_answer(i: int) -> void:
 	if text == LATER_ANSWERS[1]:  # "Thanks! That's all."
 		_say("Anytime! Come by again.")
 		_preview.hop(2)
-		get_tree().create_timer(1.2).timeout.connect(close)
+		var talk := _opens
+		get_tree().create_timer(1.2).timeout.connect(
+			func():
+				if _opens == talk and visible:
+					close()
+		)
 		return
 	_send_text(text)
 
@@ -398,6 +405,23 @@ func _on_bubble_input(event: InputEvent) -> void:
 func _show_answers(texts: Array) -> void:
 	for i in _answers.size():
 		_answers[i].text = texts[i]
+
+
+## The server closes every conversation when the socket drops: forget ours, and open a new
+## one once we're back if the popup is still showing.
+func _on_disconnected() -> void:
+	_conversation = ""
+	_ready = false
+	_pending = ""
+	_update_inputs()
+
+
+func _on_connected() -> void:
+	if visible and resident_id != "" and _conversation == "":
+		_conversation = "c_%08x" % (randi() & 0x7fffffff)
+		if not Net.send_talk_open(_conversation, resident_id, building_id):
+			_conversation = ""
+	_update_inputs()
 
 
 func _update_inputs() -> void:

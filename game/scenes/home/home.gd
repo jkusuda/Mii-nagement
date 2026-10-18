@@ -31,6 +31,7 @@ func _ready() -> void:
 	_show_time()
 	Net.connected.connect(_show_connection)
 	Net.disconnected.connect(_show_connection)
+	Launcher.status_changed.connect(_show_connection)  # the app's own backend setting up
 	visibility_changed.connect(
 		func():
 			if visible:
@@ -52,7 +53,7 @@ func _show() -> void:
 func _show_connection() -> void:
 	%ConnectedPill.visible = not Net.is_online
 	%StatusLabel.text = "Reconnecting…"
-	%SyncedLabel.text = "backend offline"
+	%SyncedLabel.text = Launcher.status if Launcher.status != "" else "backend offline"
 	var dot: StyleBoxFlat = get_theme_stylebox("panel", "StatusDot").duplicate()
 	dot.bg_color = Color("F2994A")
 	%StatusDot.add_theme_stylebox_override("panel", dot)

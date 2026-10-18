@@ -27,7 +27,6 @@ const PLAY_ICON := preload("res://assets/icons/play.svg")
 const BACK_ICON := preload("res://assets/icons/skip-back.svg")
 const NEXT_ICON := preload("res://assets/icons/skip-forward.svg")
 const PAUSE_ICON := preload("res://assets/icons/pause.svg")
-const USER_ICON := preload("res://assets/icons/user.svg")
 const ARROW := preload("res://assets/ui/dropdown_arrow.svg")
 const INK := Color("292E50")  # the theme's dark text colour
 const MUTED := Color("8A8FA8")
@@ -643,7 +642,9 @@ func _on_save() -> void:
 		var value: String = _texts[key].text.strip_edges()
 		if key not in _locked and value != ("" if before == null else str(before)):
 			settings[key] = value
-	if str(_packages) != str(_loaded.get("parallel_packages")) and "parallel_packages" not in _locked:
+	# JSON numbers arrive as floats (3.0), so compare as ints.
+	var saved_packages = _loaded.get("parallel_packages")
+	if (saved_packages == null or _packages != int(saved_packages)) and "parallel_packages" not in _locked:
 		settings["parallel_packages"] = _packages
 	if _never_ask.button_pressed != bool(_loaded.get("master_key")) and "master_key" not in _locked:
 		settings["master_key"] = _never_ask.button_pressed

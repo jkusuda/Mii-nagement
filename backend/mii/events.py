@@ -248,10 +248,11 @@ class Bubbles:
             del self.open[b.id]
             await self.bus.emit(b.island_id, bubble_resolved(b.id, False, None))
 
-    def answer(self, bubble_id: str, response: str) -> bool:
-        """Deliver an answer. Returns False if the bubble is unknown or already closed."""
+    def answer(self, bubble_id: str, response: str, island_id: str | None = None) -> bool:
+        """Deliver an answer. Returns False if the bubble is unknown or already closed, or
+        isn't on `island_id` (when given: a client may only answer its own island's bubbles)."""
         b = self.open.get(bubble_id)
-        if b is None or b.answer.done():
+        if b is None or b.answer.done() or (island_id is not None and b.island_id != island_id):
             return False
         b.answer.set_result(response)
         return True

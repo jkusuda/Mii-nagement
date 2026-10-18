@@ -47,7 +47,6 @@ signal answer_requested(bubble: Dictionary)
 		card_color = value
 		_apply()
 
-var bubble_id := ""
 var bubble := {}  # the bubble from Net.island this card shows
 var _since := 0.0
 var _place := ""
@@ -63,7 +62,6 @@ func _ready() -> void:
 ## Fill the card from a bubble and its resident (dictionaries from Net.island).
 func setup(data: Dictionary, resident: Dictionary, place: String) -> void:
 	bubble = data
-	bubble_id = str(bubble["id"])
 	_since = float(bubble.get("since", Time.get_unix_time_from_system()))
 	_place = place
 	var kind := str(bubble["kind"])

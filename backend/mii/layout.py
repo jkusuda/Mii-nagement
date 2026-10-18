@@ -78,6 +78,10 @@ def save_layout(island_id: str, buildings: list[dict], roads: list[dict]) -> dic
             if b["resident"] and b["resident"] not in residents:
                 raise LayoutError(f"building {b['id']}: no resident {b['resident']!r} on this island")
         keep = {b["id"] for b in buildings}
+        # Building ids are global: an id another island uses can't be taken over from here.
+        taken = Building.objects.filter(id__in=keep).exclude(island_id=island_id).values_list("id", flat=True).first()
+        if taken:
+            raise LayoutError(f"building id {taken!r} belongs to another island")
         busy = Task.objects.filter(island_id=island_id, status="in_progress", building_id__isnull=False)
         for task in busy.exclude(building_id__in=keep):
             raise LayoutError(f"a package is at {task.building_id} right now; wait for it to move on")

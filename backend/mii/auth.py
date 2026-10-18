@@ -10,7 +10,7 @@ request may carry `Authorization: Bearer <jwt>` (the WebSocket: `/ws?token=<jwt>
     device_code(), poll_token()
                          the Device Authorization Flow, proxied so the game never talks to Auth0
 
-With login off everything is allowed, exactly like before.
+With login off everything is allowed.
 """
 
 import asyncio

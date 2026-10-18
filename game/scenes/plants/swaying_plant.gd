@@ -24,7 +24,7 @@ var _time := 0.0
 
 func _ready() -> void:
 	# Start every plant at a different point in its sway (and a slightly
-	# different speed), so they don't all move in lockstep like a robot army.
+	# different speed), so they don't all move in lockstep.
 	_time = randf() * 100.0
 	sway_period *= randf_range(0.85, 1.15)
 

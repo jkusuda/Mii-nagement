@@ -2,6 +2,7 @@ import base64
 import json
 from dataclasses import replace
 
+from asgiref.testing import ApplicationCommunicator
 from conftest import db_test
 from django.test import AsyncClient
 
@@ -16,6 +17,35 @@ async def test_health(fake_runtime):
     response = await AsyncClient().get("/health")
     assert response.status_code == 200 and response.json()["ok"] is True
     assert response.json()["judge"] == "rules"  # no TypeSafe key: the rule-based judge
+
+
+def test_only_programs_are_trusted(monkeypatch):
+    from mii import asgi
+
+    def scope(**headers):
+        return {"type": "http", "headers": [(k.encode(), v.encode()) for k, v in headers.items()]}
+
+    assert asgi.trusted(scope(host="127.0.0.1:8765"))  # the game
+    assert asgi.trusted(scope(host="localhost:8000")) and asgi.trusted(scope(host="[::1]:8000"))
+    assert asgi.trusted(scope(host="192.168.1.20:8000"))  # a co-pilot on the LAN
+    assert not asgi.trusted(scope(host="127.0.0.1:8765", origin="https://evil.example"))  # a web page
+    assert not asgi.trusted(scope(host="evil.example"))  # DNS rebinding
+    monkeypatch.setattr(asgi, "config", replace(config, hosts=("mii.example",)))
+    assert asgi.trusted(scope(host="mii.example"))
+
+
+async def test_web_pages_get_403():
+    from mii import asgi
+
+    headers = [(b"host", b"127.0.0.1:8000"), (b"origin", b"https://evil.example")]
+    http = ApplicationCommunicator(
+        asgi.application, {"type": "http", "method": "POST", "path": "/islands", "headers": headers}
+    )
+    await http.send_input({"type": "http.request", "body": b"{}"})
+    assert (await http.receive_output())["status"] == 403
+    ws = ApplicationCommunicator(asgi.application, {"type": "websocket", "path": "/ws", "headers": headers})
+    await ws.send_input({"type": "websocket.connect"})
+    assert (await ws.receive_output())["type"] == "websocket.close"
 
 
 async def test_brains_lists_every_brain():

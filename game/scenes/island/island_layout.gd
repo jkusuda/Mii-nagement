@@ -25,7 +25,7 @@ const REQUIRED_STEPS := Protocol.REQUIRED_STEPS
 const SEASONS := Protocol.SEASONS
 const STEP_NAMES := Protocol.STEP_NAMES
 
-## The island shapes, same as SHAPES in backend/mii/islands.py (keep them in step):
+## The island shapes, same as SHAPES in backend/mii/island_map.py (keep them in step):
 ## land rows, a pond, and a lot (x, y, facing) for every step.
 const SHAPES := {
 	"classic":
@@ -387,7 +387,7 @@ func blocked_tiles() -> Dictionary:
 	return blocked
 
 
-# --- Rules (the same as validate_layout in backend/mii/islands.py) -------------------
+# --- Rules (the same as validate_map in backend/mii/island_map.py) ------------------
 
 
 ## What's wrong with this layout, in words for the player; "" if it's fine.

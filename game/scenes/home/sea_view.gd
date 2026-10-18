@@ -19,8 +19,6 @@ const IslandScene := preload("res://scenes/island/island_3d.tscn")
 const SPACING := Vector2(50, 38)  # distance between island centers (x, z)
 const ISLAND_HALF := Vector2(18.6, 12.4)  # roughly how far an island reaches from its center
 const MAX_ISLANDS := 8  # the water shader knows up to 8 shores
-## The nodes in island_3d.tscn that make up one island (everything else is
-## the shared stage: sun, sky, water).
 
 var _viewport := SubViewport.new()
 var _stage: Node3D  # island_3d.tscn, minus its own island, residents and camera
@@ -81,7 +79,7 @@ func show_islands(entries: Array, new_slot := false) -> void:
 		var col := i % columns
 		var row := i / columns
 		var center := Vector3((col - (columns - 1) / 2.0) * SPACING.x, 0, (row - (rows - 1) / 2.0) * SPACING.y)
-		if i < entries.size():
+		if i < mini(entries.size(), MAX_ISLANDS):
 			var id := str(entries[i]["id"])
 			_islands[id] = _make_island(entries[i]["layout"], center)
 			_centers[id] = center

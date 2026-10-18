@@ -106,9 +106,10 @@ func _ready() -> void:
 	%ZoomOut.pressed.connect(func(): rig.zoom_by(-CameraRig.ZOOM_STEP))
 	rig.zoom_changed.connect(func(percent: int): %ZoomLabel.text = "%d%%" % percent)
 
-	# The connection pill is real: it follows the Net autoload.
+	# The connection pill follows the Net autoload.
 	Net.connected.connect(_show_connection.bind(true))
 	Net.disconnected.connect(_show_connection.bind(false))
+	Launcher.status_changed.connect(func(): _show_connection(Net.is_online))  # the app's own backend
 	_show_connection(Net.is_online)
 
 	# Screens. They all live in game.tscn; show_screen() hides all but one.
@@ -418,7 +419,7 @@ func _open_creator(resident: Dictionary = {}) -> void:
 func _show_connection(online: bool) -> void:
 	%ConnectedPill.visible = not online
 	%StatusLabel.text = "Reconnecting…"
-	%SyncedLabel.text = "backend offline"
+	%SyncedLabel.text = Launcher.status if Launcher.status != "" else "backend offline"
 	%SendPackage.disabled = not online
 	var dot: StyleBoxFlat = get_theme_stylebox("panel", "StatusDot").duplicate()
 	dot.bg_color = Color("F2994A")

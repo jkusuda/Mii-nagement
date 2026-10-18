@@ -51,7 +51,7 @@ class Island(models.Model):
     # Land tiles, pond, plants, season: see island_map.py. {} = the classic island.
     map = models.JSONField(default=dict)
     # Login (auth.py): the Auth0 user id that founded it, and who else may see it.
-    # No owner = a public island (the seed island, everything made without login).
+    # No owner = a public island (everything made without login).
     owner = models.CharField(max_length=200, null=True, blank=True, db_index=True)
     members = models.JSONField(default=list)
 

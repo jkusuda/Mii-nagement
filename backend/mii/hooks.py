@@ -4,7 +4,7 @@ Outbound only, and off unless the `spectator_url` setting is set. EventBus.emit(
 the hook after saving each event; the hook only drops the event in a small queue, and one
 background task POSTs it with `Authorization: Bearer <spectator_secret>`. A slow or dead
 feed fills the queue and events are dropped, so it can never slow the engine down.
-The secret is PRIVATE_ENV (prefs.py): it never reaches agent processes.
+The secret is in PRIVATE_ENV (config.py): it never reaches agent processes.
 """
 
 import asyncio

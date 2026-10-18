@@ -31,8 +31,6 @@ var is_walking := false
 
 ## True while island_life.gd has borrowed this resident for an ambient action.
 var life_busy := false
-## Where they stood before island_life took them for a stroll (so they can go back).
-var home_spot := Vector3.ZERO
 ## True while they're inside a building (working): the Mii is hidden at the door.
 var inside := false
 
@@ -172,11 +170,13 @@ func enter(points: Array[Vector3], new_state := "working") -> void:
 	if inside:
 		zz.visible = state == "sleeping"
 		return
-	inside = true
 	zz.visible = false
 	_stop_working()
-	if route_length(points) >= 0.05:
+	if route_length(points) < 0.05:
+		inside = true
+	else:
 		walk(points, state == "working")
+		inside = true  # only now: walk() steps out of the door first when inside
 		await arrived
 		if not inside or is_walking:
 			return  # the server sent them somewhere else on the way in

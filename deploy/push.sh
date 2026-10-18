@@ -16,10 +16,11 @@ if [ ! -f "$env_file" ]; then
     || { echo "No deploy/server.env here or on the server (copy deploy/server.env.example)."; exit 1; }
 fi
 
-# Real agents on a public server only behind a login (deploy/README.md, "Auth0").
+# Residents run real agents on the server's keys: a public server only behind a login
+# (deploy/README.md, "Auth0").
 setting() { sed -n "s/^$1=//p" "$env_file" | tail -1; }
-if [ "$(setting MOCK_AGENTS)" = "0" ] && { [ -z "$(setting AUTH0_DOMAIN)" ] || [ -z "$(setting AUTH0_AUDIENCE)" ] || [ -z "$(setting AUTH0_CLIENT_ID)" ]; }; then
-  echo "MOCK_AGENTS=0 needs AUTH0_DOMAIN, AUTH0_AUDIENCE and AUTH0_CLIENT_ID in server.env."
+if [ -z "$(setting AUTH0_DOMAIN)" ] || [ -z "$(setting AUTH0_AUDIENCE)" ] || [ -z "$(setting AUTH0_CLIENT_ID)" ]; then
+  echo "Set AUTH0_DOMAIN, AUTH0_AUDIENCE and AUTH0_CLIENT_ID in server.env."
   exit 1
 fi
 [ "$(setting PUBLIC_DEMO)" = "1" ] || { echo "Set PUBLIC_DEMO=1 in server.env."; exit 1; }
