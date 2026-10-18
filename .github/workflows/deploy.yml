@@ -1,0 +1,75 @@
+# Deploy to the server (deploy/README.md) after CI passes on main, over SSH:
+#   site: the backend and the landing page (deploy/push.sh)
+#   app:  builds the Mac app (make app) and uploads the .dmg behind "Download for Mac"
+# Also runs by hand: Actions > Deploy > Run workflow.
+#
+# Needs the repository secret DEPLOY_SSH_KEY: a private key whose public half is in the
+# server's /root/.ssh/authorized_keys. The server's own settings stay in its server.env.
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+# One deploy at a time; a newer push waits for the running one.
+concurrency: deploy
+
+env:
+  HOST: root@104.156.255.24
+  # The server's SSH host key, so the runner only ever talks to the real server.
+  KNOWN_HOST: "104.156.255.24 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPgBrazLG34G1r42WR+kbHx49Cw9v80IXy0xJ9mxZLRd"
+
+jobs:
+  site:
+    # Only after a green CI run for a push to main in this repository: never for a pull
+    # request (a fork's code must not run with the server's key).
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - name: SSH key
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOST" > ~/.ssh/known_hosts
+      - run: deploy/push.sh "$HOST"
+
+  app:
+    needs: site
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: chickensoft-games/setup-godot@v2
+        with:
+          version: 4.7.2
+          use-dotnet: false
+          include-templates: true
+      - name: Build the Mac app
+        run: make app GODOT=godot
+      - name: SSH key
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOST" > ~/.ssh/known_hosts
+      - name: Upload the .dmg
+        run: |
+          ssh "$HOST" 'mkdir -p /opt/mii/downloads'
+          rsync -az game/builds/macos/Mii-nagement.dmg "$HOST:/opt/mii/downloads/Mii-nagement.dmg.new"
+          ssh "$HOST" 'mv /opt/mii/downloads/Mii-nagement.dmg.new /opt/mii/downloads/Mii-nagement.dmg'

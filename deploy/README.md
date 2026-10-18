@@ -37,6 +37,15 @@ the page, the download, and a backend for HTTP clients.
 
 Then open `https://<MII_DOMAIN>`.
 
+## Automatic deploys (GitHub Actions)
+
+`.github/workflows/deploy.yml` deploys after CI passes on `main`: the backend and landing
+page (`push.sh`), then the Mac app (`make app` on a macOS runner, uploaded as the
+download). Run it by hand from Actions > Deploy > Run workflow. It logs in with the
+repository secret `DEPLOY_SSH_KEY` (its public half is in the server's
+`/root/.ssh/authorized_keys`, comment `github-actions-deploy`) and uses the server's own
+`server.env`. Pull requests never deploy.
+
 ## On the server
 
     ssh root@<ip>
