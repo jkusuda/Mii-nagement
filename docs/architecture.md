@@ -376,8 +376,7 @@ game message, so protocol.md doesn't list it.
   (`/github/*`, `/brains/{brain}/models`) need a token too. The game has no login
   screen: login is for HTTP clients, and a game connected to a server with login on
   sees only its public islands.
-- The web deployment (`deploy/README.md`) runs with `PUBLIC_DEMO=1`, and `push.sh`
-  refuses real agents there without Auth0.
+- The website (`deploy/README.md`) is static: no backend runs on the server.
 
 ## Tables
 

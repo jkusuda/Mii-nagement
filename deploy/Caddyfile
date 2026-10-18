@@ -1,16 +1,7 @@
-# One HTTPS site: the landing page at /, the desktop download at /download/, and the
-# backend's API and WebSocket. Caddy gets the certificate from Let's Encrypt by itself.
+# One HTTPS site: the landing page at / and the desktop download at /download/.
+# Caddy gets the certificate from Let's Encrypt by itself.
 {$MII_DOMAIN} {
 	encode zstd gzip
-
-	@backend path /ws /health /meta /settings /brains /brains/* /gifts /gifts/* /usage /models /islands /islands/* /github/* /auth/*
-	handle @backend {
-		# Task attachments are at most 8 MB (base64 in JSON); refuse bigger bodies before they reach Django.
-		request_body {
-			max_size 13MB
-		}
-		reverse_proxy backend:8000
-	}
 
 	handle_path /download/* {
 		root * /srv/downloads

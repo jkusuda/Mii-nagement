@@ -171,9 +171,9 @@ and answer the same bubbles; the agents run on the host.
 
 ## Deployment
 
-`deploy/` hosts the landing page, the Mac and Windows downloads and a backend on one server (Docker
-Compose with Caddy for HTTPS), redeployed by GitHub Actions after CI passes on `main`.
-The server runs with `PUBLIC_DEMO=1` and requires Auth0 login. See
+`deploy/` hosts the landing page and the Mac and Windows downloads on one server (Caddy in Docker
+Compose, with HTTPS), redeployed by GitHub Actions after CI passes on `main`. The game
+runs its own backend on the player's computer, so the server has none. See
 [deploy/README.md](deploy/README.md).
 
 ## Repo layout
@@ -183,7 +183,7 @@ backend/   Django + Channels server: workflow engine, ACP and OpenRouter agents,
 game/      Godot 4 client: the 3D island, UI, residents, bubbles
 docs/      architecture.md (start here), protocol.md (WebSocket), http-api.md (HTTP),
            godot-tour.md (Godot for beginners), mii-customization.md (faces and hair)
-deploy/    the website: Dockerfile, Compose, Caddy, landing page, push and Vultr scripts
+deploy/    the website: Compose, Caddy, landing page, push and Vultr scripts
 tools/     run.sh (`make`), package_mac.sh (`make app`), package_windows.sh (`make windows`),
            build_mii_parts.py (Mii parts)
 video/     the demo video (Remotion) and its Godot captures

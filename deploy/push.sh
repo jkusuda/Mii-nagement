@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Deploy to the server: copy the backend, the landing page and the deploy files (and the
-# desktop app when built), and (re)start the containers.   deploy/push.sh root@<server ip>
+# Deploy the website: copy the landing page and the deploy files (and the desktop app
+# when built), and (re)start Caddy.   deploy/push.sh root@<server ip>
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -15,20 +15,10 @@ if [ ! -f "$env_file" ]; then
   ssh "$host" 'cat /opt/mii/deploy/server.env' > "$env_file" \
     || { echo "No deploy/server.env here or on the server (copy deploy/server.env.example)."; exit 1; }
 fi
-
-# Residents run real agents on the server's keys: a public server only behind a login
-# (deploy/README.md, "Auth0").
 setting() { sed -n "s/^$1=//p" "$env_file" | tail -1; }
-if [ -z "$(setting AUTH0_DOMAIN)" ] || [ -z "$(setting AUTH0_AUDIENCE)" ] || [ -z "$(setting AUTH0_CLIENT_ID)" ]; then
-  echo "Set AUTH0_DOMAIN, AUTH0_AUDIENCE and AUTH0_CLIENT_ID in server.env."
-  exit 1
-fi
-[ "$(setting PUBLIC_DEMO)" = "1" ] || { echo "Set PUBLIC_DEMO=1 in server.env."; exit 1; }
+[ -n "$(setting MII_DOMAIN)" ] || { echo "Set MII_DOMAIN in server.env."; exit 1; }
 
-rsync -azR --delete \
-  --exclude .venv --exclude .worktrees --exclude __pycache__ --exclude '*.db' --exclude .secrets.json \
-  --exclude server.env \
-  backend deploy "$host:/opt/mii/"
+rsync -azR --delete --exclude server.env deploy "$host:/opt/mii/"
 [ ! -f deploy/server.env ] || rsync -az deploy/server.env "$host:/opt/mii/deploy/server.env"
 # The desktop apps, when built (`make app`, `make windows`): the landing page's download buttons.
 ssh "$host" 'mkdir -p /opt/mii/downloads'
@@ -37,5 +27,7 @@ for built in game/builds/macos/Mii-nagement.dmg game/builds/windows/Mii-nagement
     rsync -az "$built" "$host:/opt/mii/downloads/"
   fi
 done
-ssh "$host" 'cd /opt/mii/deploy && docker compose --env-file server.env up -d --build && docker compose --env-file server.env ps'
+# --force-recreate: rsync swaps in a new Caddyfile, and a running container keeps reading
+# the old one. --remove-orphans: stops containers no longer in docker-compose.yml.
+ssh "$host" 'cd /opt/mii/deploy && docker compose --env-file server.env up -d --force-recreate --remove-orphans && docker compose --env-file server.env ps'
 echo "Deployed: https://$(setting MII_DOMAIN)"

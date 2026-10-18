@@ -1,5 +1,5 @@
 # Deploy to the server (deploy/README.md) after CI passes on main, over SSH:
-#   site: the backend and the landing page (deploy/push.sh)
+#   site: the landing page (deploy/push.sh)
 #   app:  builds the Mac app (make app) and uploads the .dmg behind "Download for Mac"
 #   windows: builds the Windows installer (tools/package_windows.sh) behind "Download for Windows"
 # Also runs by hand: Actions > Deploy > Run workflow.
