@@ -2,7 +2,7 @@
 
 The routes are listed in urls.py and documented in docs/http-api.md. Views only parse
 the request and pick the status code; the work happens in the module each one calls
-(islands, residents, tasks, layout, insights, prefs, replay, github).
+(islands, residents, tasks, layout, insights, prefs, github).
 """
 
 import asyncio
@@ -35,8 +35,8 @@ from mii.models import (
     task_to_dict,
 )
 from mii.personality import JOBS, TRAITS
-from mii.replay import ReplayError, replay_task, task_window
 from mii.runtime import get_runtime
+from mii.sandbox import SandboxError
 
 
 def _error(message: str, status: int) -> JsonResponse:
@@ -391,6 +391,23 @@ async def cancel_task(request: HttpRequest, island_id: str, task_id: str) -> Jso
     return JsonResponse(task_to_dict(task))
 
 
+@csrf_exempt
+@require_POST
+@island_guard
+async def merge_task(request: HttpRequest, island_id: str, task_id: str) -> JsonResponse:
+    """Merge a delivered package's branch into the island folder's checked-out branch.
+    A conflict leaves the folder as it was and queues a package to fix it."""
+    if await Task.objects.filter(pk=task_id, island_id=island_id).afirst() is None:
+        return _error(f"no task {task_id!r} on island {island_id!r}", 404)
+    try:
+        branch, conflicts, fix = await get_runtime().workflow.merge_locally(task_id)
+    except (ValueError, SandboxError) as e:
+        return _error(str(e), 409)
+    return JsonResponse(
+        {"merged": not conflicts, "branch": branch, "conflicts": conflicts, "task": task_to_dict(fix) if fix else None}
+    )
+
+
 async def _steps_by_task(task_ids: list[str]) -> dict[str, list[Step]]:
     """task id -> its Step rows, oldest first."""
     steps: dict[str, list[Step]] = {}
@@ -400,9 +417,9 @@ async def _steps_by_task(task_ids: list[str]) -> dict[str, list[Step]]:
 
 
 async def _task_events(task: Task, limit: int = 200) -> list[dict]:
-    """The island's stored events while this task ran (replay.task_window), the newest `limit`,
+    """The island's stored events while this task ran (tasks.task_window), the newest `limit`,
     oldest first, each the stored payload plus `event_id`: the shape of GET /islands/{id}/events."""
-    window = await task_window(task.id, running_too=True)
+    window = await tasks.task_window(task.id, running_too=True)
     if window is None:
         return []  # still queued
     newest = [{"event_id": e.id, **e.payload} async for e in window.order_by("-id")[:limit]]
@@ -490,25 +507,6 @@ async def layout_view(request: HttpRequest, island_id: str) -> JsonResponse:
         return _error(str(e), 400)
     await get_runtime().bus.emit(island_id, events.layout(**saved))
     return JsonResponse(saved)
-
-
-@csrf_exempt
-@require_POST
-async def replay(request: HttpRequest, task_id: str) -> JsonResponse:
-    try:
-        speed = float(request.GET.get("speed", "1"))
-    except ValueError:
-        return _error("speed must be a number", 400)
-    task = await Task.objects.filter(pk=task_id).afirst()
-    if task is not None and auth.enabled():
-        denied = await auth.check_island(request, task.island_id)
-        if denied is not None:
-            return denied
-    try:
-        sent = await replay_task(get_runtime().bus, task_id, speed=speed)
-    except ReplayError as e:
-        return _error(str(e), 404)
-    return JsonResponse({"replayed_events": sent})
 
 
 @csrf_exempt

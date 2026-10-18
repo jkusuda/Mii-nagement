@@ -3,8 +3,8 @@ extends PanelContainer
 ## The Residents tab: a card for every resident, filter chips, and an
 ## "Invite a resident" tile that opens the creator.
 ##
-## It shows ResidentData.MOCK_RESIDENTS until the backend sends a snapshot, then
-## the real residents. Cards are rebuilt from scratch whenever the data changes,
+## It shows the island's residents (none until the backend sends a snapshot).
+## Cards are rebuilt from scratch whenever the data changes,
 ## which keeps this simple (there are only ever a handful).
 ##
 ## game.gd calls show_snapshot(Net.island) after every backend event, so the
@@ -20,8 +20,8 @@ const CardScene := preload("res://scenes/residents/resident_card.tscn")
 ## filter id -> chip label ("%d" gets the count)
 const FILTERS := [["all", "All"], ["needs", "Needs you · %d"], ["working", "Working"], ["resting", "Resting"]]
 
-var residents: Array = ResidentData.MOCK_RESIDENTS.duplicate(true)
-var island_name := "Pebble Cove"
+var residents: Array = []
+var island_name := ""
 var _filter := "all"
 
 

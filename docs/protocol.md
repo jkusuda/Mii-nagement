@@ -6,6 +6,8 @@ here first, then update both halves.
 
 - Endpoint: `ws://localhost:8000/ws?island=<id>` (leave out `island` for the
   server's first island). A client only gets events for the island it watches.
+  A fresh install has no island: the server then keeps the connection open and
+  sends nothing (no snapshot) until the client reconnects with an island it founded.
 - Login (optional, only when the server has `AUTH0_*` set; `GET /auth/config` says
   so): add `&token=<jwt>`, the access token from the device login (docs/http-api.md).
   Islands without an `owner` stay public and need no token. On a bad or expired token
@@ -15,8 +17,8 @@ here first, then update both halves.
 - The server sends a `snapshot` as soon as a client connects, then a live stream
   of events.
 - Every server event is also stored in the database (the `Event` table; SQLite by
-  default, Postgres / Tiger Cloud when `MII_DATABASE_URL` is set), so a session can
-  be replayed later.
+  default, Postgres / Tiger Cloud when `MII_DATABASE_URL` is set), so the game can
+  show history (News, a package's thinking).
 
 ## Rules for both sides
 
@@ -615,42 +617,10 @@ For each building the package visits:
 
 When a resident has nothing to do they go `idle`, and eventually `sleeping`.
 
-## Seed island IDs
-
-The Godot client finds buildings and residents by these IDs, so they must match
-`backend/mii/seed.py`.
-
-The seed island uses the `classic` shape (`SHAPES` in `backend/mii/islands.py`).
-
-| Building id   | type          | resident | lot (x, y) | facing |
-|---------------|---------------|----------|------------|--------|
-| `mailbox`     | `mailbox`     | `jun`    | (3, 2)     | 0      |
-| `workshop`    | `workshop`    | `carlos` | (8, 2)     | 0      |
-| `lab`         | `lab`         | `carlos` | (13, 2)    | 0      |
-| `courthouse`  | `courthouse`  | `sydney` | (15, 8)    | 3      |
-| `post_office` | `post_office` | `jun`    | (2, 8)     | 1      |
-
-Roads:
-
-| from         | to            | condition |
-|--------------|---------------|-----------|
-| `mailbox`    | `workshop`    | `always`  |
-| `workshop`   | `lab`         | `always`  |
-| `lab`        | `courthouse`  | `pass`    |
-| `lab`        | `workshop`    | `fail`    |
-| `courthouse` | `post_office` | `pass`    |
-| `courthouse` | `workshop`    | `fail`    |
-
-| Resident id | name    | job      | color     | brain         |
-|-------------|---------|----------|-----------|---------------|
-| `jun`       | Jun     | planner  | `#F4A261` | `gemini`      |
-| `carlos`    | Carlos  | coder    | `#2A9D8F` | `claude-code` |
-| `sydney`    | Sydney  | reviewer | `#9B5DE5` | `codex`       |
-
-With `MOCK_AGENTS=1` (the default), every resident runs on the mock brain anyway.
+## Building ids in the client
 
 In the 3D client, the island is built from the snapshot's `map` and
 `buildings` (`game/scenes/island/island_builder.gd`); each building **type** becomes
 a node under `Island/Buildings/` (`mailbox` → `Mailbox`, `post_office` →
-`PostOffice`). Building ids are unique across all islands, so other islands use
-ids like `maple_mailbox`; the client always goes by `type`.
+`PostOffice`). Building ids are unique across all islands, so they look like
+`maple_mailbox`; the client always goes by `type`.

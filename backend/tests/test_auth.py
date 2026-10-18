@@ -192,6 +192,20 @@ async def test_websocket_close_codes(island, fake_runtime, login_on, monkeypatch
     await communicator.wait()
 
 
+@db_test
+async def test_websocket_without_islands_stays_open(fake_runtime, monkeypatch):
+    """A fresh install has no island: the socket stays open (the game is online) and sends nothing."""
+    monkeypatch.setattr(consumers, "get_runtime", lambda: fake_runtime)
+    for query in ("", "island=gone"):
+        scope = {"type": "websocket", "path": "/ws", "query_string": query.encode(), "headers": [], "subprotocols": []}
+        communicator = ApplicationCommunicator(consumers.IslandConsumer.as_asgi(), scope)
+        await communicator.send_input({"type": "websocket.connect"})
+        assert (await communicator.receive_output())["type"] == "websocket.accept"
+        assert await communicator.receive_nothing()
+        await communicator.send_input({"type": "websocket.disconnect", "code": 1000})
+        await communicator.wait()
+
+
 # --- Device flow -------------------------------------------------------------------------
 
 

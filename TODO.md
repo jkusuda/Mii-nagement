@@ -9,7 +9,7 @@ grep -rn "TODO(" backend/mii game --include="*.py" --include="*.gd"
 ## ✅ Skeleton (boilerplate)
 
 - [x] Repo docs, protocol, env template
-- [x] Backend: models, personality prompts, workflow engine, mock agents, event bus, seed + simulator
+- [x] Backend: models, personality prompts, workflow engine, mock agents, event bus
 - [x] Backend ported to Django + Channels (same protocol, same endpoints)
 - [x] Godot: WebSocket client, island, buildings, residents, bubbles, connection indicator
 - [x] Runs end to end in mock mode
@@ -39,7 +39,6 @@ Backend design: [docs/architecture.md](docs/architecture.md).
 - [x] **Insights backend, rest of the payload** ([docs/architecture.md](docs/architecture.md)
       "Insights payload"): ranges, per-day counts, answer time, keys lent, test pass rate,
       flaky tests, PRs merged (via `gh`), previous-range numbers, tip.
-- [x] **Replay** (`replay.py`): re-play a recorded good run if anything fails on stage.
 - [x] **Game: live island**: residents on the 3D island walking the roads, states
       (working / idle / sleeping), bubble icons, station counts, the Bubbles
       sidebar from real bubbles with option buttons / typed answers.
@@ -75,7 +74,7 @@ Backend design: [docs/architecture.md](docs/architecture.md).
 - [x] `GET /islands/{id}/events` so News shows history from before the game started
       ([docs/architecture.md](docs/architecture.md), "Events history"); `prs_merged`
       and `keys_lent` in the insights payload for News' "This week"
-- [x] Settings popup (GET/PUT /settings, /health, /brains/detail) and Replay on shipped News stories
+- [x] Settings popup (GET/PUT /settings, /health, /brains/detail) and Merge on shipped News stories
 - [x] Archipelago home screen + island switcher (GET /islands, per-island events)
 - [x] Island creator: name, repo (via gh), branch, town plan, residents, house rules;
       every island gets its own git repository (`islands.py`)
@@ -96,7 +95,7 @@ Backend design: [docs/architecture.md](docs/architecture.md).
 - [ ] A free backend "social ticker" so every client and News see the same ambient chats
 - [ ] Two accounts on one island (see architecture.md "Two people, one island"); LAN co-pilot works today
 - [x] Gifts for animation and video work: `godot` (godot-mcp-runtime, needs `GODOT_PATH`), `video` (ffmpeg-mcp);
-      project skills `.claude/skills/godot-animation`, `demo-video`
+      project skill `.claude/skills/godot-animation`
 - [x] Friendship meter between residents who hand off to each other (`Friendship` table,
       `friendships` in the snapshot, `friendship` event; resident cards show the best friend)
 - [x] Cancel a task (`cancel_task` / `POST .../cancel`), create one over the socket

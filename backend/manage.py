@@ -3,7 +3,6 @@
 
 migrate            create / update the SQLite tables
 makemigrations mii after changing models.py
-seed [--reset] [--loop]
 watch
 """
 

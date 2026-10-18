@@ -70,7 +70,7 @@ def load_config() -> Config:
     # here: agent processes inherit them from the environment if they're set.
     permission = _optional_str("PERMISSION_TIMEOUT")
     return Config(
-        mock_agents=_flag("MOCK_AGENTS", "1"),
+        mock_agents=_flag("MOCK_AGENTS", "0"),
         worktree_root=_optional_path("WORKTREE_ROOT") or BACKEND_DIR / ".worktrees",
         database_path=_optional_path("DATABASE_PATH") or BACKEND_DIR / "mii.db",
         git_author=_optional_str("GIT_AUTHOR") or DEFAULT_GIT_AUTHOR,

@@ -174,6 +174,8 @@ func _show_per_day() -> void:
 	for d in days:
 		most = maxi(most, int(d.get("done", 0)))
 	var few := days.size() <= 14  # room for a number over every bar?
+	# A month is 30 bars: tighter gaps, and a date under every 5th one, so it fits.
+	%Bars.add_theme_constant_override("separation", 10 if few else 3)
 
 	for i in days.size():
 		var count := int(days[i].get("done", 0))
@@ -193,7 +195,10 @@ func _show_per_day() -> void:
 		style.corner_radius_top_left = 8
 		style.corner_radius_top_right = 8
 		bar.add_theme_stylebox_override("panel", style)
-		var day := UI.label("Today" if is_today else _day_name(str(days[i].get("day", "")), few), 12, false)
+		var day_text := _day_name(str(days[i].get("day", "")), few)
+		if not few and (days.size() - 1 - i) % 5 != 0:
+			day_text = ""
+		var day := UI.label("Today" if is_today else day_text, 12, false)
 		day.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
 		column.add_child(number)

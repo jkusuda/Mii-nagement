@@ -65,15 +65,15 @@ def no_env(monkeypatch):
 
 @db_test
 def test_settings_default_then_saved_then_env(no_env, monkeypatch):
-    assert prefs.get("mock_agents") is True and prefs.get("test_command") is None
+    assert prefs.get("mock_agents") is False and prefs.get("test_command") is None  # real agents by default
     assert prefs.get("master_key") is False  # residents ask until you hand over the master key
-    prefs.set_many({"mock_agents": False, "test_command": "  pytest -q  ", "islands_root": "~/isles"})
-    assert prefs.get("mock_agents") is False
+    prefs.set_many({"mock_agents": True, "test_command": "  pytest -q  ", "islands_root": "~/isles"})
+    assert prefs.get("mock_agents") is True
     assert prefs.get("test_command") == "pytest -q"
     root = Path(prefs.get("islands_root"))
     assert root.name == "isles" and "~" not in str(root)
-    monkeypatch.setenv("MOCK_AGENTS", "1")  # the environment wins
-    assert prefs.get("mock_agents") is True
+    monkeypatch.setenv("MOCK_AGENTS", "0")  # the environment wins
+    assert prefs.get("mock_agents") is False
     assert "mock_agents" in prefs.snapshot()["from_env"]
 
 

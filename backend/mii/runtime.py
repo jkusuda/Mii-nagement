@@ -10,7 +10,7 @@ import logging
 from asgiref.sync import sync_to_async
 from django.core.management import call_command
 
-from mii import events, islands, metrics, prefs, seed
+from mii import events, islands, metrics, prefs
 from mii.agents import make_runner
 from mii.config import config
 from mii.engine import WorkflowEngine
@@ -49,10 +49,9 @@ class Runtime:
         self.worker: asyncio.Task | None = None
 
     async def start(self) -> None:
-        """Create/upgrade the tables, seed an empty database, apply settings, resume the queue, start the worker."""
+        """Create/upgrade the tables, apply settings, resume the queue, start the worker."""
         await sync_to_async(call_command)("migrate", interactive=False, verbosity=0)
         await sync_to_async(metrics.detect)()  # sqlite / postgres / timescale, for /health and Insights
-        await sync_to_async(seed.seed)()
         await self.reload()
         await sync_to_async(self._ensure_island_repos)()
         await self.workflow.recover()

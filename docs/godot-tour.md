@@ -202,7 +202,7 @@ a pond, plants, a season, and each building's lot and facing.
 - Scroll, pinch, or the − / + buttons zoom; click and drag pans. The name pills
   follow their buildings.
 - The connection pill turns green when the backend is running.
-- With the backend and simulator running (`make`, or `manage.py seed --loop`),
+- Once you found an island and send it a package (`make dev` runs it on mock brains),
   residents walk the sand path between buildings, hop while working, show
   "z Z" when asleep, and get an icon over their head when they need you. The
   sidebar fills with their bubbles, and the building pills count who's there.

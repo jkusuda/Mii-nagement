@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# Run the whole stack and stop it as one: the backend (and, with --sim, the simulator)
-# in the background, the game in front. Used by `make` (real agents) and `make dev`.
+# Run the whole stack and stop it as one: the backend in the background, the game in front. Used by `make` (real agents) and `make dev`.
 #
 #   tools/run.sh            backend + game, real agents (MOCK_AGENTS=0)
-#   tools/run.sh --sim      backend (--reload) + simulator (fake tasks) + game, mock brains (MOCK_AGENTS=1)
+#   tools/run.sh --dev      backend (--reload) + game, mock brains (MOCK_AGENTS=1)
 #
 # Whichever ends first takes the rest down: Ctrl+C, closing the game window, the backend
 # dying, or the terminal going away (SIGHUP). Shutdown is graceful first: the backend gets
@@ -21,8 +20,8 @@ cd "$(dirname "$0")/.."
 PORT=${PORT:-8000}
 GODOT=${GODOT:-}
 UV=${UV:-uv}
-SIM=0
-[ "${1:-}" = "--sim" ] && SIM=1
+DEV=0
+[ "${1:-}" = "--dev" ] && DEV=1
 
 listeners() { command -v lsof >/dev/null && lsof -t -nP -iTCP:"$PORT" -sTCP:LISTEN 2>/dev/null; }
 
@@ -57,12 +56,12 @@ stop() {
 trap stop EXIT
 trap 'stop; exit 130' INT TERM HUP
 
-# Real agents by default, mock brains with --sim. Exported before the backend starts, so it
+# Real agents by default, mock brains with --dev. Exported before the backend starts, so it
 # wins over a root .env and over the saved setting (the environment locks it; see prefs.py).
-if [ $SIM = 1 ]; then export MOCK_AGENTS=1; else export MOCK_AGENTS=0; fi
+if [ $DEV = 1 ]; then export MOCK_AGENTS=1; else export MOCK_AGENTS=0; fi
 
 RELOAD=""
-[ $SIM = 1 ] && RELOAD="--reload"
+[ $DEV = 1 ] && RELOAD="--reload"
 # Windows: with --reload, uvicorn picks an event loop that can't start subprocesses, and
 # every agent (and git/test command) is one. The Proactor loop can, with or without reload.
 LOOP=""
@@ -80,11 +79,6 @@ for _ in $(seq 1 60); do
 done
 curl -s "localhost:$PORT/health" >/dev/null || { echo "backend did not start"; exit 1; }
 echo "backend ready at http://localhost:$PORT"
-
-if [ $SIM = 1 ]; then
-  (cd backend && exec "$UV" run python manage.py seed --loop --url "http://localhost:$PORT") &
-  PIDS+=("$!")
-fi
 
 if [ -z "$GODOT" ]; then
   echo "Godot not found: backend running, Ctrl+C to stop"

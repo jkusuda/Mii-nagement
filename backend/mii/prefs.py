@@ -31,7 +31,7 @@ SECRETS_FILE = BACKEND_DIR / ".secrets.json"  # fallback when there is no keycha
 
 # setting -> (environment variable, default, type)
 SETTINGS = {
-    "mock_agents": ("MOCK_AGENTS", True, bool),
+    "mock_agents": ("MOCK_AGENTS", False, bool),
     "islands_root": ("ISLANDS_ROOT", None, "path"),
     "test_command": ("TEST_COMMAND", None, str),
     "openrouter_model": ("OPENROUTER_MODEL", "anthropic/claude-sonnet-4.5", str),
