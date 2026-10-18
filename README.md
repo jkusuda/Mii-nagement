@@ -35,6 +35,14 @@ first launch downloads uv and Python, so it needs the internet and takes a minut
 isn't notarized: the first time macOS refuses it, open System Settings > Privacy &
 Security > Open Anyway.
 
+**On Windows, just the app:** download the installer from the website, or build it with
+`make windows` from Git Bash (`game/builds/windows/Mii-nagement-Setup.exe`). Everything
+comes with it (the backend, a Python with its packages, Git and Node), so nothing else
+needs installing and the first launch is quick. It installs for the current user (no admin
+rights) and uninstalls from Settings > Apps, leaving your islands. It isn't code-signed: the
+first time, SmartScreen warns, so choose More info > Run anyway. The backend's log is
+`%APPDATA%\Godot\app_userdata\Mii-nagement\backend.log`.
+
 **From source** (macOS, Linux or Windows), with [uv](https://docs.astral.sh/uv) and
 [Godot 4.7](https://godotengine.org/download) installed:
 
@@ -163,9 +171,10 @@ and answer the same bubbles; the agents run on the host.
 
 ## Deployment
 
-`deploy/` hosts the website: the landing page and the Mac download, served by Caddy
-(Docker Compose, HTTPS), redeployed by GitHub Actions after CI passes on `main`. There
-is no backend on the server: the app brings its own. See [deploy/README.md](deploy/README.md).
+`deploy/` hosts the landing page and the Mac and Windows downloads on one server (Caddy in Docker
+Compose, with HTTPS), redeployed by GitHub Actions after CI passes on `main`. The game
+runs its own backend on the player's computer, so the server has none. See
+[deploy/README.md](deploy/README.md).
 
 ## Repo layout
 
@@ -175,7 +184,8 @@ game/      Godot 4 client: the 3D island, UI, residents, bubbles
 docs/      architecture.md (start here), protocol.md (WebSocket), http-api.md (HTTP),
            godot-tour.md (Godot for beginners), mii-customization.md (faces and hair)
 deploy/    the website: Compose, Caddy, landing page, push and Vultr scripts
-tools/     run.sh (`make`), package_mac.sh (`make app`), build_mii_parts.py (Mii parts)
+tools/     run.sh (`make`), package_mac.sh (`make app`), package_windows.sh (`make windows`),
+           build_mii_parts.py (Mii parts)
 video/     the demo video (Remotion) and its Godot captures
 .github/   CI (the same checks as `make check`) and the deploy workflow
 CLAUDE.md  working rules for Claude Code sessions (a short read for humans too)

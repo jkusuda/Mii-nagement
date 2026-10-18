@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Deploy the website: copy the landing page and the deploy files (and the desktop app when
-# built), and (re)start Caddy.   deploy/push.sh root@<server ip>
+# Deploy the website: copy the landing page and the deploy files (and the desktop app
+# when built), and (re)start Caddy.   deploy/push.sh root@<server ip>
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -16,14 +16,18 @@ if [ ! -f "$env_file" ]; then
     || { echo "No deploy/server.env here or on the server (copy deploy/server.env.example)."; exit 1; }
 fi
 setting() { sed -n "s/^$1=//p" "$env_file" | tail -1; }
+[ -n "$(setting MII_DOMAIN)" ] || { echo "Set MII_DOMAIN in server.env."; exit 1; }
 
 rsync -azR --delete --exclude server.env deploy "$host:/opt/mii/"
 [ ! -f deploy/server.env ] || rsync -az deploy/server.env "$host:/opt/mii/deploy/server.env"
-# The desktop app, when one was built (`make app`): the landing page's download button.
+# The desktop apps, when built (`make app`, `make windows`): the landing page's download buttons.
 ssh "$host" 'mkdir -p /opt/mii/downloads'
-if [ -f game/builds/macos/Mii-nagement.dmg ]; then
-  rsync -az game/builds/macos/Mii-nagement.dmg "$host:/opt/mii/downloads/"
-fi
-# --remove-orphans: containers of services no longer in docker-compose.yml (the old backend) go.
-ssh "$host" 'cd /opt/mii/deploy && docker compose --env-file server.env up -d --remove-orphans && docker compose --env-file server.env ps'
+for built in game/builds/macos/Mii-nagement.dmg game/builds/windows/Mii-nagement-Setup.exe; do
+  if [ -f "$built" ]; then
+    rsync -az "$built" "$host:/opt/mii/downloads/"
+  fi
+done
+# --force-recreate: rsync swaps in a new Caddyfile, and a running container keeps reading
+# the old one. --remove-orphans: stops containers no longer in docker-compose.yml.
+ssh "$host" 'cd /opt/mii/deploy && docker compose --env-file server.env up -d --force-recreate --remove-orphans && docker compose --env-file server.env ps'
 echo "Deployed: https://$(setting MII_DOMAIN)"

@@ -1,6 +1,7 @@
 # Deploy to the server (deploy/README.md) after CI passes on main, over SSH:
 #   site: the landing page (deploy/push.sh)
 #   app:  builds the Mac app (make app) and uploads the .dmg behind "Download for Mac"
+#   windows: builds the Windows installer (tools/package_windows.sh) behind "Download for Windows"
 # Also runs by hand: Actions > Deploy > Run workflow.
 #
 # Needs the repository secret DEPLOY_SSH_KEY: a private key whose public half is in the
@@ -73,3 +74,46 @@ jobs:
           ssh "$HOST" 'mkdir -p /opt/mii/downloads'
           rsync -az game/builds/macos/Mii-nagement.dmg "$HOST:/opt/mii/downloads/Mii-nagement.dmg.new"
           ssh "$HOST" 'mv /opt/mii/downloads/Mii-nagement.dmg.new /opt/mii/downloads/Mii-nagement.dmg'
+
+  windows:
+    needs: site
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash  # Git Bash, like `make windows` on a Windows computer
+    env:
+      GODOT_ZIP: Godot_v4.7.2-stable_win64.exe.zip
+      GODOT_SHA512: 83decd58fdf67b9d657958a1ae6bf1929c20785315a81effe245874cdc57acb709bf868e00778a96984338c1b29dafdb453c6847747694621c6ecf5da2259993
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: astral-sh/setup-uv@v6
+      # The pinned downloads (export template, MinGit, Node, NSIS), kept between runs.
+      - uses: actions/cache@v4
+        with:
+          path: .build-tools
+          key: windows-build-tools-${{ hashFiles('tools/package_windows.sh') }}
+          restore-keys: windows-build-tools-
+      - name: Godot (its console build, which prints to the terminal)
+        run: |
+          curl -fsSL -o godot.zip "https://github.com/godotengine/godot/releases/download/4.7.2-stable/$GODOT_ZIP"
+          echo "$GODOT_SHA512  godot.zip" | sha512sum -c --quiet -
+          dir="$(cygpath -u "$RUNNER_TEMP")/godot"
+          unzip -q godot.zip -d "$dir" && rm godot.zip
+          echo "GODOT=$dir/Godot_v4.7.2-stable_win64_console.exe" >> "$GITHUB_ENV"
+      - name: Build the Windows installer
+        run: tools/package_windows.sh
+      - name: SSH key
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOST" > ~/.ssh/known_hosts
+      - name: Upload the installer
+        run: |
+          ssh "$HOST" 'mkdir -p /opt/mii/downloads'
+          scp game/builds/windows/Mii-nagement-Setup.exe "$HOST:/opt/mii/downloads/Mii-nagement-Setup.exe.new"
+          ssh "$HOST" 'mv /opt/mii/downloads/Mii-nagement-Setup.exe.new /opt/mii/downloads/Mii-nagement-Setup.exe'

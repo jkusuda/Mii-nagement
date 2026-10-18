@@ -1,6 +1,5 @@
 # The website: `docker compose --env-file server.env up -d` (deploy/README.md).
-# Caddy serves the landing page and the desktop download; there is no backend here
-# (the desktop app brings its own).
+# Only static files: the game runs its own backend on the player's computer.
 services:
   caddy:
     image: caddy:2.10.2
