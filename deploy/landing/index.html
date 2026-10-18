@@ -30,6 +30,8 @@
     --white: #ffffff;
     --header: #f3f9fa;
     --bubble: #e3f1fa;
+    /* Faint hand-drawn doodles (squiggles, rings, beans), tiled over every section's own colour. */
+    --doodles: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='280' height='280' viewBox='0 0 280 280' fill='none' stroke='%23153c61' stroke-opacity='.07' stroke-width='7' stroke-linecap='round'%3E%3Cpath d='M22 52c14-24 30 22 46-2'/%3E%3Ccircle cx='212' cy='62' r='17'/%3E%3Cpath d='M68 196c-14-28 32-46 50-18 12 22-26 50-50 18z'/%3E%3Cpath d='M160 226l44 10'/%3E%3Ccircle cx='246' cy='182' r='8'/%3E%3Cpath d='M104 118c10-12 22 12 32 0s22 12 32 0'/%3E%3Cpath d='M230 250c-8 14 10 26 22 14'/%3E%3Cpath d='M18 258c0-14 24-14 24 0'/%3E%3Cpath d='M140 20c18-8 28 14 10 24'/%3E%3C/svg%3E");
     --font: "Nunito", ui-rounded, "SF Pro Rounded", system-ui, -apple-system, sans-serif;
   }
   @font-face { font-family: "DreamLife"; src: url("dreamlife.ttf") format("truetype"); font-display: swap; }
@@ -167,6 +169,7 @@
   .person b { display: block; text-align: center; margin-top: 12px; font-weight: 900; color: var(--navy); font-size: 17px; }
 
   footer { background: var(--sky-deep); padding: 26px 0; }
+  body, .site-header, .band-cream, .band-green, .band-sky, footer { background-image: var(--doodles); }
   footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px 30px; align-items: center; }
   footer b { font-weight: 900; color: var(--navy); font-size: 15px; display: block; }
   footer small { color: var(--ink-soft); font-size: 10px; }
