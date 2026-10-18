@@ -10,7 +10,7 @@ This is for someone who knows Python but has never opened Godot.
 | **Scene**: a saved tree of nodes (`.tscn`). Scenes can contain other scenes. | a class you can instantiate | `scenes/*.tscn` |
 | **Script** (`.gd`, GDScript): code attached to a node that adds behavior | a subclass of that node's type | `scenes/*.gd` |
 | **Signal**: a node announces "this happened" and others connect functions to it | an event or callback | `net.gd`, buttons |
-| **Autoload**: a script Godot creates once at startup, reachable by name from anywhere | a module-level singleton | `Net`, `Islands`, `Clock`, `Portraits` |
+| **Autoload**: a script Godot creates once at startup, reachable by name from anywhere | a module-level singleton | `Net`, `Islands`, `Clock`, `Portraits`, `Audio` |
 
 GDScript reads a lot like Python: indentation blocks, `func` instead of `def`,
 `var` to declare variables, and optional types (`var name: String`). Functions
@@ -36,7 +36,7 @@ scene that's open.
 
 ### 1. `project.godot`: settings
 The window size (1280×720), the start scene (`scenes/game.tscn`), and the four
-autoloads (`Net`, `Islands`, `Clock`, `Portraits`). Change these through **Project → Project Settings**.
+autoloads (`Net`, `Islands`, `Clock`, `Portraits`, `Audio`). Change these through **Project → Project Settings**.
 
 ### 2. `net.gd`: the `Net` autoload
 - This is the only code that talks to the backend.
@@ -202,7 +202,7 @@ a pond, plants, a season, and each building's lot and facing.
 - Scroll, pinch, or the − / + buttons zoom; click and drag pans. The name pills
   follow their buildings.
 - The connection pill turns green when the backend is running.
-- With the backend and simulator running (`make`, or `manage.py seed --loop`),
+- Once you found an island and send it a package (`make dev` runs it on mock brains),
   residents walk the sand path between buildings, hop while working, show
   "z Z" when asleep, and get an icon over their head when they need you. The
   sidebar fills with their bubbles, and the building pills count who's there.

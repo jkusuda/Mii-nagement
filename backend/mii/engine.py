@@ -470,11 +470,13 @@ class WorkflowEngine:
         description: str = "",
         issue_number: int | None = None,
         attachments: list[tuple[str, bytes]] = (),
+        task_id: str | None = None,
     ) -> Task:
         """Add a task to the queue. It starts at the island's mailbox. `attachments` are
-        (safe file name, bytes), already checked by tasks.parse_attachments."""
+        (safe file name, bytes), already checked by tasks.parse_attachments. `task_id` is
+        for a task whose branch was made beforehand (merge_locally)."""
         task = await Task.objects.acreate(
-            id="t_" + uuid.uuid4().hex[:6],
+            id=task_id or "t_" + uuid.uuid4().hex[:6],
             island_id=island_id,
             title=title,
             description=description,
@@ -506,6 +508,36 @@ class WorkflowEngine:
             await asyncio.wait([run])
             return await self._get(Task, task_id)
         raise ValueError(f"task {task_id} is already {task.status}")
+
+    async def merge_locally(self, task_id: str) -> tuple[str, list[str], Task | None]:
+        """Merge a finished task's branch into the island folder's checked-out branch.
+
+        Returns (that branch, conflicting files, the new task). On a conflict nothing changes
+        in the folder and a new package goes to the mailbox: its branch already has the merge
+        with conflict markers, for the residents to fix. Raises KeyError for an unknown task,
+        ValueError when there's nothing to merge and SandboxError when git refuses.
+        """
+        task = await self._get(Task, task_id)
+        if task.status != "done" or not task.branch:
+            raise ValueError("only a delivered package with a branch can be merged")
+        island = await Island.objects.aget(pk=task.island_id)
+        if self.sandboxes is None:
+            raise ValueError("mock mode doesn't use git, so there is nothing to merge")
+        sandbox = self.sandboxes.for_island(island)
+        async with self._git:
+            branch, conflicts = await asyncio.to_thread(sandbox.merge_into_checkout, task.id, self.git_author)
+            if not conflicts:
+                return branch, [], None
+            fix_id = "t_" + uuid.uuid4().hex[:6]
+            await asyncio.to_thread(sandbox.prepare_conflict_branch, fix_id, task.id, branch, self.git_author)
+        files = "\n".join(f"- {name}" for name in conflicts)
+        description = (
+            f"Merging the package '{task.title}' ({task.branch}) into {branch} ran into conflicts. "
+            f"The merge is already in this branch, with git's conflict markers (<<<<<<<, =======, >>>>>>>) in:\n"
+            f"{files}\n\nKeep what both sides meant, remove every marker, and make sure the tests still pass."
+        )
+        fix = await self.submit(island.id, f"Fix merge conflicts: {task.title}"[:500], description, task_id=fix_id)
+        return branch, conflicts, fix
 
     def approve(self, task_id: str) -> None:
         """You (or the `merge_pr` house rule) approved this task's PR: the Post Office merges it."""
@@ -829,7 +861,7 @@ class WorkflowEngine:
         if previous:
             await self._set_mood(previous, "proud" if task.status == "done" else "frustrated")
             await self._rest(previous)
-        await self._emit(task, events.task(task))  # last event of the task (replay.py relies on this)
+        await self._emit(task, events.task(task))  # last event of the task (tasks.task_window relies on this)
         return task
 
     # --- One step ------------------------------------------------------------------
@@ -869,7 +901,9 @@ class WorkflowEngine:
 
         async def ask(kind: str, text: str, options: list[str] | None = None, detail: str | None = None) -> str | None:
             nonlocal bubbles_raised
-            if self.master_key:  # shown and closed at once, so News still tells the story
+            # The master key (the setting, or this resident's own): the bubble is shown and
+            # closed at once with its answer, so News still tells the story.
+            if self.master_key or (resident.keys or {}).get("master") == "yes":
                 auto = master_key_answer(options)
                 return await self.bubbles.ask(
                     task.island_id, resident.id, kind, text, 0, options, task.id, detail, auto

@@ -2,7 +2,7 @@
 
 The routes are listed in urls.py and documented in docs/http-api.md. Views only parse
 the request and pick the status code; the work happens in the module each one calls
-(islands, residents, tasks, layout, insights, prefs, replay, github).
+(islands, residents, tasks, layout, insights, prefs, github).
 """
 
 import asyncio
@@ -15,7 +15,7 @@ from django.http import HttpRequest, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
-from mii import auth, events, github, islands, layout, metrics, prefs, residents, talk, tasks, vocab, weather
+from mii import auth, events, github, islands, layout, metrics, prefs, residents, talk, tasks, usage, vocab, weather
 from mii.agents.acp import GIFTS, BrainError, available_brains, available_gifts, list_brain_models
 from mii.agents.openrouter import list_models
 from mii.auth import island_guard
@@ -35,8 +35,8 @@ from mii.models import (
     task_to_dict,
 )
 from mii.personality import JOBS, TRAITS
-from mii.replay import ReplayError, replay_task, task_window
 from mii.runtime import get_runtime
+from mii.sandbox import SandboxError
 
 
 def _error(message: str, status: int) -> JsonResponse:
@@ -145,6 +145,12 @@ async def brains_detail(request: HttpRequest) -> JsonResponse:
 
 
 @require_GET
+async def usage_view(request: HttpRequest) -> JsonResponse:
+    """Today's use of each brain by this computer's residents (usage.py)."""
+    return JsonResponse(await usage.today())
+
+
+@require_GET
 async def gifts(request: HttpRequest) -> JsonResponse:
     return JsonResponse(await asyncio.to_thread(available_gifts))
 
@@ -165,7 +171,11 @@ async def models_list(request: HttpRequest) -> JsonResponse:
 async def brain_models(request: HttpRequest, brain: str) -> JsonResponse:
     """The models a brain offers here, for the model pickers. ACP brains are asked directly
     (a short-lived session, no prompt; cached 10 minutes, `?refresh=1` asks again);
-    `openrouter` is its catalogue. {"models": [{id, name, ...}], "current": the default}."""
+    `openrouter` is its catalogue. {"models": [{id, name, ...}], "current": the default}.
+    With login on, only for logged-in callers: it starts the agent CLIs on this machine."""
+    sub = await _caller(request, required=True)
+    if isinstance(sub, JsonResponse):
+        return sub
     if brain == "openrouter":
         response = await models_list(request)
         if response.status_code == 200:
@@ -208,8 +218,12 @@ async def islands_view(request: HttpRequest) -> JsonResponse:
     return JsonResponse(await _snapshot(island.id))
 
 
+# The two GitHub lookups use this machine's `gh` login: with login on, logged-in callers only.
 @require_GET
 async def github_repos(request: HttpRequest) -> JsonResponse:
+    sub = await _caller(request, required=True)
+    if isinstance(sub, JsonResponse):
+        return sub
     try:
         return JsonResponse({"repos": await asyncio.to_thread(github.list_repos, request.GET.get("q", ""))})
     except github.GitHubError as e:
@@ -218,6 +232,9 @@ async def github_repos(request: HttpRequest) -> JsonResponse:
 
 @require_GET
 async def github_branches(request: HttpRequest) -> JsonResponse:
+    sub = await _caller(request, required=True)
+    if isinstance(sub, JsonResponse):
+        return sub
     repo = request.GET.get("repo", "")
     if not islands.REPO.match(repo):
         return _error("repo must look like owner/name", 400)
@@ -374,6 +391,23 @@ async def cancel_task(request: HttpRequest, island_id: str, task_id: str) -> Jso
     return JsonResponse(task_to_dict(task))
 
 
+@csrf_exempt
+@require_POST
+@island_guard
+async def merge_task(request: HttpRequest, island_id: str, task_id: str) -> JsonResponse:
+    """Merge a delivered package's branch into the island folder's checked-out branch.
+    A conflict leaves the folder as it was and queues a package to fix it."""
+    if await Task.objects.filter(pk=task_id, island_id=island_id).afirst() is None:
+        return _error(f"no task {task_id!r} on island {island_id!r}", 404)
+    try:
+        branch, conflicts, fix = await get_runtime().workflow.merge_locally(task_id)
+    except (ValueError, SandboxError) as e:
+        return _error(str(e), 409)
+    return JsonResponse(
+        {"merged": not conflicts, "branch": branch, "conflicts": conflicts, "task": task_to_dict(fix) if fix else None}
+    )
+
+
 async def _steps_by_task(task_ids: list[str]) -> dict[str, list[Step]]:
     """task id -> its Step rows, oldest first."""
     steps: dict[str, list[Step]] = {}
@@ -383,9 +417,9 @@ async def _steps_by_task(task_ids: list[str]) -> dict[str, list[Step]]:
 
 
 async def _task_events(task: Task, limit: int = 200) -> list[dict]:
-    """The island's stored events while this task ran (replay.task_window), the newest `limit`,
+    """The island's stored events while this task ran (tasks.task_window), the newest `limit`,
     oldest first, each the stored payload plus `event_id`: the shape of GET /islands/{id}/events."""
-    window = await task_window(task.id, running_too=True)
+    window = await tasks.task_window(task.id, running_too=True)
     if window is None:
         return []  # still queued
     newest = [{"event_id": e.id, **e.payload} async for e in window.order_by("-id")[:limit]]
@@ -473,25 +507,6 @@ async def layout_view(request: HttpRequest, island_id: str) -> JsonResponse:
         return _error(str(e), 400)
     await get_runtime().bus.emit(island_id, events.layout(**saved))
     return JsonResponse(saved)
-
-
-@csrf_exempt
-@require_POST
-async def replay(request: HttpRequest, task_id: str) -> JsonResponse:
-    try:
-        speed = float(request.GET.get("speed", "1"))
-    except ValueError:
-        return _error("speed must be a number", 400)
-    task = await Task.objects.filter(pk=task_id).afirst()
-    if task is not None and auth.enabled():
-        denied = await auth.check_island(request, task.island_id)
-        if denied is not None:
-            return denied
-    try:
-        sent = await replay_task(get_runtime().bus, task_id, speed=speed)
-    except ReplayError as e:
-        return _error(str(e), 404)
-    return JsonResponse({"replayed_events": sent})
 
 
 @csrf_exempt

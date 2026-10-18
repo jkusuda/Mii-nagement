@@ -21,8 +21,8 @@ optionally linked to GitHub. *Residents* have jobs, personality sliders and a *b
    Start every task there instead of searching the tree.
 2. [docs/protocol.md](docs/protocol.md): every WebSocket message. Change it **first**,
    then both halves. HTTP endpoints: [docs/http-api.md](docs/http-api.md).
-3. The skills in `.claude/skills/`: `godot-animation` for anything about motion, moods,
-   speech or island life; `demo-video` for recordings.
+3. The skill in `.claude/skills/`: `godot-animation` for anything about motion, moods,
+   speech or island life.
 
 ## Commands
 
@@ -32,7 +32,7 @@ Run from the repo root (`make help` lists them all):
 make check        # after every change: ruff + backend tests + gdlint/gdformat + Godot script check
 make fmt          # format both halves
 make              # backend + game, for real agents (tools/run.sh; Ctrl+C or closing the game stops both)
-make dev          # backend (--reload) + simulator (fake tasks) + game: mock-mode development
+make dev          # backend (--reload) + game with mock brains: development
 make server       # just the backend, http://localhost:8000
 cd backend && uv run pytest tests/test_engine.py -q        # one test file
 cd backend && uv run python manage.py makemigrations mii   # after changing models.py
@@ -63,7 +63,10 @@ binary exists: a missing Godot is skipped, and that looks like a pass.
   keychain go through `asyncio.to_thread` (or `sync_to_async` for ORM code).
 - **Brains:** each ACP brain is one entry in `BRAINS` (`agents/acp.py`); brain-specific
   details stay in the runners, never in the engine, protocol or game.
-- **Mock mode is the backend's default** (`MOCK_AGENTS=1`; `make dev` forces it on, `make` forces it off) and every feature must work in it.
+- **Real agents are the backend's default** (`MOCK_AGENTS=0`, so a packaged app runs real brains).
+  Mock mode (`MOCK_AGENTS=1`: `make dev` forces it on, the tests use it) must keep working for every feature.
+- **No built-in islands or demo data:** a fresh database starts empty and the game
+  founds the first island. Test data (the "sunny" island) lives in `backend/tests/conftest.py`.
 - **No `.env` required.** Settings go through `PUT /settings` (`prefs.py`); secrets go to
   the OS keychain, never the database or the snapshot. No machine-specific paths in code.
 - **Migrations are Django's:** change `models.py`, run `makemigrations mii`, check it in.

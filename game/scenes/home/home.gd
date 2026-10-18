@@ -6,14 +6,15 @@ extends Control
 ## island, grouped by island. Click an island, its plate, or "Visit" to go there.
 ##
 ## Everything comes from the Islands autoload (GET /islands + each island's
-## snapshot). Settings opens SettingsPopup (game.gd). The Caretaker button is a
-## placeholder (TODO.md).
+## snapshot). Settings opens SettingsPopup (game.gd). The Caretaker button is the
+## account: "Log in" or your name, opening Settings (its Account section logs in).
 
 signal visit(island_id: String)
 signal new_island_requested
 signal settings_requested
 
 var _plates := {}  # island id -> IslandPlate
+var _login_on := false  # GET /auth/config: does this server have Auth0 login?
 
 @onready var sea: SeaView = %Sea
 
@@ -23,6 +24,9 @@ func _ready() -> void:
 	%NewIsland.pressed.connect(new_island_requested.emit)
 	%NewIslandNav.pressed.connect(new_island_requested.emit)
 	%Settings.pressed.connect(settings_requested.emit)
+	%Caretaker.pressed.connect(settings_requested.emit)
+	Net.login_changed.connect(_show_account)
+	Net.connected.connect(_ask_login_on)
 	Islands.changed.connect(
 		func():
 			if is_visible_in_tree():
@@ -49,13 +53,37 @@ func _show() -> void:
 	_show_waiting(islands)
 
 
+func _ask_login_on() -> void:
+	Net.request_json(
+		"/auth/config",
+		func(ok: bool, data: Dictionary):
+			_login_on = ok and data.get("enabled", false)
+			_show_account()
+	)
+
+
+func _show_account() -> void:
+	var button: Button = %Caretaker
+	button.disabled = not _login_on and not Net.token
+	if Net.token:
+		button.text = Net.user_name if Net.user_name else "Logged in"
+		button.tooltip_text = "Logged in. Open Settings to log out."
+	else:
+		button.text = "Log in"
+		button.tooltip_text = (
+			"Log in to found islands and see your private ones."
+			if _login_on
+			else "Login is off on this server (no Auth0 settings)."
+		)
+
+
+## The connection pill only shows when the backend drops: "Reconnecting… backend offline".
 func _show_connection() -> void:
-	var online := Net.is_online
-	%StatusLabel.text = "Connected" if online else "Reconnecting…"
-	var count := Islands.islands.size()
-	%SyncedLabel.text = ("%d island%s synced" % [count, "" if count == 1 else "s"]) if online else "backend offline"
+	%ConnectedPill.visible = not Net.is_online
+	%StatusLabel.text = "Reconnecting…"
+	%SyncedLabel.text = "backend offline"
 	var dot: StyleBoxFlat = get_theme_stylebox("panel", "StatusDot").duplicate()
-	dot.bg_color = Color("39C16F") if online else Color("F2994A")
+	dot.bg_color = Color("F2994A")
 	%StatusDot.add_theme_stylebox_override("panel", dot)
 
 

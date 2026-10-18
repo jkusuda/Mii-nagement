@@ -21,6 +21,8 @@ signal answer_requested(bubble_id: String)
 signal talk_requested(resident_id: String, building_id: String)
 
 const CLOSE_ICON := preload("res://assets/icons/x.svg")
+const MOON_ICON := preload("res://assets/icons/moon.svg")
+const NIGHT := Color("6C5BD4")  # the sleepers' corner
 const SEND_ICON := preload("res://assets/icons/plus.svg")
 const CARD_WIDTH := 780.0
 const LIST_HEIGHT := 330.0
@@ -49,6 +51,8 @@ var _form := PackageForm.new()
 var _footer_title := Label.new()
 var _footer_text := Label.new()
 var _back := Button.new()
+var _sleepers := PanelContainer.new()  # bottom right: who's asleep inside
+var _sleepers_row := HBoxContainer.new()
 ## The "What Jo is thinking" dropdowns, per task id: open or not, technical details
 ## shown or not, the parts that refresh (rebuilt with the list: {view, toggle, who}),
 ## and where it was scrolled to (kept across rebuilds).
@@ -186,6 +190,7 @@ func _show_form() -> void:
 	_footer_title.text = "Into the Mailbox it goes"
 	_footer_text.text = "Your residents will plan, build and check the work."
 	_form.reset()
+	_sleepers.visible = false
 
 
 func _on_action() -> void:
@@ -209,6 +214,7 @@ func _refresh() -> void:
 		_fill_mailbox()
 	else:
 		_fill_stage()
+	_show_sleepers()
 
 
 func _fill_mailbox() -> void:
@@ -264,6 +270,28 @@ func _fill_inside(building: Dictionary) -> void:
 			)
 	for r in people:
 		_list.add_child(_resident_card(r, id))
+
+
+## The corner of the footer that shows residents of this building who are asleep
+## (the island walks them in through the door): a headshot and a name each.
+func _show_sleepers() -> void:
+	for child in _sleepers_row.get_children():
+		_sleepers_row.remove_child(child)
+		child.queue_free()
+	var id := str(_building().get("id", ""))
+	var count := 0
+	for r in Net.island.get("residents", []):
+		if r.get("state") != "sleeping" or str(r.get("building", "")) != id:
+			continue
+		var chip := HBoxContainer.new()
+		chip.add_theme_constant_override("separation", 6)
+		chip.add_child(UI.avatar(r, 30))
+		var name_label := UI.label(str(r.get("name", "?")), 14, true)
+		name_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		chip.add_child(name_label)
+		_sleepers_row.add_child(chip)
+		count += 1
+	_sleepers.visible = count > 0 and not _composing
 
 
 # --- Cards -----------------------------------------------------------------------
@@ -805,6 +833,33 @@ func _build_footer() -> Control:
 	texts.add_child(_footer_title)
 	texts.add_child(_footer_text)
 	row.add_child(texts)
+
+	# Who's asleep inside, with their headshots (filled by _show_sleepers).
+	_sleepers.add_theme_stylebox_override(
+		"panel", _box(NIGHT.lerp(Color.WHITE, 0.86), 18, Color.TRANSPARENT, 0, 0, false, Vector4(12, 8, 14, 8))
+	)
+	_sleepers.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var night := HBoxContainer.new()
+	night.add_theme_constant_override("separation", 10)
+	var moon := TextureRect.new()
+	moon.texture = MOON_ICON
+	moon.modulate = NIGHT
+	moon.custom_minimum_size = Vector2(20, 20)
+	moon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	moon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	moon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	night.add_child(moon)
+	var asleep := VBoxContainer.new()
+	asleep.add_theme_constant_override("separation", 4)
+	var heading := UI.label("Asleep inside", 12, true)
+	heading.add_theme_color_override("font_color", NIGHT.darkened(0.2))
+	asleep.add_child(heading)
+	_sleepers_row.add_theme_constant_override("separation", 12)
+	asleep.add_child(_sleepers_row)
+	night.add_child(asleep)
+	_sleepers.add_child(night)
+	_sleepers.visible = false
+	row.add_child(_sleepers)
 
 	_back.text = "Back"
 	_back.theme_type_variation = &"OutlineButton"

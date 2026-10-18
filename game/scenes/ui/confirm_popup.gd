@@ -19,6 +19,7 @@ static func ask(from: Node, title: String, text: String, yes_label: String, on_y
 	from.get_tree().root.add_child(popup)
 	popup.popup_hide.connect(popup.queue_free)
 	popup.popup_centered(Vector2i(420, 160))
+	Audio.sfx("popup_open")
 	popup._fit.call_deferred()
 
 

@@ -16,7 +16,7 @@ from conftest import db_test
 from cryptography.hazmat.primitives.asymmetric import rsa
 from django.test import AsyncClient
 
-from mii import auth, consumers, islands
+from mii import auth, consumers, islands, views
 from mii.config import config
 from mii.models import Island
 
@@ -150,6 +150,17 @@ async def test_settings_need_a_login(fake_runtime, login_on):
     assert me.status_code == 200 and me.json()["sub"] == "auth0|alice"
 
 
+@db_test
+async def test_server_side_lookups_need_a_login(fake_runtime, login_on, monkeypatch):
+    # They use this machine's gh login and agent CLIs, so a visitor can't call them.
+    monkeypatch.setattr(views.github, "list_repos", lambda q: [{"repo": "me/app"}])
+    client = AsyncClient()
+    for path in ("/github/repos", "/github/branches?repo=me/app", "/brains/mock/models"):
+        assert (await client.get(path)).status_code == 401, path
+    assert (await client.get("/github/repos", headers=bearer())).json() == {"repos": [{"repo": "me/app"}]}
+    assert (await client.get("/brains/mock/models", headers=bearer())).status_code == 404  # mock has none
+
+
 # --- WebSocket ---------------------------------------------------------------------------
 
 
@@ -179,6 +190,20 @@ async def test_websocket_close_codes(island, fake_runtime, login_on, monkeypatch
     assert first["type"] == "snapshot"
     await communicator.send_input({"type": "websocket.disconnect", "code": 1000})
     await communicator.wait()
+
+
+@db_test
+async def test_websocket_without_islands_stays_open(fake_runtime, monkeypatch):
+    """A fresh install has no island: the socket stays open (the game is online) and sends nothing."""
+    monkeypatch.setattr(consumers, "get_runtime", lambda: fake_runtime)
+    for query in ("", "island=gone"):
+        scope = {"type": "websocket", "path": "/ws", "query_string": query.encode(), "headers": [], "subprotocols": []}
+        communicator = ApplicationCommunicator(consumers.IslandConsumer.as_asgi(), scope)
+        await communicator.send_input({"type": "websocket.connect"})
+        assert (await communicator.receive_output())["type"] == "websocket.accept"
+        assert await communicator.receive_nothing()
+        await communicator.send_input({"type": "websocket.disconnect", "code": 1000})
+        await communicator.wait()
 
 
 # --- Device flow -------------------------------------------------------------------------

@@ -25,7 +25,9 @@ def utcnow() -> datetime:
 # --- Tables -----------------------------------------------------------------
 
 # House keys: ACP tool kind group -> "yes" | "ask" | "no" (docs/protocol.md). Used by agents/acp.py.
-DEFAULT_KEYS = {"read": "yes", "edit": "ask", "execute": "ask", "fetch": "no"}
+# `master` ("yes" | "no") is the resident's own master key: every door opens and nothing is ever
+# asked (permissions, reviews, questions); the other keys are ignored while it is "yes".
+DEFAULT_KEYS = {"master": "no", "read": "yes", "edit": "ask", "execute": "ask", "fetch": "no"}
 
 
 def default_keys() -> dict:
@@ -189,8 +191,22 @@ class Setting(models.Model):
     value = models.JSONField(null=True)
 
 
+class BrainUsage(models.Model):
+    """What residents used of one brain (agent service) on one day, for the usage pills
+    (usage.py). Only what the agents report: tokens per turn, and the session's cost."""
+
+    brain = models.CharField(max_length=50)
+    day = models.DateField()
+    turns = models.IntegerField(default=0)  # prompts answered
+    tokens = models.BigIntegerField(default=0)  # 0 when the agent doesn't report them
+    cost = models.FloatField(default=0.0)  # US dollars; 0 when the agent doesn't report it
+
+    class Meta:
+        unique_together = [("brain", "day")]
+
+
 class Event(models.Model):
-    """Every event sent to clients, kept for history and replay.py."""
+    """Every event sent to clients, kept for history (News, a task's events)."""
 
     island_id = models.CharField(max_length=64, null=True, blank=True, db_index=True)
     type = models.CharField(max_length=50, db_index=True)

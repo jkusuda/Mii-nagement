@@ -21,6 +21,7 @@ Net="*res://net.gd"
 Islands="*res://islands.gd"
 Clock="*res://clock.gd"
 Portraits="*res://portraits.gd"
+Audio="*res://audio.gd"
 
 [display]
 
@@ -31,6 +32,7 @@ window/stretch/mode="canvas_items"
 [rendering]
 
 renderer/rendering_method.mobile="gl_compatibility"
+anti_aliasing/quality/msaa_3d.web=2
 
 [shader_globals]
 

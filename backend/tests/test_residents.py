@@ -53,6 +53,7 @@ async def test_create_keeps_every_creator_field(island):
         {"name": "Mo", "caution": "very"},
         {"name": "Mo", "keys": {"edit": "maybe"}},
         {"name": "Mo", "keys": {"launch": "yes"}},
+        {"name": "Mo", "keys": {"master": "ask"}},
         {"name": "Mo", "gifts": ["jetpack"]},
         {"name": "Mo", "appearance": "bob"},
         {"name": "Mo", "appearance": {"hair": {"style": 1}}},

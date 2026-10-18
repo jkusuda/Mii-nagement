@@ -202,6 +202,17 @@ def test_the_master_key_turns_every_ask_into_yes_but_keeps_no():
     assert permission_for(job, "fetch", "x") == "no"
 
 
+def test_a_residents_own_master_key_opens_every_door():
+    job = make_job("codex")
+    job.resident.keys = {"master": "yes", "read": "no", "edit": "no", "execute": "no", "fetch": "no"}
+    job.rules = {"shell": True, "install_packages": True}
+    assert permission_for(job, "execute", "pip install requests") == "yes"
+    assert permission_for(job, "fetch", "x") == "yes" and permission_for(job, "edit", "x") == "yes"
+    assert permission_for(job, "other", "x") == "yes"  # tool kinds outside the four keys too
+    job.resident.keys["master"] = "no"
+    assert permission_for(job, "fetch", "x") == "no"
+
+
 async def test_house_keys_answer_permissions_without_a_bubble(sandbox):
     workdir = sandbox.create_worktree("t_test")
     runner = AcpRunner("claude-code", command=[sys.executable, str(FAKE_AGENT)])

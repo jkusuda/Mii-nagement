@@ -219,6 +219,24 @@ async def test_the_master_key_answers_every_bubble_by_itself(island):
     assert workflow.bubbles.open == {}
 
 
+async def test_a_residents_own_master_key_answers_their_bubbles(island):
+    from mii.models import DEFAULT_KEYS, Building, Resident
+
+    coder = (await Building.objects.aget(pk="workshop")).resident_id
+    await Resident.objects.filter(pk=coder).aupdate(keys={**DEFAULT_KEYS, "master": "yes"})
+    runner = AskingRunner()
+    workflow, client = make_workflow(runner, bubble_timeout=30)  # the setting is off
+    task = await asyncio.wait_for(workflow.run_task((await workflow.submit("sunny", "No questions")).id), 5)
+
+    assert task.status == "done"
+    assert runner.answers == [
+        "Just this once",
+        "Approve & merge",
+        "No need to ask: use your best judgement and carry on.",
+    ]
+    assert all(e["answered"] for e in client.of_type("bubble_resolved")) and workflow.bubbles.open == {}
+
+
 # --- Real-mode handlers (a throwaway git repo stands in for the island's repository) ----
 
 
@@ -788,3 +806,48 @@ async def test_lab_skips_the_flaky_rerun_when_the_step_budget_is_spent(island, s
     lab = await Step.objects.filter(task_id=task.id, building_type="lab").afirst()
     assert lab.outcome == "fail" and lab.flaky is False
     assert not any("looks flaky" in e["text"] for e in client.of_type("activity"))
+
+
+class CountingWriter(WritingRunner):
+    """Writes `x = <n>` for the n-th package, so every package changes feature.py."""
+
+    def __init__(self):
+        self.count = 0
+
+    async def run(self, job) -> StepResult:
+        if job.building.type == "workshop":
+            self.count += 1
+            (job.workdir / "feature.py").write_text(f"x = {self.count}\n")
+        return StepResult("pass", "ok")
+
+
+async def test_merge_locally_merges_or_queues_a_conflict_fix(island, sandbox, sandboxes):
+    workflow, _ = make_workflow(CountingWriter(), sandboxes=sandboxes, test_command="true")
+    repo = sandbox.repo_path
+    git = ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t"]
+
+    task = await workflow.run_task((await workflow.submit("sunny", "Add feature")).id)
+    branch, conflicts, fix = await workflow.merge_locally(task.id)
+    assert conflicts == [] and fix is None and (repo / "feature.py").read_text() == "x = 1\n"
+    assert branch == subprocess.run([*git, "branch", "--show-current"], capture_output=True, text=True).stdout.strip()
+
+    # The next package changes feature.py while your own branch changes it differently.
+    other = await workflow.run_task((await workflow.submit("sunny", "Change feature")).id)
+    (repo / "feature.py").write_text("x = 99\n")
+    with pytest.raises(SandboxError, match="uncommitted"):
+        await workflow.merge_locally(other.id)
+    subprocess.run([*git, "commit", "-q", "-am", "mine"], check=True)
+
+    _, conflicts, fix = await workflow.merge_locally(other.id)
+    assert conflicts == ["feature.py"] and fix.status == "queued" and fix.title.startswith("Fix merge conflicts")
+    assert (repo / "feature.py").read_text() == "x = 99\n"  # your folder is untouched
+    marked = sandbox._git(repo, "show", f"mii/{fix.id}:feature.py")
+    assert "<<<<<<<" in marked and ">>>>>>>" in marked
+    assert sandbox._ok(repo, "merge-base", "--is-ancestor", f"mii/{other.id}", f"mii/{fix.id}")
+
+
+async def test_merge_locally_needs_git(island):
+    workflow, _ = make_workflow(ScriptedRunner())
+    task = await workflow.run_task((await workflow.submit("sunny", "Mock")).id)
+    with pytest.raises(ValueError, match="only a delivered package"):
+        await workflow.merge_locally(task.id)

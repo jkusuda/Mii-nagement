@@ -7,7 +7,7 @@ from mii.agents.acp import BRAINS
 from mii.engine import BUBBLE_MOODS, HANDLERS
 from mii.island_map import SHAPES
 from mii.judge import MOODS
-from mii.replay import task_window
+from mii.tasks import task_window
 
 
 def test_every_step_has_a_handler_and_a_lot_in_every_shape():
