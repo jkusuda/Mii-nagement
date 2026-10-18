@@ -50,7 +50,7 @@ func _ready() -> void:
 	_life.setup(self)
 
 
-## --- What island_life.gd needs ----------------------------------------------------
+# --- What island_life.gd needs ----------------------------------------------------
 
 
 func walker(resident_id: String) -> IslandResident:
@@ -125,6 +125,8 @@ func _rebuild() -> void:
 	for walker in _walkers.values():
 		walker.queue_free()
 	_walkers.clear()
+	if _life:
+		_life.reset()
 	_sync(true)
 
 

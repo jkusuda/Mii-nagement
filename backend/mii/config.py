@@ -20,6 +20,9 @@ REPO_ROOT = BACKEND_DIR.parent
 load_dotenv(REPO_ROOT / ".env")
 
 DEV_SECRET_KEY = "mii-nagement-local-dev-key"
+# The backend's own keys and server secrets. Agent processes and test commands never get
+# them (agents/acp.py agent_env, prefs.secrets_env, sandbox.run_shell).
+PRIVATE_ENV = {"OPENROUTER_API_KEY", "TYPESAFE_API_KEY", "SPECTATOR_SECRET", "DJANGO_SECRET_KEY", "MII_DATABASE_URL"}
 # Outside any project on purpose: agent CLIs also read the instruction files (CLAUDE.md,
 # AGENTS.md...) of the folders above where they start, so worktrees inside this repo would
 # make every island's agents think they work on Mii-nagement.
@@ -53,6 +56,7 @@ class Config:
     debug: bool = True  # DJANGO_DEBUG
     secret_key: str = DEV_SECRET_KEY  # DJANGO_SECRET_KEY
     public_demo: bool = False  # PUBLIC_DEMO: no PUT /settings, no repo paths on POST /islands
+    hosts: tuple[str, ...] = ()  # host names served besides localhost and IP addresses (MII_DOMAIN, MII_HOSTS)
     database_url: str | None = None  # MII_DATABASE_URL: Postgres/TimescaleDB instead of SQLite (settings.py)
 
     # Auth0 login (auth.py): off unless all three are set
@@ -84,6 +88,11 @@ def load_config() -> Config:
         debug=_flag("DJANGO_DEBUG", "1"),
         secret_key=_optional_str("DJANGO_SECRET_KEY") or DEV_SECRET_KEY,
         public_demo=_flag("PUBLIC_DEMO", "0"),
+        hosts=tuple(
+            h.strip().lower()
+            for h in f"{os.getenv('MII_DOMAIN', '')},{os.getenv('MII_HOSTS', '')}".split(",")
+            if h.strip()
+        ),
         database_url=_optional_str("MII_DATABASE_URL"),
         auth0_domain=_optional_str("AUTH0_DOMAIN"),
         auth0_audience=_optional_str("AUTH0_AUDIENCE"),

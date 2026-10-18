@@ -192,6 +192,8 @@ func _on_save_pressed() -> void:
 
 func _on_saved(ok: bool, data: Dictionary) -> void:
 	_saving = false
+	if not is_open:
+		return  # cancelled meanwhile
 	if ok:
 		_close()  # the server also sends everyone the new snapshot
 		return
@@ -389,6 +391,8 @@ func _refresh_status(message := "") -> void:
 	elif problem != "":
 		_status.text = problem
 		color = PROBLEM
+	elif _tool == Tool.BUILDINGS and _task_on_road():
+		_status.text = "A task is on the road: add or remove buildings once it's done."
 	else:
 		_status.text = TOOL_HINTS[_tool]
 	_status.add_theme_color_override("font_color", color)
@@ -796,8 +800,12 @@ func _auto_arrange() -> void:
 # --- Buildings ----------------------------------------------------------------------
 
 
+func _task_on_road() -> bool:
+	return Net.island.get("tasks", []).any(func(t): return t.get("status") == "in_progress")
+
+
 func _show_step_toggles() -> void:
-	var busy: bool = Net.island.get("tasks", []).any(func(t): return t.get("status") == "in_progress")
+	var busy := _task_on_road()
 	for type in IslandLayout.STEP_ORDER:
 		var button := _option(IslandLayout.STEP_NAMES[type], func(): _toggle_step(type))
 		button.theme_type_variation = &"FilterChipActive" if draft.has_building(type) else &"FilterChip"
@@ -805,8 +813,6 @@ func _show_step_toggles() -> void:
 		if type in IslandLayout.REQUIRED_STEPS:
 			button.tooltip_text = "Every island needs this one."
 		_options.add_child(button)
-	if busy:
-		_refresh_status("A task is on the road: add or remove buildings once it's done.")
 
 
 func _toggle_step(type: String) -> void:

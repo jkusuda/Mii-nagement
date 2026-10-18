@@ -7,6 +7,7 @@ read or written inside the task's worktree; shell commands are gated by a ✋
 bubble, like the ACP brains' own commands.
 """
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -123,6 +124,8 @@ class OpenRouterRunner:
                         args = json.loads(call["function"].get("arguments") or "{}")
                     except json.JSONDecodeError:
                         args = {}
+                    if not isinstance(args, dict):
+                        args = {}
                     await job.report(_describe(name, args))
                     if job.think:
                         await job.think(
@@ -133,7 +136,8 @@ class OpenRouterRunner:
                             detail=_detail(name, args),
                         )
                     output = await self._tool(name, args, job)
-                    messages.append({"role": "tool", "tool_call_id": call["id"], "content": output[:MAX_OUTPUT]})
+                    reply_to = call.get("id", "")
+                    messages.append({"role": "tool", "tool_call_id": reply_to, "content": output[:MAX_OUTPUT]})
             return StepResult("fail", f"{job.resident.name} used all {MAX_TURNS} turns without finishing.")
         finally:
             if self.http is None:
@@ -180,8 +184,8 @@ class OpenRouterRunner:
                 if denied:
                     return denied
             if name == "list_files":
-                pattern = args.get("glob") or "**/*"
-                paths = [p for p in workdir.glob(pattern) if is_inside(p, workdir) and ".git" not in p.parts]
+                pattern = str(args.get("glob") or "**/*")
+                paths = await asyncio.to_thread(_glob, workdir, pattern)  # walks the repo: off the event loop
                 return "\n".join(str(p.relative_to(workdir)) for p in sorted(paths)[:500]) or "(no files)"
             if name == "read_file":
                 return inside(workdir, args.get("path", "")).read_text(errors="replace")
@@ -199,6 +203,12 @@ class OpenRouterRunner:
             return f"error: unknown tool {name}"
         except (SandboxError, OSError) as e:
             return f"error: {e}"
+        except (ValueError, NotImplementedError) as e:  # a glob Path.glob refuses, like "src/**.py" or "/etc/*"
+            return f"error: {e}"
+
+
+def _glob(workdir: Path, pattern: str) -> list[Path]:
+    return [p for p in workdir.glob(pattern) if is_inside(p, workdir) and ".git" not in p.parts]
 
 
 # Our tools -> the house key that guards them (models.DEFAULT_KEYS), and how a ✋ bubble asks.

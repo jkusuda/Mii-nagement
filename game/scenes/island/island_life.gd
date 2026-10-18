@@ -30,7 +30,7 @@ const FRIEND_WAIT := 8.0  # seconds a visitor waits for a friend to stop walking
 
 var _residents: IslandResidents
 var _timer := Timer.new()
-var _active := {}  # resident id -> true while their life loop runs
+var _active := {}  # resident id -> the walker whose life loop runs (a rebuilt walker starts afresh)
 var _held := {}  # resident id -> true while a visitor is chatting with them (their loop waits)
 var _visiting := {}  # resident id -> true while they're on a visit
 var _last_wave := {}  # "a|b" -> time of the last wave between them
@@ -53,12 +53,7 @@ func _ready() -> void:
 	Net.task_updated.connect(_on_task)
 	Net.agent_state_changed.connect(func(agent, _state, _building): _interrupt(agent))
 	Net.agent_moved.connect(func(agent, _from, _to): _interrupt(agent))
-	Net.snapshot_received.connect(
-		func(_island):
-			_active.clear()
-			_held.clear()
-			_visiting.clear()
-	)
+	Net.snapshot_received.connect(func(_island): reset())
 
 
 ## Every tick: idle residents with nothing to do set off; sleepers may roll over.
@@ -80,7 +75,7 @@ func _free_residents() -> Array:
 	for r in Net.island.get("residents", []):
 		var id := str(r.get("id", ""))
 		var walker: IslandResident = _residents.walker(id)
-		if walker == null or walker.is_walking or walker.inside or _active.has(id):
+		if walker == null or walker.is_walking or walker.inside or _active.get(id) == walker:
 			continue
 		if str(r.get("state", "idle")) in ["idle", "sleeping"]:
 			out.append(r)
@@ -93,9 +88,8 @@ func _live(id: String) -> void:
 	var walker: IslandResident = _residents.walker(id)
 	if walker == null:
 		return
-	_active[id] = true
+	_active[id] = walker
 	walker.life_busy = true
-	walker.home_spot = walker.global_position
 	while _still(walker) and _is_idle(id):
 		await _wait_while_held(walker)
 		if not _still(walker) or not _is_idle(id):
@@ -117,7 +111,7 @@ func _live(id: String) -> void:
 		if not _still(walker):
 			break
 		await _pause(_linger(resident))
-	_finish(id)
+	_finish(id, walker)
 
 
 ## A random place to stroll to: anywhere open on the island, or INF when there is none.
@@ -169,13 +163,23 @@ func _linger(resident: Dictionary) -> float:
 
 
 ## Done (or interrupted): release the resident and let island_residents place them.
-func _finish(id: String) -> void:
+## `walker` is untyped because it may have been freed by a rebuild meanwhile; then a
+## newer loop (or nobody) owns the resident and there is nothing to release.
+func _finish(id: String, walker) -> void:
+	if not is_instance_valid(walker) or _active.get(id) != walker:
+		return
 	_active.erase(id)
 	_held.erase(id)
-	var walker: IslandResident = _residents.walker(id)
-	if walker and walker.life_busy:
+	if walker.life_busy:
 		walker.life_busy = false
 		_residents.line_up()
+
+
+## The walkers were rebuilt (island_residents.gd): every loop's walker is gone.
+func reset() -> void:
+	_active.clear()
+	_held.clear()
+	_visiting.clear()
 
 
 func _interrupt(id: String) -> void:
@@ -187,7 +191,7 @@ func _interrupt(id: String) -> void:
 
 ## Still ours? False once the server interrupted (stop_life clears life_busy).
 func _still(walker: IslandResident) -> bool:
-	return is_instance_valid(walker) and walker.life_busy and _active.has(walker.resident_id)
+	return is_instance_valid(walker) and walker.life_busy and _active.get(walker.resident_id) == walker
 
 
 func _is_idle(id: String) -> bool:

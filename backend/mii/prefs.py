@@ -21,8 +21,9 @@ from pathlib import Path
 import keyring
 import keyring.errors
 
-from mii.config import BACKEND_DIR
+from mii.config import BACKEND_DIR, PRIVATE_ENV
 from mii.models import Setting
+from mii.vocab import DEFAULT_MODEL
 
 log = logging.getLogger(__name__)
 
@@ -33,9 +34,9 @@ SECRETS_FILE = BACKEND_DIR / ".secrets.json"  # fallback when there is no keycha
 SETTINGS = {
     "islands_root": ("ISLANDS_ROOT", None, "path"),
     "test_command": ("TEST_COMMAND", None, str),
-    "openrouter_model": ("OPENROUTER_MODEL", "anthropic/claude-sonnet-4.5", str),
+    "openrouter_model": ("OPENROUTER_MODEL", DEFAULT_MODEL, str),
     "keep_worktrees": ("KEEP_WORKTREES", False, bool),
-    "database_url": ("DATABASE_URL", None, str),  # for the `database` gift (agents/acp.py GIFTS)
+    "database_url": ("DATABASE_URL", None, str),  # for the `database` gift (gifts.py GIFTS)
     "judge": ("JUDGE", "auto", str),  # auto | off | jev | gemini (judge.py, runtime.reload)
     "judge_model": ("JUDGE_MODEL", "gemini-2.5-flash", str),  # the Gemini judge's model
     "spectator_url": ("SPECTATOR_URL", None, str),  # the spectator feed's ingest URL (hooks.py); None = off
@@ -55,8 +56,6 @@ SECRETS = {
     "gemini_api_key": "GEMINI_API_KEY",  # the Gemini CLI brain and the Gemini judge: shared on purpose
     "spectator_secret": "SPECTATOR_SECRET",  # the spectator feed's bearer secret (hooks.py)
 }
-# Keys the backend uses itself. They never reach agent processes (secrets_env, agents/acp.py).
-PRIVATE_ENV = {"OPENROUTER_API_KEY", "TYPESAFE_API_KEY", "SPECTATOR_SECRET"}
 
 
 class PrefsError(ValueError):

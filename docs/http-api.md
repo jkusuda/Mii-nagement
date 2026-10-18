@@ -5,12 +5,16 @@ The WebSocket messages are in [protocol.md](protocol.md); how the pieces fit is 
 [architecture.md](architecture.md). All bodies are JSON; an error is
 `{"error": "<readable reason>"}` with a 4xx/5xx status.
 
+Only programs talk to the backend: a request with an `Origin` header (a web page in a
+browser) gets 403, and so does a `Host` that isn't localhost, an IP address, or a name
+in `MII_DOMAIN` / `MII_HOSTS` (`asgi.py` `trusted`), so a page you visit can't drive it.
+
 ## Endpoints
 
 | Endpoint | Purpose |
 |---|---|
-| `WS /ws?island=<id>[&token=<jwt>]` | snapshot + live events; the game sends `answer_bubble`, `create_resident`, `update_resident`, `delete_resident`, `create_task`, `cancel_task`, `set_layout`, `update_island`. With login on: close code 4401 for a bad token, 4403 for someone else's private island (protocol.md) |
-| `GET /health` | is the server up, which mode, which judge (`rules` / `jev` / `gemini`), which database (`sqlite` / `postgres` / `timescale`) |
+| `WS /ws?island=<id>[&token=<jwt>]` | snapshot + live events; the game sends `answer_bubble`, `create_resident`, `update_resident`, `delete_resident`, `create_task`, `cancel_task`, `set_layout`, `update_island`, `talk_open`, `talk`, `talk_close`. With login on: close code 4401 for a bad token, 4403 for someone else's private island (protocol.md) |
+| `GET /health` | is the server up (`ok`), which judge (`rules` / `jev` / `gemini`), which database (`sqlite` / `postgres` / `timescale`) |
 | `GET /meta` | the vocabulary the game shows pickers for: jobs, traits, brains, gifts, keys, building types, job buildings, road conditions, town plans, island shapes, house rules, bubble kinds, moods, states, task statuses, weather kinds (all from `backend/mii/vocab.py`) |
 | `GET /brains` | `{brain: true/false}`: which brains can run here (the creator greys out the rest) |
 | `GET /brains/detail` | per brain: `ok`, `installed`, `logged_in` (best effort), `api_key`, `hint` |
@@ -86,8 +90,8 @@ commit note, the test output, the review, the PR text.
 ```
 
 `events` is the island's stored event stream between the task's `in_progress`
-and its last `task` event (`done`, `failed` or `cancelled`; an island runs one task at a
-time, so that window is the task's), in the shape of `GET /islands/{id}/events`
+and its last `task` event (`done`, `failed` or `cancelled`; with several packages at once
+(`parallel_packages`) that window also holds the other packages' events), in the shape of `GET /islands/{id}/events`
 (`tasks.task_window` finds it).
 
 ## Insights payload

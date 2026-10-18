@@ -12,8 +12,8 @@ extends Node
 ##
 ## Net also keeps `island`: the last snapshot, updated by every event after it.
 ## Screens draw from `island` and redraw on `island_changed`, so everything they
-## show comes from the backend. Signals like `agent_moved` are still there for
-## things that need the moment itself (starting a walk animation).
+## show comes from the backend. Signals like `agent_moved` are for things that
+## need the moment itself (starting a walk animation).
 
 signal connected
 signal disconnected
@@ -80,7 +80,7 @@ var url := _server_url()
 var is_online := false
 ## The latest island from the server: the last snapshot, kept up to date with
 ## every event since. Empty until the first snapshot arrives. Each open bubble
-## also gets `"since"`: when we first saw it (Unix seconds), for "2m ago".
+## also gets `"since"`: when it was asked (Unix seconds), for "2m ago".
 var island := {}
 
 ## Which island to watch. "" = let the server pick (its first island).
@@ -115,14 +115,23 @@ func _ready() -> void:
 	_try_connect()
 
 
-## MII_SERVER, else 127.0.0.1:8000. "localhost" becomes 127.0.0.1: on Windows it
-## resolves to the IPv6 address ::1 first, which the backend (uvicorn on
-## 127.0.0.1) never answers, and the connection hangs instead of failing.
+## MII_SERVER, else 127.0.0.1:8000. "https://host" (or "wss://host") means a server
+## behind TLS. "localhost" becomes 127.0.0.1: on Windows it resolves to the IPv6
+## address ::1 first, which the backend (uvicorn on 127.0.0.1) never answers, and the
+## connection hangs instead of failing.
 static func _server_url() -> String:
 	var server := OS.get_environment("MII_SERVER") if OS.has_environment("MII_SERVER") else "127.0.0.1:8000"
+	var scheme := "ws"
+	for prefix in ["https://", "wss://"]:
+		if server.begins_with(prefix):
+			scheme = "wss"
+			server = server.trim_prefix(prefix)
+	for prefix in ["http://", "ws://"]:
+		server = server.trim_prefix(prefix)
+	server = server.trim_suffix("/")
 	if server == "localhost" or server.begins_with("localhost:"):
 		server = "127.0.0.1" + server.trim_prefix("localhost")
-	return "ws://%s/ws" % server
+	return "%s://%s/ws" % [scheme, server]
 
 
 ## Godot concept: _process(delta) runs every frame. `delta` is the number of
@@ -169,7 +178,7 @@ func send_resident(resident: Dictionary) -> bool:
 
 ## The backend's HTTP address for `path`, e.g. http_url("/brains").
 func http_url(path: String) -> String:
-	return url.replace("ws://", "http://").trim_suffix("/ws") + path
+	return url.replace("wss://", "https://").replace("ws://", "http://").trim_suffix("/ws") + path
 
 
 ## One HTTP call to the backend: `done` is called later with (ok, data), where
@@ -193,7 +202,9 @@ func request_json(path: String, done: Callable, method := HTTPClient.METHOD_GET,
 			var ok := result == HTTPRequest.RESULT_SUCCESS and code == 200
 			if not ok and not data.has("error"):
 				data["error"] = "the backend is offline" if result != HTTPRequest.RESULT_SUCCESS else "HTTP %d" % code
-			done.call(ok, data)
+			# is_valid() is false once the node that asked (or owns the lambda) was freed.
+			if done.is_valid():
+				done.call(ok, data)
 	)
 	var headers := PackedStringArray(["Content-Type: application/json"] if body != null else [])
 	var error := http.request(http_url(path), headers, method, JSON.stringify(body) if body != null else "")
@@ -307,7 +318,13 @@ func _handle_message(text: String) -> void:
 				if r.get("state") == "idle":
 					r["idle_since"] = Time.get_unix_time_from_system()  # for the "bored" vibe (ResidentData.vibe)
 			for bubble in island.get("bubbles", []):
-				bubble["since"] = Time.get_unix_time_from_system()
+				# asked_at is ISO-8601 UTC; the first 19 characters are what Godot parses.
+				var asked := str(bubble.get("asked_at", ""))
+				bubble["since"] = (
+					Time.get_unix_time_from_datetime_string(asked.left(19))
+					if asked
+					else Time.get_unix_time_from_system()
+				)
 			snapshot_received.emit(island)
 		"resident":
 			_remember_resident(event["resident"])

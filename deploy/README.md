@@ -13,9 +13,9 @@ the page, the download, and a backend for HTTP clients.
 1. **Godot macOS export template** (for `make app`): Godot > Editor > Manage Export
    Templates > Download, or unzip `macos.zip` from the release's `.tpz` into
    `~/Library/Application Support/Godot/export_templates/4.7.2.stable/`.
-2. **Auth0** (login; required when `MOCK_AGENTS=0`; skip it for a mock-mode server). The
-   game has no login screen, so with login on it only sees public islands. In the Auth0
-   dashboard:
+2. **Auth0** (login; `push.sh` refuses to deploy without it, since residents run real
+   agents on the server's keys). The game has no login screen, so with login on it only
+   sees public islands. In the Auth0 dashboard:
    - Applications > APIs > Create API. Its *Identifier* (e.g. `https://mii-nagement/api`)
      is `AUTH0_AUDIENCE`. Signing algorithm RS256.
    - Applications > Create Application > *Native*. Its *Client ID* is `AUTH0_CLIENT_ID`,
@@ -27,8 +27,8 @@ the page, the download, and a backend for HTTP clients.
      logins (anyone with a Google account could otherwise log in).
 3. **Vultr**: Account > API > enable the API and copy the key, then
    `VULTR_API_KEY=... python3 deploy/vultr.py`. It prints the server's address.
-4. `cp deploy/server.env.example deploy/server.env` and fill it in: `MII_DOMAIN`, the
-   Auth0 values, the API keys for the brains you use, and `GH_TOKEN`.
+4. `cp deploy/server.env.example deploy/server.env` and fill it in: `MII_DOMAIN`,
+   `DJANGO_SECRET_KEY`, the Auth0 values, the API keys for the brains you use, and `GH_TOKEN`.
 
 ## Deploy (and redeploy after changes)
 

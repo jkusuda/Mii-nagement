@@ -152,6 +152,25 @@ async def test_real_mode_talk_uses_a_throwaway_worktree(at_work, sandboxes):
     assert "talk-" not in branches
 
 
+async def test_a_talk_worktree_that_wont_go_away_keeps_the_reply(at_work, sandboxes, monkeypatch):
+    from mii.sandbox import Sandbox, SandboxError
+
+    await Resident.objects.filter(pk="carlos").aupdate(brain="claude-code")
+
+    class Answers:
+        async def run(self, job):
+            return parse_verdict("It's in hello.py.", job.summary_chars)
+
+    def stuck(*args, **kwargs):
+        raise SandboxError("worktree is locked")
+
+    monkeypatch.setattr(Sandbox, "remove_worktree", stuck)
+    runtime = mock_runtime(Answers())
+    runtime.sandboxes = sandboxes
+    sent = await ask_once(runtime, {"id": "k_12", "resident": "carlos", "message": "Where?"})
+    assert sent[-1] == talk.talk_reply("k_12", "carlos", "It's in hello.py.")
+
+
 async def carrying(resident: str, building: str) -> Task:
     """A package in progress that `resident` is working on at `building`, one step in already."""
     task = await Task.objects.acreate(

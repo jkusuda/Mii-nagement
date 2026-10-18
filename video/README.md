@@ -31,15 +31,20 @@ Remotion only adds titles, captions, cards and sound.
 
 ## Re-recording the game footage
 
-`public/capture/*.mp4` come from Godot's Movie Maker mode, against a throwaway mock backend
-(its own port and database, never `backend/mii.db`). The helpers are in `godot-capture/`:
+`public/capture/*.mp4` come from Godot's Movie Maker mode, against a throwaway backend
+(its own port and database, never `backend/mii.db`). There is no mock mode: the residents run
+real brains on your logins or keys and really work on the throwaway island's repository, so
+pick a cheap brain for the extras and stop the answerer when you have your footage. The helpers
+are in `godot-capture/`:
 
-1. Start a backend: `cd backend && DATABASE_PATH=/tmp/cap/mii.db MOCK_AGENTS=1 uv run python -m uvicorn mii.asgi:application --port 8011`
+1. Start a backend: `cd backend && DATABASE_PATH=/tmp/cap/mii.db WORKTREE_ROOT=/tmp/cap/worktrees uv run python -m uvicorn mii.asgi:application --port 8011`
 2. Found an island named "Sunny Isle" (`POST /islands`, with a `folder` in `/tmp/cap`), then `uv run python ../video/godot-capture/seed.py`
-   for the residents and `uv run python ../video/godot-capture/answerer.py &` to keep packages and answers coming.
+   for the residents (`CAPTURE_BRAIN` / `CAPTURE_MODEL` pick the brain of everyone but Carlos, who stays on
+   Claude Code) and `uv run python ../video/godot-capture/answerer.py &` to keep packages and answers coming
+   (`CAPTURE_EVERY` seconds apart, default 12).
 3. Copy `capture.gd`, `capture.tscn` and `override.cfg` into `game/` (don't commit them), then record:
    `MII_SERVER=127.0.0.1:8011 CAPTURE_MODE=island Godot --path game res://capture.tscn --always-on-top --write-movie /tmp/cap/island.avi --fixed-fps 30 --quit-after 1080`
-   (modes: `flyover`, `residents`, `workflow`, and `talk` with `CAPTURE_QUESTION`; the talk needs `MOCK_AGENTS=0` and a claude-code resident).
+   (modes: `flyover`, `residents`, `workflow`, and `talk` with `CAPTURE_QUESTION`, which asks Carlos).
 4. Encode: `npx remotion ffmpeg -i /tmp/cap/island.avi -c:v libx264 -pix_fmt yuv420p -crf 20 public/capture/island.mp4`,
    then remove the three files from `game/`.
 

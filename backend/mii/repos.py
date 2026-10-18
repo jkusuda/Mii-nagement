@@ -117,9 +117,12 @@ def current_branch(path: Path) -> str | None:
 
 
 def link_remote(path: Path, repo: str) -> None:
-    """Point the repo's `origin` at github.com/<owner/name> (only if it has no origin yet)."""
+    """Point the repo's `origin` at github.com/<owner/name>."""
+    url = f"https://github.com/{repo}.git"
     if not _ok(path, "remote", "get-url", "origin"):
-        _git(path, "remote", "add", "origin", f"https://github.com/{repo}.git")
+        _git(path, "remote", "add", "origin", url)
+    elif github_repo_of(path) != repo:
+        _git(path, "remote", "set-url", "origin", url)
 
 
 def has_branch(path: Path, branch: str) -> bool:

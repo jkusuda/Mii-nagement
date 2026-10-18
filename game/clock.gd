@@ -1,5 +1,5 @@
 extends Node
-## Clock: the island's time of day, day count, and weather, for the top bar and
+## Clock: the island's time of day and day count, for the top bar and
 ## the day/night lighting (scenes/island/day_night.gd).
 ##
 ## Time follows the real clock on this computer. For development there's an
@@ -12,10 +12,6 @@ extends Node
 ## Emitted when the shown time might have changed: every few seconds, and right
 ## away when dev_hour moves.
 signal ticked
-
-## Weather kinds, with how often each one comes up (out of the total).
-const WEATHER := {"sunny": 5, "partly_cloudy": 3, "cloudy": 2, "rainy": 2}
-const WEATHER_NAMES := {"sunny": "Sunny", "partly_cloudy": "Partly cloudy", "cloudy": "Cloudy", "rainy": "Rainy"}
 
 ## Hour of the day to pretend it is (0.0-24.0), or -1 for the real time.
 var dev_hour := -1.0:
@@ -61,23 +57,6 @@ func day_number(created_at: String) -> int:
 	# Godot's parser wants "YYYY-MM-DDTHH:MM:SS", so drop the "+00:00" part.
 	var founded := Time.get_unix_time_from_datetime_string(created_at.substr(0, 19))
 	return max(1, _local_day(Time.get_unix_time_from_system()) - _local_day(founded) + 1)
-
-
-## Today's weather on an island: picked from the island id and the date, so it
-## stays the same all day and differs between islands.
-## The backend sends real weather from the island's recent work (`weather` in the
-## snapshot); game.gd prefers that and uses this roll as the fallback.
-func weather(island_id: String) -> String:
-	var roll := hash("%s:%d" % [island_id, _local_day(Time.get_unix_time_from_system())])
-	var total := 0
-	for kind in WEATHER:
-		total += WEATHER[kind]
-	roll = absi(roll) % total
-	for kind in WEATHER:
-		roll -= WEATHER[kind]
-		if roll < 0:
-			return kind
-	return "sunny"
 
 
 ## Days since 1970 on the local calendar (UTC seconds shifted by the time zone).

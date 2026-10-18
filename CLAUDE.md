@@ -21,8 +21,8 @@ optionally linked to GitHub. *Residents* have jobs, personality sliders and a *b
    Start every task there instead of searching the tree.
 2. [docs/protocol.md](docs/protocol.md): every WebSocket message. Change it **first**,
    then both halves. HTTP endpoints: [docs/http-api.md](docs/http-api.md).
-3. The skill in `.claude/skills/`: `godot-animation` for anything about motion, moods,
-   speech or island life.
+3. If you have it locally (`.claude/` is not in git): the `godot-animation` skill in
+   `.claude/skills/` for anything about motion, moods, speech or island life.
 
 ## Commands
 
@@ -73,7 +73,7 @@ binary exists: a missing Godot is skipped, and that looks like a pass.
   (game). Change them together.
 - **Godot files:** keep `.tscn` files simple (logic in `.gd`), keep every `*.gd.uid` next
   to its script, and `git mv` a script together with its `.uid`.
-- **Markers:** `TODO(mvp): ...` / `TODO(stretch): ...`; the roadmap is [TODO.md](TODO.md).
+- **Markers:** `TODO(mvp): ...` / `TODO(stretch): ...` for open work in the code.
 - **Git:** `origin` on GitHub, branch `main`. Start new work on a branch made from a
   freshly pulled `main`. Commit or push only when the owner asks. Other sessions may edit
   this checkout at the same time: re-read a file right before changing it.

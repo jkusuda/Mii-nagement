@@ -445,9 +445,9 @@ async def spawn_agent(client: Client, command: list[str], *, cwd: Path, env: dic
         await _end_process_tree(proc)
 
 
-async def _end_process_tree(proc: asyncio.subprocess.Process, grace: float = 2.0) -> None:
+async def _end_process_tree(proc: asyncio.subprocess.Process) -> None:
     """Wait briefly for the agent to exit, then terminate, then kill: the whole process group."""
-    # Windows has no SIGKILL (proc.kill() is used there anyway); fall back to SIGTERM so this loads.
+    # Windows has no SIGKILL (taskkill is used there instead); fall back to SIGTERM so this loads.
     for sig in (None, signal.SIGTERM, getattr(signal, "SIGKILL", signal.SIGTERM)):
         if sig is not None:
             with suppress(ProcessLookupError, PermissionError):
@@ -456,7 +456,7 @@ async def _end_process_tree(proc: asyncio.subprocess.Process, grace: float = 2.0
                 else:
                     os.killpg(proc.pid, sig)
         try:
-            await asyncio.wait_for(proc.wait(), timeout=grace)
+            await asyncio.wait_for(proc.wait(), timeout=2.0)
             return
         except TimeoutError:
             continue
@@ -505,7 +505,7 @@ def pick_model(offered: list[str], wanted: str) -> str | None:
 
 def agent_env(spec: dict) -> dict[str, str]:
     """The agent's environment: the user's (PATH, HOME, keychain) plus the vendor keys saved in
-    Settings, minus our own keys (prefs.PRIVATE_ENV) and minus blank keys (a set-but-empty
+    Settings, minus our own keys (config.PRIVATE_ENV) and minus blank keys (a set-but-empty
     ANTHROPIC_API_KEY makes some CLIs skip the subscription login)."""
     env = {k: v for k, v in os.environ.items() if k not in prefs.PRIVATE_ENV and not (_is_key(k) and not v.strip())}
     return prefs.secrets_env() | env | spec["env"]
@@ -580,10 +580,9 @@ async def list_brain_models(brain: str, command: list[str] | None = None, refres
     try:
         with tempfile.TemporaryDirectory(prefix="mii-models-") as tmp:
             workdir = await asyncio.to_thread(_scratch_worktree, Path(tmp))
+            env = await asyncio.to_thread(agent_env, spec)  # reads the keychain
             async with asyncio.timeout(MODELS_TIMEOUT):
-                async with spawn_agent(
-                    _ListingClient(), command or spec["command"], cwd=workdir, env=agent_env(spec)
-                ) as conn:
+                async with spawn_agent(_ListingClient(), command or spec["command"], cwd=workdir, env=env) as conn:
                     await conn.initialize(
                         protocol_version=PROTOCOL_VERSION,
                         client_capabilities=ClientCapabilities(
@@ -794,9 +793,8 @@ class AcpRunner:
         """Start the agent in the worktree, open a session and configure it."""
         stack = AsyncExitStack()
         try:
-            conn = await stack.enter_async_context(
-                spawn_agent(client, self.command, cwd=job.workdir, env=agent_env(self.spec))
-            )
+            env = await asyncio.to_thread(agent_env, self.spec)  # reads the keychain
+            conn = await stack.enter_async_context(spawn_agent(client, self.command, cwd=job.workdir, env=env))
             init = await conn.initialize(
                 protocol_version=PROTOCOL_VERSION,
                 client_capabilities=ClientCapabilities(

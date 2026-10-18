@@ -128,7 +128,8 @@ func _ready() -> void:
 func open(resident: Dictionary = {}, island_name := "Pebble Cove", live := true) -> void:
 	_editing = not resident.is_empty()
 	_live = live
-	_data = ResidentData.blank().merged(resident, true)
+	# A deep copy: editing keys or gifts must not touch Net.island until Save.
+	_data = ResidentData.blank().merged(resident.duplicate(true), true)
 	# A resident with no saved look keeps the one the island picked for them.
 	_data["appearance"] = MiiParts.for_resident(resident) if _editing else MiiParts.random()
 	_data.erase("buildings")  # only sent when "Works at" changes

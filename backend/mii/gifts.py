@@ -331,7 +331,7 @@ def _label(server: dict) -> str:
 def _new_id(server: dict, taken: set[str]) -> str:
     base = re.sub(r"[^a-z0-9]+", "_", server["name"].split("/")[-1].lower()).strip("_")[:24] or "gift"
     gift, n = base, 2
-    while gift in taken:
+    while gift in taken or gift == "search":  # /gifts/search is the gift shop's search
         gift, n = f"{base}_{n}", n + 1
     return gift
 

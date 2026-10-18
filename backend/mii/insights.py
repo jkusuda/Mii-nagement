@@ -1,11 +1,11 @@
 """Insights: plain stats about how the island is working, for the Insights screen
-and the News tab's "This week" box (payload shape: docs/architecture.md).
+and the News tab's "This week" box (payload shape: docs/http-api.md).
 
 Served at GET /islands/{id}/insights?range=today|week|month. Everything comes
 from the Step table (one row per building visit), the Task table, and the
 stored bubble events. Days are the server's local calendar days. On TimescaleDB,
 "packages per day" comes from the metrics_daily aggregate instead (metrics.py, UTC days:
-the hosted compose file sets TZ=UTC so both agree).
+the server image runs in UTC, so both agree).
 """
 
 import asyncio

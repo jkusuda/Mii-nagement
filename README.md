@@ -3,255 +3,191 @@
 A Tomodachi Life-style manager for teams of coding agents doing real software work.
 
 - Each **project is an island**, and every island **is a git repository** on your
-  machine (created for you, in a folder you choose), optionally linked to GitHub.
-- Each **agent is a resident** with a name, a job, and a personality. Their
-  **brain** is a real coding agent you already have (**Claude Code**, **Codex**,
-  or **Gemini CLI**), driven over the open
-  [Agent Client Protocol](https://agentclientprotocol.com) on your subscription
-  login (or an API key). Or pick the **OpenRouter** brain: any model from
+  machine (created for you, cloned from GitHub, or a folder you already have).
+- Each **agent is a resident** with a name, a job and a personality. Their **brain** is
+  a real coding agent you already have (**Claude Code**, **Codex** or **Gemini CLI**),
+  driven over the open [Agent Client Protocol](https://agentclientprotocol.com) on your
+  subscription login (or an API key). Or pick the **OpenRouter** brain: any model from
   [openrouter.ai](https://openrouter.ai/models), no CLI to install.
-- **The town layout is the workflow.** Buildings are steps (plan, code, test,
-  review, ship) and roads are handoffs. A task is a little package that residents
-  carry from building to building.
-- When a resident needs you, a **bubble** pops up over their head. Click it to
-  answer.
-
-**New here (person or AI agent)?** Read [docs/architecture.md](docs/architecture.md)
-first: how the two halves fit, a map of every file, and a "where to look" table for
-common changes. Then [CLAUDE.md](CLAUDE.md) for the working rules.
-
-> **Status:** the backend MVP is done (Django + Channels, ACP brains, OpenRouter
-> brain, GitHub in/out, insights) and runs end to end with real agents.
-> The game is wired to every backend endpoint. Open work is
-> marked `TODO(mvp)` / `TODO(stretch)` in the code; the roadmap is in [TODO.md](TODO.md).
-
-## How it fits together
+- **The town layout is the workflow.** Buildings are steps (plan, code, test, review,
+  ship) and roads are handoffs. A task is a little package that residents carry from
+  building to building, in its own git worktree, ending in a pull request.
+- When a resident needs you (a question, a ✋ permission for a shell command, an
+  "approve & merge"), a **bubble** pops up over their head. Click it to answer.
 
 ```
 ┌───────────────────────────┐   WebSocket (JSON events)   ┌──────────────────────┐
 │ backend/  (Python)        │ ──────────────────────────▶ │ game/  (Godot 4)     │
 │ Django · workflow engine  │     ws://localhost:8000/ws  │ draws the island,    │
 │ ACP agents · SQLite       │ ◀────────────────────────── │ sends your clicks    │
-│ git worktrees             │      answer_bubble          │ (no agent logic)     │
+│ git worktrees             │   commands + HTTP requests  │ (no agent logic)     │
 └───────────────────────────┘                             └──────────────────────┘
 ```
 
-- [docs/architecture.md](docs/architecture.md): how it fits together, which file does
-  what, and where to look for a change.
-- [docs/protocol.md](docs/protocol.md): every WebSocket message (the single source of truth).
-- [docs/http-api.md](docs/http-api.md): every HTTP endpoint and payload.
+The backend decides everything (workflow, agents, permissions, moods); the game only
+shows events and sends your input.
 
-## The lazy way
+## Quick start
 
-With [uv](https://docs.astral.sh/uv) and Godot 4 installed:
+**On a Mac, just the app:** download it from the website, or build it with `make app`
+(`game/builds/macos/Mii-nagement.dmg`). It starts its own backend on port 8765; the
+first launch downloads uv and Python, so it needs the internet and takes a minute. It
+isn't notarized: the first time macOS refuses it, open System Settings > Privacy &
+Security > Open Anyway.
+
+**On Windows, just the app:** download the installer from the website, or build it with
+`make windows` from Git Bash (`game/builds/windows/Mii-nagement-Setup.exe`). Everything
+comes with it (the backend, a Python with its packages, Git and Node), so nothing else
+needs installing and the first launch is quick. It installs for the current user (no admin
+rights) and uninstalls from Settings > Apps, leaving your islands. It isn't code-signed: the
+first time, SmartScreen warns, so choose More info > Run anyway. The backend's log is
+`%APPDATA%\Godot\app_userdata\Mii-nagement\backend.log`.
+
+**From source** (macOS, Linux or Windows), with [uv](https://docs.astral.sh/uv) and
+[Godot 4.7](https://godotengine.org/download) installed:
 
 ```bash
 make
 ```
 
-That installs everything, starts the backend, and opens the game. No
-configuration file is needed. Ctrl+C stops both. The backend runs without
-`--reload` (editing the code would restart the server mid-task).
-
-Other targets: `make server`, `make watch`, `make game`,
-`make test`. If Godot isn't found, pass it: `make GODOT=/path/to/godot`.
-
-**Just want the app?** On a Mac, `make app` builds `game/builds/macos/Mii-nagement.dmg`:
-the game with its own backend inside (`tools/package_mac.sh`, `game/launcher.gd`). It's
-not notarized: the first time macOS refuses it, so go to System Settings > Privacy &
-Security > Open Anyway. The website offers it as a download (`deploy/`).
-
-On Windows, `make windows` (from Git Bash) builds `game/builds/windows/Mii-nagement-Setup.exe`:
-an installer with everything included, so nothing else needs installing: the game, the
-backend, a Python with its packages, Git and Node (`tools/package_windows.sh`). It installs
-for the current user (no admin rights), adds Start menu and desktop shortcuts, and uninstalls
-from Settings > Apps, leaving your islands. It isn't code-signed: the first time, Windows
-SmartScreen warns, so choose More info > Run anyway. The backend's log is
-`%APPDATA%\Godot\app_userdata\Mii-nagement\backend.log`.
-
-## Setup (once, by hand)
-
-You need [uv](https://docs.astral.sh/uv) and [Godot 4](https://godotengine.org/download)
-(4.4 or newer; built with 4.7) on macOS, Linux or Windows. `make` finds Godot on your
-PATH or in `/Applications`; anywhere else, pass it: `make GODOT=/path/to/godot`.
-Run these from the repo root:
+That installs the backend's dependencies, starts the backend, and opens the game. No
+configuration file is needed. Ctrl+C (or closing the game) stops both. `make` finds
+Godot on your PATH or in `/Applications`; anywhere else, pass it:
 
 ```bash
-brew install uv            # macOS; Linux: curl -LsSf https://astral.sh/uv/install.sh | sh; Windows: winget install astral-sh.uv
+make GODOT=/path/to/godot
 ```
 
-```bash
-cd backend && uv sync
-```
+Installing uv: `brew install uv` (macOS), `curl -LsSf https://astral.sh/uv/install.sh | sh`
+(Linux) or `winget install astral-sh.uv` (Windows).
 
-- `uv sync` downloads Python 3.12 for this project only, creates `backend/.venv`,
-  and installs the dependencies.
-- No `.env` is needed. Settings and API keys are
-  saved at runtime (see "Settings" below). Developers can still copy
-  `.env.example` to `.env` to force values.
+## Give your residents a brain
 
-Optional: make `godot` a terminal command (macOS shown; the commands below assume it).
+Each resident runs one of these. Install the ones you want; the Settings screen (and
+http://localhost:8000/brains/detail) shows which ones the backend can see.
 
-```bash
-echo 'alias godot="/Applications/Godot.app/Contents/MacOS/Godot"' >> ~/.zshrc && source ~/.zshrc
-```
+| Brain | Needs | Pays with |
+|---|---|---|
+| `claude-code` | [Node.js](https://nodejs.org) and the `claude` CLI, run once to log in | Claude Pro/Max, or `ANTHROPIC_API_KEY` |
+| `codex` | Node.js; `codex login` (or run `npx -y @agentclientprotocol/codex-acp` once) | ChatGPT, or `OPENAI_API_KEY` |
+| `gemini` | the Gemini CLI, run once to log in with Google | Google, or `GEMINI_API_KEY` |
+| `openrouter` | nothing to install | an OpenRouter key; the resident's model is any OpenRouter model id |
 
-## Run it
+API keys go in the game's **Settings** popup, which saves them to your OS keychain
+(macOS Keychain, Windows Credential Manager, Linux Secret Service; an owner-only file
+where there is none), never to the database.
 
-Open a separate terminal for each step, starting in the repo root.
+For GitHub (clone a repo, start a task from an issue, open and merge PRs) install the
+[GitHub CLI](https://cli.github.com) and run `gh auth login`.
 
-**1. Backend server.** Creates the tables in `backend/mii.db` on first run (no islands yet: the game founds the first one). Check it at http://localhost:8000/health.
-```bash
-cd backend && uv run python -m uvicorn mii.asgi:application --reload --port 8000
-```
+## Using it
 
-**2. The game.** Starts it directly, without the editor:
-```bash
-godot --path game
-```
-Or open the editor and press **F5** (▶ Play, top right):
-```bash
-godot -e --path game
-```
-The first time, you can also open Godot normally, click **Import**, and pick
-`game/project.godot`.
+The game opens on the **Archipelago**: every island in one sea, plus everything
+"Waiting on you".
 
-**Optional: watch the raw event stream** in a terminal:
-```bash
-cd backend && uv run python manage.py watch
-```
-
-**Tests and checks** (run `make check` before you call a change done; CI runs the same):
-```bash
-make check     # ruff + backend tests + gdlint/gdformat + the Godot script check
-make fmt       # format both halves (ruff format, gdformat)
-```
-The Godot check loads every script without a window and fails on any script error.
-Optional: `uvx pre-commit install` runs the formatters on every commit.
-
-**Start over with a fresh database.** Stop the server first, then delete the file
-(islands' git repositories stay on disk):
-```bash
-rm backend/mii.db
-```
-After changing a table in `models.py`: `uv run python manage.py makemigrations mii`
-(the server applies migrations when it starts).
-
-## What you should see
-
-The game opens on the **Archipelago** (every island in one sea, plus everything
-"Waiting on you"). From there:
-- **Settings** (bottom nav): islands folder (with a folder picker), test command,
-  packages at once, the master key, API keys (saved to your OS keychain), and which
-  brains this computer can run.
-- **New island**: name, GitHub repo, branch, town plan, residents, house rules.
+- **New island**: name, code (see below), branch, town plan, residents, house rules.
 - Click an island to visit it. **Send a package** (top right) drops a task in the
-  Mailbox; residents walk it along the roads. Answer their bubbles in the sidebar.
-- **Residents** (create / edit, including OpenRouter models), **News** (stories
-  from stored events; merge a shipped package into your checkout), **Insights** (stats).
-- **Scroll / pinch / − + buttons** zoom the island. **Click and drag** pans it.
+  Mailbox, either a title and details or a GitHub issue. Residents walk it along the
+  roads; answer their bubbles in the sidebar. Click a building to see the packages and
+  residents there, or talk to the resident at work.
+- **Residents**: create and edit them (job, personality sliders, brain and model, gifts
+  (MCP servers), house keys that decide what they may do without asking).
+- **Build**: drag buildings around (the paths follow), add or remove land, plant trees,
+  pick which workflow steps the island has, size the pond, choose the season.
+- **News** (stories from what happened, merge a shipped package), **Insights** (stats).
+- **Settings**: islands folder, test command, packages at once, the master key, API keys.
+- Scroll or pinch to zoom the island, click and drag to pan.
 
-New to Godot? Read [docs/godot-tour.md](docs/godot-tour.md).
-
-## Real agents
-
-Every island has its own git repository
-(created when you found it, under `~/Documents/Mii-nagement`, or `~/Mii-nagement`
-without a Documents folder; change the root with `ISLANDS_ROOT`). Each task gets its own git worktree of that repo and a
-`mii/<task_id>` branch. Optional: a test command (what the Lab runs: each island's own, set when you found it, else `TEST_COMMAND`) and the
-island's `repo` (`owner/name`, for issues in and PRs out via the logged-in `gh` CLI).
-
-New islands (the game's island creator, or `POST /islands` with
-`{"name": "Rocky Cove"}`) get their buildings from a town plan and a fresh repo in
-the default folder; add `"folder": "/some/dir"` to put it elsewhere.
-`GET /islands` lists islands and the default folder. To work on code you
-already have, see [Using your own repo](#using-your-own-repo).
-
-Then send a task and watch it go round the island:
-
-```bash
-curl -X POST localhost:8000/islands/rocky_cove/tasks -H 'content-type: application/json' \
-  -d '{"title": "Add hello.txt", "description": "Create hello.txt with one line: hello"}'
-curl localhost:8000/islands/rocky_cove/tasks/t_d5d447      # steps (what each resident said) + events
-curl 'localhost:8000/islands/rocky_cove/tasks?status=done'   # finished tasks, newest first
-```
-
-**ACP brains (your subscriptions, no API key needed):**
-
-- [Node.js](https://nodejs.org): the Claude Code and Codex adapters run through `npx`.
-- `claude-code`: install the `claude` CLI, run it once and log in (Claude Pro/Max).
-- `codex`: run `npx -y @agentclientprotocol/codex-acp` once or `codex login` (ChatGPT).
-- `gemini`: install the Gemini CLI, run it once and log in with Google.
-- Or set `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` in `.env` instead.
-
-**OpenRouter brain (any model, no CLI):** save the key with
-`PUT /settings {"secrets": {"openrouter_api_key": "sk-or-..."}}` (it goes into
-your OS keychain, never the database) or set `OPENROUTER_API_KEY` in `.env`, then
-give a resident `brain = "openrouter"` and a `model` from http://localhost:8000/models.
-
-## Using your own repo
+### Where the code comes from
 
 The island creator's **Code** row has three choices:
 
-- **New empty repository**: a fresh repo with a README (good for trying things out).
-- **Clone from GitHub**: pick one of your repos (or type `owner/name`) and the
-  branch residents start from. The backend runs `gh repo clone` into
-  `<islands folder>/<island-id>` and checks out that branch, so residents work on
-  the real code and the Post Office pushes `mii/<task_id>` and opens a PR against
-  that branch. Needs the [GitHub CLI](https://cli.github.com) installed and
-  `gh auth login` done. The target folder must be empty (or not exist yet).
-- **Use a folder on this computer**: paste the path of a git folder you already
-  have (it needs at least one commit). Residents branch off whatever is checked
-  out there, in their own worktrees, so your checkout isn't touched. If its
-  `origin` is on GitHub, the island picks up `owner/name` from it and opens PRs too;
-  without a GitHub `origin` the work stays on local `mii/*` branches.
+- **New empty repository**: a fresh repo with a README, under `~/Documents/Mii-nagement`
+  (or `~/Mii-nagement` without a Documents folder; change it in Settings).
+- **Clone from GitHub**: pick one of your repos and the branch residents start from.
+  Residents work on the real code, and the Post Office pushes `mii/<task_id>` and opens a
+  PR against that branch. The target folder must be empty.
+- **Use a folder on this computer**: a git folder you already have (with at least one
+  commit). Residents branch off whatever is checked out there, in their own worktrees,
+  so your checkout isn't touched. With a GitHub `origin` the island opens PRs too.
 
-The same through the API:
+### What a package does
+
+The **Mailbox** plans, the **Workshop** codes and commits (and runs the test command
+before handing off, if there is one), the **Lab** runs the tests (exit code = pass or
+fail), the **Courthouse** reviews (and, on an island linked to GitHub, asks you to
+approve & merge), and the **Post Office** opens the PR (and merges it when approved). A failure goes back down the `fail`
+road. A task gives up after 3 visits to one building or 20 steps.
+
+Agents only read and write inside a git worktree of the island's own repository, and
+shell commands ask first unless the resident's house keys allow them.
+
+## The HTTP API
+
+Everything the game does is also an HTTP or WebSocket call, documented in
+[docs/http-api.md](docs/http-api.md) and [docs/protocol.md](docs/protocol.md). For example:
 
 ```bash
 curl -X POST localhost:8000/islands -H 'content-type: application/json' \
-  -d '{"name": "Fern Harbor", "repo": "me/fern-api", "branch": "develop"}'   # clone
+  -d '{"name": "Rocky Cove"}'                                              # new repo
 curl -X POST localhost:8000/islands -H 'content-type: application/json' \
-  -d '{"name": "Home Base", "existing_repo": "~/code/my-app"}'               # adopt
+  -d '{"name": "Fern Harbor", "repo": "me/fern-api", "branch": "develop"}' # clone
+curl -X POST localhost:8000/islands/rocky_cove/tasks -H 'content-type: application/json' \
+  -d '{"title": "Add hello.txt", "description": "Create hello.txt with one line: hello"}'
+curl 'localhost:8000/islands/rocky_cove/tasks?status=done'                 # finished tasks
 ```
 
-Problems (gh missing or logged out, an unknown repo or branch, a folder that
-isn't a git repo) come back as a 400 with the reason, shown in the creator.
+`GET /settings` shows the effective settings and which API keys are set (never their
+values); `PUT /settings` changes them. Developers can also copy `.env.example` to `.env`
+to force values; anything there wins over saved settings.
 
-## Settings
+## Development
 
-`GET /settings` shows the effective settings (`islands_root`,
-`test_command`, `openrouter_model`, `keep_worktrees`, `database_url`,
-`judge`), which ones `.env` locks, and which API keys are set. `PUT /settings` saves
-settings to the database and API keys (`openrouter_api_key`, `typesafe_api_key`,
-`anthropic_api_key`, `openai_api_key`, `gemini_api_key`) to the OS keychain: macOS Keychain, Windows Credential
-Manager, or Linux Secret Service, with an owner-only file as the fallback. Keys
-are never sent back. Changes apply from the next task.
+**New here (person or AI agent)?** Read [docs/architecture.md](docs/architecture.md)
+first: how the two halves fit, a map of every file, and a "where to look" table for
+common changes. Then [CLAUDE.md](CLAUDE.md) for the working rules, and
+[docs/godot-tour.md](docs/godot-tour.md) if Godot is new to you.
 
-The game's Settings popup does all of this for you. Check which brains the
-backend can see: http://localhost:8000/brains/detail
+```bash
+make check     # ruff + backend tests + gdlint/gdformat + the Godot script check (CI runs the same)
+make fmt       # format both halves
+make server    # just the backend, with --reload: http://localhost:8000/health
+make game      # just the game
+make watch     # print the live event stream
+make help      # everything else
+```
 
-While a real resident works you'll see `activity` events and ✋ permission
-bubbles (the agent's own options as buttons). No answer within
-`PERMISSION_TIMEOUT` means "reject". The Workshop commits the coder's changes,
-the Lab runs `TEST_COMMAND`, and the Post Office pushes the branch and opens the PR.
+- One backend test file: `cd backend && uv run pytest tests/test_engine.py -q`.
+- After changing `backend/mii/models.py`: `cd backend && uv run python manage.py makemigrations mii`
+  (the server applies migrations when it starts).
+- Open the game in the editor with `godot -e --path game` and press F5.
+- Start over with an empty database: stop the server and delete `backend/mii.db` (the
+  islands' repositories stay on disk).
+- Optional: `uvx pre-commit install` runs the formatters on every commit.
+
+**Two players, one island:** start the backend with `--host 0.0.0.0` and run the game on
+another machine on the LAN with `MII_SERVER=<host-ip>:8000`. Both see the same island
+and answer the same bubbles; the agents run on the host.
+
+## Deployment
+
+`deploy/` hosts the landing page, the Mac and Windows downloads and a backend on one server (Docker
+Compose with Caddy for HTTPS), redeployed by GitHub Actions after CI passes on `main`.
+The server runs with `PUBLIC_DEMO=1` and requires Auth0 login. See
+[deploy/README.md](deploy/README.md).
 
 ## Repo layout
 
 ```
-backend/   Django server: workflow engine, ACP + OpenRouter agents, event bus, insights
-game/      Godot 4 client: 3D island, UI, residents, bubbles
-docs/      architecture.md (start here: the map), protocol.md (WebSocket), http-api.md (HTTP),
+backend/   Django + Channels server: workflow engine, ACP and OpenRouter agents, events, insights
+game/      Godot 4 client: the 3D island, UI, residents, bubbles
+docs/      architecture.md (start here), protocol.md (WebSocket), http-api.md (HTTP),
            godot-tour.md (Godot for beginners), mii-customization.md (faces and hair)
-tools/     build_mii_parts.py (rebuilds the Mii parts from the Mii Maker rips)
-.claude/   Claude Code skill (godot-animation) and shared permissions
-.github/   CI: the same checks as `make check`
-TODO.md    roadmap (MVP vs stretch)
-CLAUDE.md  working rules for Claude Code sessions (and a short read for humans too)
+deploy/    the website: Dockerfile, Compose, Caddy, landing page, push and Vultr scripts
+tools/     run.sh (`make`), package_mac.sh (`make app`), package_windows.sh (`make windows`),
+           build_mii_parts.py (Mii parts)
+video/     the demo video (Remotion) and its Godot captures
+.github/   CI (the same checks as `make check`) and the deploy workflow
+CLAUDE.md  working rules for Claude Code sessions (a short read for humans too)
 Makefile   runs everything above: `make help`
-```
-
-Find every open TODO:
-```bash
-grep -rn "TODO(" backend/mii game --include="*.py" --include="*.gd"
 ```

@@ -17,9 +17,12 @@ import asyncio
 import logging
 import os
 import re
+import signal
 import subprocess
+from contextlib import suppress
 from pathlib import Path
 
+from mii.config import PRIVATE_ENV
 from mii.vocab import ATTACHMENTS_DIR, DEFAULT_GIT_AUTHOR
 
 log = logging.getLogger(__name__)
@@ -76,8 +79,8 @@ class Sandbox:
             self._git(self.repo_path, "worktree", "prune")  # forget a folder deleted by hand
             elsewhere = self._checked_out_at(task_branch) if resumed else None
             if elsewhere is not None:
-                # Made under another WORKTREE_ROOT (the old default was inside this repo's backend/):
-                # move it here, uncommitted work and all. git won't check a branch out twice.
+                # Made under another WORKTREE_ROOT: move it here, uncommitted work and all.
+                # git won't check a branch out twice.
                 self._git(self.repo_path, "worktree", "move", str(elsewhere), str(path))
             elif resumed:
                 self._git(self.repo_path, "worktree", "add", str(path), task_branch)
@@ -115,7 +118,10 @@ class Sandbox:
     def add_attachments(self, task_id: str, files: list[tuple[str, bytes]]) -> None:
         """Write a task's attached files (plain names, see tasks.safe_file_name) into
         <worktree>/.mii-attachments/, refusing any path that would land outside it."""
-        folder = self.worktree_path(task_id) / ATTACHMENTS_DIR
+        worktree = self.worktree_path(task_id)
+        folder = worktree / ATTACHMENTS_DIR
+        if folder.is_symlink() or not is_inside(folder, worktree):  # the repo could hold a symlink there
+            raise SandboxError(f"{ATTACHMENTS_DIR} in the worktree is not a plain folder")
         folder.mkdir(exist_ok=True)
         (folder / ".gitignore").write_text("*\n")
         for name, data in files:
@@ -243,22 +249,39 @@ def inside(root: Path, path: str) -> Path:
 
 
 async def run_shell(command: str, cwd: Path, timeout: float, limit: int = OUTPUT_LIMIT) -> tuple[int, str]:
-    """Run a shell command in `cwd`. Returns (exit code, combined output capped to `limit` chars)."""
+    """Run a shell command in `cwd`. Returns (exit code, combined output capped to `limit` chars).
+
+    The command runs code the agents wrote, so it gets the user's environment without the
+    backend's own keys (PRIVATE_ENV), in its own process group so a timeout ends everything
+    it started (`npm test` -> node -> its workers), not just the shell.
+    """
+    env = {k: v for k, v in os.environ.items() if k not in PRIVATE_ENV}
+    group = {} if os.name == "nt" else {"start_new_session": True}
     proc = await asyncio.create_subprocess_shell(
-        command, cwd=str(cwd), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
+        command, cwd=str(cwd), env=env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, **group
     )
     try:
         raw, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except TimeoutError:
-        proc.kill()
+        await _kill_group(proc)
         return 124, "(timed out)"
     except asyncio.CancelledError:  # the step timed out or the task was cancelled: no orphans
-        proc.kill()
+        await _kill_group(proc)
         raise
     output = raw.decode(errors="replace")
     if len(output) > limit:
         output = "…" + output[-limit:]
     return proc.returncode or 0, output
+
+
+async def _kill_group(proc: asyncio.subprocess.Process) -> None:
+    with suppress(ProcessLookupError, PermissionError):
+        if os.name == "nt":
+            proc.kill()
+        else:
+            os.killpg(proc.pid, signal.SIGKILL)
+    with suppress(Exception):
+        await asyncio.wait_for(proc.wait(), timeout=5)
 
 
 class Sandboxes:

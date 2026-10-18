@@ -56,6 +56,24 @@ async def test_a_building_visited_too_often_gives_up_with_a_clear_message(island
     assert "Gave up at the Workshop: scripted" in [e["text"] for e in client.of_type("activity")]
 
 
+async def test_a_building_nobody_works_at_fails_the_package_with_a_reason(island):
+    from mii.models import Building
+
+    await Building.objects.filter(pk="lab").aupdate(resident=None)
+    workflow, client = make_workflow(ScriptedRunner())
+    task = await workflow.run_task((await workflow.submit("sunny", "Fix the thing")).id)
+    assert task.status == "failed"
+    assert any(e["text"].startswith("Nobody works at the Lab") for e in client.of_type("activity"))
+    assert (await Resident.objects.aget(pk=task.agent_id)).state != "working"
+
+
+async def test_a_cancelled_task_does_not_start(island):
+    workflow, _ = make_workflow(ScriptedRunner())
+    task = await workflow.submit("sunny", "Never mind")
+    await Task.objects.filter(pk=task.id).aupdate(status="cancelled")
+    assert (await workflow.run_task(task.id)).status == "cancelled"
+
+
 async def test_every_step_is_recorded_for_insights(island):
     workflow, _ = make_workflow(ScriptedRunner(courthouse=["fail", "pass"]))
     task = await workflow.run_task((await workflow.submit("sunny", "Fix the thing")).id)
@@ -344,6 +362,19 @@ async def test_workshop_pre_check_retries_are_capped(island, sandbox, sandboxes)
     assert runner.visited[:4] == ["mailbox", "workshop", "workshop", "workshop"]
     steps = [s.building_type async for s in Step.objects.filter(task_id=task.id).order_by("id")]
     assert steps[:3] == ["mailbox", "workshop", "lab"]
+
+
+async def test_workshop_skips_its_pre_check_without_enough_step_budget(island, sandbox, sandboxes):
+    from mii import engine
+
+    runner = FixOnSecondTryRunner()
+    # A budget smaller than a test run needs: the commit stands and the Lab tests it.
+    workflow, client = make_workflow(
+        runner, sandboxes=sandboxes, test_command="test -f feature.py", step_timeout=engine.RERUN_MIN_LEFT
+    )
+    task = await workflow.run_task((await workflow.submit("sunny", "Add feature")).id)
+    assert task.status == "done"
+    assert "Checking before the handoff: test -f feature.py" not in [e["text"] for e in client.of_type("activity")]
 
 
 async def test_red_tests_at_the_lab_go_straight_back_to_the_coder(island, sandbox, sandboxes):

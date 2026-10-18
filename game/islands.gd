@@ -114,6 +114,11 @@ func _on_list(ok: bool, data: Dictionary) -> void:
 		_rebuild()
 		return
 	_order = data.get("islands", []).map(func(i): return str(i["id"]))
+	for id in _thumbs.keys():  # abandoned islands: drop their thumbnail worlds
+		if id not in _order:
+			_thumbs[id].queue_free()
+			_thumbs.erase(id)
+			_by_id.erase(id)
 	for id in _order:
 		if id == Net.island.get("id"):
 			continue  # live already

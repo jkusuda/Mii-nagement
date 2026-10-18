@@ -3,8 +3,12 @@
 {$MII_DOMAIN} {
 	encode zstd gzip
 
-	@backend path /ws /health /meta /settings /brains /brains/* /gifts /models /islands /islands/* /github/* /auth/*
+	@backend path /ws /health /meta /settings /brains /brains/* /gifts /gifts/* /usage /models /islands /islands/* /github/* /auth/*
 	handle @backend {
+		# Task attachments are at most 8 MB (base64 in JSON); refuse bigger bodies before they reach Django.
+		request_body {
+			max_size 13MB
+		}
 		reverse_proxy backend:8000
 	}
 

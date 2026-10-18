@@ -52,6 +52,7 @@ else:
             "ENGINE": "django.db.backends.sqlite3",
             "NAME": config.database_path,
             "CONN_MAX_AGE": 0,  # Django recommends no persistent connections in async mode
+            "OPTIONS": {"timeout": 20},  # parallel packages write at once: wait for the lock, don't fail
         }
     }
 

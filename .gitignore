@@ -31,8 +31,11 @@ game/builds/
 .DS_Store
 .vscode/
 .idea/
-backend/.secrets.json   # API keys when there is no OS keychain (prefs.py)
-.claude/settings.local.json
+# API keys when there is no OS keychain (prefs.py)
+backend/.secrets.json
+
+# --- Claude Code (local only) ---
+.claude/
 
 # --- Web deployment ---
 deploy/server.env

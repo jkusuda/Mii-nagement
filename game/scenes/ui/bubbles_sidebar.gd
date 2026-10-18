@@ -29,7 +29,7 @@ const GREY := Color("8A8FA8")
 const INK := Color("292E50")
 
 ## tab -> bubble kinds it shows
-const TABS := {"questions": ["confused", "struggling", "permission"], "status": []}
+const TABS := {"questions": ["confused", "struggling", "permission", "ready", "tired"], "status": []}
 
 var _tab := "questions"
 var _cards := {}  # bubble id -> BubbleCard

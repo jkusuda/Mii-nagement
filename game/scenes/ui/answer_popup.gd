@@ -366,7 +366,9 @@ func _send(text: String) -> void:
 		if _reply:
 			_reply.grab_focus()
 		return
-	Net.send_answer(bubble_id, text)
+	if not Net.send_answer(bubble_id, text):
+		Net.server_error.emit("Not connected to the backend: answer again once it's back.")
+		return
 	answered.emit(bubble_id)
 	hide()
 

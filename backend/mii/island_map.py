@@ -16,6 +16,7 @@ tile is 2 world units in the game, which draws the paths between the doors
 mirrors them).
 """
 
+import math
 from collections import deque
 from itertools import pairwise
 
@@ -226,14 +227,15 @@ def default_buildings(shape: str, steps: object) -> list[dict]:
 # --- Validation (build mode) --------------------------------------------------------
 
 
+# JSON allows NaN and Infinity (Python's json does): refuse them, they'd break every client.
 def _int(value: object, what: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int | float) or int(value) != value:
+    if isinstance(value, bool) or not isinstance(value, int | float) or not math.isfinite(value) or int(value) != value:
         raise IslandError(f"{what} must be a whole number")
     return int(value)
 
 
 def _number(value: object, what: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, int | float):
+    if isinstance(value, bool) or not isinstance(value, int | float) or not math.isfinite(value):
         raise IslandError(f"{what} must be a number")
     return float(value)
 

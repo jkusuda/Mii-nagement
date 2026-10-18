@@ -13,7 +13,7 @@ from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 
 from mii import auth, events, islands, layout, residents, talk, tasks
-from mii.models import Island, island_layout, island_snapshot
+from mii.models import Island, Task, island_layout, island_snapshot
 from mii.runtime import Runtime, get_runtime
 
 _talks: set[asyncio.Task] = set()  # running `talk` answers (kept so they aren't garbage collected)
@@ -47,10 +47,10 @@ async def _handle(runtime: Runtime, island_id: str, message: dict, send=None, su
         _talks.add(job)
         job.add_done_callback(_talks.discard)
     elif kind == "talk_close":
-        await talk.close_conversation(runtime, str(message.get("id", "")))
+        await talk.close_conversation(runtime, str(message.get("id", "")), opened_by=send)
     elif kind == "answer_bubble":
         bubble_id = str(message.get("id", ""))
-        if not runtime.bubbles.answer(bubble_id, str(message.get("response", ""))):
+        if not runtime.bubbles.answer(bubble_id, str(message.get("response", "")), island_id):
             return events.error(f"unknown bubble id: {bubble_id}")
     elif kind in ("create_resident", "update_resident"):
         data = message.get("resident")
@@ -81,6 +81,8 @@ async def _handle(runtime: Runtime, island_id: str, message: dict, send=None, su
             return events.error(str(e))
     elif kind == "cancel_task":
         task_id = str(message.get("id", ""))
+        if not await Task.objects.filter(pk=task_id, island_id=island_id).aexists():
+            return events.error(f"unknown task id: {task_id}")
         try:
             await runtime.workflow.cancel(task_id)  # emits `task` with status cancelled
         except KeyError:
@@ -132,16 +134,16 @@ class IslandConsumer(AsyncJsonWebsocketConsumer):
         runtime = get_runtime()
         query = parse_qs(query_string.decode())
         island_id = (query.get("island") or [""])[0]
-        if not island_id:
-            first = await Island.objects.order_by("id").afirst()
+        if not island_id:  # the first island this client may see
+            first = await anext((i async for i in Island.objects.order_by("id") if auth.can_see(i, self.sub)), None)
             island_id = first.id if first else ""
         island = await Island.objects.filter(pk=island_id).afirst()
         if island is not None and not auth.can_see(island, self.sub):
             await self.send_json(events.error("this island is not yours"))
             await self.close(code=CLOSE_FORBIDDEN)
             return
-        if island is None and not await Island.objects.aexists():
-            return  # a fresh install: stay connected with no island until the game founds one
+        if not island_id or (island is None and not await Island.objects.aexists()):
+            return  # no island (yet) this client may see: stay connected until the game founds one
         try:
             snapshot = await island_snapshot(island_id, runtime.bubbles.for_island(island_id))
         except Island.DoesNotExist:

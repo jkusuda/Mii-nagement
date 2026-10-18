@@ -22,6 +22,7 @@ COPY --from=ghcr.io/astral-sh/uv:0.13.1 /uv /usr/local/bin/uv
 # the database, the islands' repositories, their worktrees, and the CLIs' logins (HOME).
 RUN useradd --create-home --home-dir /data/home mii && mkdir -p /app && chown mii /app /data
 ENV HOME=/data/home \
+    DJANGO_DEBUG=0 \
     DATABASE_PATH=/data/mii.db \
     ISLANDS_ROOT=/data/islands \
     WORKTREE_ROOT=/data/worktrees \

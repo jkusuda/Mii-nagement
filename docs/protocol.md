@@ -398,7 +398,7 @@ sends `bubble_resolved` to every client.
 ```json
 {"type": "answer_bubble", "id": "b_3f2a", "response": "Use tests/test_login.py"}
 ```
-If the bubble ID is unknown or already resolved, the server replies with `error`.
+If the bubble ID is unknown, already resolved, or on another island, the server replies with `error`.
 
 For a bubble with `options`, `response` is one of them. A `ready` bubble's
 response may add a note for the resident after a colon, e.g.
