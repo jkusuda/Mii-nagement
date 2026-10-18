@@ -1,8 +1,0 @@
-# Only the backend goes into the image.
-*
-!backend
-backend/.venv
-backend/.worktrees
-backend/.secrets.json
-backend/**/__pycache__
-backend/*.db
