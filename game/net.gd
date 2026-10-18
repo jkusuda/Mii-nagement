@@ -48,6 +48,7 @@ signal event_received(event: Dictionary)
 signal island_changed
 
 const RECONNECT_SECONDS := 2.0
+const CONNECT_TIMEOUT_SECONDS := 5.0  # give up on a connection attempt that gets no answer
 const THINKING_KEEP := 400  # entries per task (Net.thinking)
 ## The resident fields the server accepts (docs/protocol.md, create_resident).
 const RESIDENT_FIELDS := [
@@ -73,10 +74,8 @@ const RESIDENT_FIELDS := [
 ## `thinking` events add to it; building_panel.gd loads older ones on demand.
 var thinking := {}
 
-## Set MII_SERVER (e.g. "127.0.0.1:8001") to use another backend. The default is
-## 127.0.0.1, not "localhost": on Windows, localhost can resolve to the IPv6
-## address ::1 first, which the backend (uvicorn on 127.0.0.1) doesn't answer.
-var url := "ws://%s/ws" % (OS.get_environment("MII_SERVER") if OS.has_environment("MII_SERVER") else "127.0.0.1:8000")
+## Set MII_SERVER (e.g. "127.0.0.1:8001") to use another backend.
+var url := "ws://%s/ws" % _server_address()
 
 var is_online := false
 ## The latest island from the server: the last snapshot, kept up to date with
@@ -90,6 +89,10 @@ var island_id := ""
 
 var _socket := WebSocketPeer.new()
 var _seconds_until_retry := 0.0
+var _seconds_connecting := 0.0
+## True while visit_island() swaps sockets: the backend is still there, so the
+## game doesn't show "offline" unless the new connection fails.
+var _switching := false
 
 
 ## Switch to another island: drop the current connection and reconnect to that
@@ -101,10 +104,20 @@ func visit_island(id: String) -> void:
 	island = {}
 	_socket.close()
 	if is_online:
-		is_online = false
-		disconnected.emit()
+		is_online = false  # no sends until the new socket is open
+		_switching = true
 	island_changed.emit()
 	_try_connect()
+
+
+## MII_SERVER, else 127.0.0.1:8000. "localhost" becomes 127.0.0.1: on Windows it
+## resolves to the IPv6 address ::1 first, which the backend (uvicorn on
+## 127.0.0.1) never answers, and the connection hangs instead of failing.
+func _server_address() -> String:
+	var server := OS.get_environment("MII_SERVER") if OS.has_environment("MII_SERVER") else "127.0.0.1:8000"
+	if server == "localhost" or server.begins_with("localhost:"):
+		server = "127.0.0.1" + server.trim_prefix("localhost")
+	return server
 
 
 ## Godot concept: _ready() runs once, when the node enters the scene tree.
@@ -122,13 +135,22 @@ func _process(delta: float) -> void:
 		WebSocketPeer.STATE_OPEN:
 			if not is_online:
 				is_online = true
+				_switching = false
 				connected.emit()
 			while _socket.get_available_packet_count() > 0:
 				_handle_message(_socket.get_packet().get_string_from_utf8())
 
+		WebSocketPeer.STATE_CONNECTING:
+			# A connection attempt can hang (no answer at all) instead of failing: start over.
+			_seconds_connecting += delta
+			if _seconds_connecting >= CONNECT_TIMEOUT_SECONDS:
+				_socket.close()
+				_try_connect()
+
 		WebSocketPeer.STATE_CLOSED:
-			if is_online:
+			if is_online or _switching:
 				is_online = false
+				_switching = false
 				disconnected.emit()
 			_seconds_until_retry -= delta
 			if _seconds_until_retry <= 0.0:
@@ -237,6 +259,7 @@ func send_talk(
 
 func _try_connect() -> void:
 	_seconds_until_retry = RECONNECT_SECONDS
+	_seconds_connecting = 0.0
 	_socket = WebSocketPeer.new()  # a fresh peer for each attempt
 	var error := _socket.connect_to_url(url + ("?island=%s" % island_id.uri_encode() if island_id else ""))
 	if error != OK:

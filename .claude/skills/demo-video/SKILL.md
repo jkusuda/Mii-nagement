@@ -38,7 +38,7 @@ Alternatives:
   `--resolution 1920x1080` for a sharper trailer; the UI scales.
 - Stop with the window close button; frames are written as they render, so the file is
   complete at any point.
-- To record against another backend: `MII_SERVER=localhost:8001 ... --write-movie demo.avi`.
+- To record against another backend: `MII_SERVER=127.0.0.1:8001 ... --write-movie demo.avi`.
 
 ## 3. Finish with ffmpeg
 
