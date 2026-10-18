@@ -8,7 +8,6 @@ the request and pick the status code; the work happens in the module each one ca
 import asyncio
 import json
 
-import httpx
 from asgiref.sync import sync_to_async
 from django.core.exceptions import RequestDataTooBig
 from django.http import HttpRequest, JsonResponse
@@ -16,7 +15,6 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
 from mii import (
-    auth,
     events,
     gifts,
     github,
@@ -33,7 +31,6 @@ from mii import (
 )
 from mii.agents.acp import BrainError, available_brains, list_brain_models
 from mii.agents.openrouter import list_models
-from mii.auth import island_guard
 from mii.config import config
 from mii.insights import RANGES, island_insights
 from mii.island_map import SHAPES
@@ -101,18 +98,6 @@ async def health(request: HttpRequest) -> JsonResponse:
             "database": metrics.database(),  # sqlite | postgres | timescale
         }
     )
-
-
-async def _caller(request: HttpRequest, required: bool = False) -> str | JsonResponse | None:
-    """The logged-in user's id (auth.py), None for nobody (or login off), or the 401 to answer
-    with: a bad token, or no token when `required` and login is on."""
-    try:
-        sub = auth.sub_of(await asyncio.to_thread(auth.user, request))
-    except auth.AuthError as e:
-        return _error(str(e), 401)
-    if required and sub is None and auth.enabled():
-        return _error("log in first", 401)
-    return sub
 
 
 def _brains() -> dict[str, dict]:
@@ -224,11 +209,10 @@ async def gift_view(request: HttpRequest, gift: str) -> JsonResponse:
 
 
 async def _may_change_gifts(request: HttpRequest) -> JsonResponse | None:
-    """Gifts are this computer's, like settings: locked on the public demo, and login first."""
+    """Gifts are this computer's, like settings: locked on the public demo."""
     if config.public_demo:
         return _error("gifts are locked on the public demo", 403)
-    sub = await _caller(request, required=True)
-    return sub if isinstance(sub, JsonResponse) else None
+    return None
 
 
 @require_GET
@@ -247,11 +231,7 @@ async def models_list(request: HttpRequest) -> JsonResponse:
 async def brain_models(request: HttpRequest, brain: str) -> JsonResponse:
     """The models a brain offers here, for the model pickers. ACP brains are asked directly
     (a short-lived session, no prompt; cached 10 minutes, `?refresh=1` asks again);
-    `openrouter` is its catalogue. {"models": [{id, name, ...}], "current": the default}.
-    With login on, only for logged-in callers: it starts the agent CLIs on this machine."""
-    sub = await _caller(request, required=True)
-    if isinstance(sub, JsonResponse):
-        return sub
+    `openrouter` is its catalogue. {"models": [{id, name, ...}], "current": the default}."""
     if brain == "openrouter":
         response = await models_list(request)
         if response.status_code == 200:
@@ -268,38 +248,25 @@ async def brain_models(request: HttpRequest, brain: str) -> JsonResponse:
 
 @csrf_exempt
 async def islands_view(request: HttpRequest) -> JsonResponse:
-    """GET: every island the caller may see (the Archipelago screen). POST: found an island (the
-    island creator); with login on, you must be logged in and the island is yours."""
+    """GET: every island (the Archipelago screen). POST: found an island (the island creator)."""
     if request.method == "GET":
-        sub = await _caller(request)
-        if isinstance(sub, JsonResponse):
-            return sub
-        # Public, owned or member-of, in Python: islands are few, and SQLite has no JSON-list "contains".
-        visible = [island_to_dict(i) async for i in Island.objects.order_by("name") if auth.can_see(i, sub)]
-        return JsonResponse(
-            {"islands": visible, "default_folder": str(await asyncio.to_thread(islands.default_folder))}
-        )
+        every = [island_to_dict(i) async for i in Island.objects.order_by("name")]
+        return JsonResponse({"islands": every, "default_folder": str(await asyncio.to_thread(islands.default_folder))})
     if request.method != "POST":
         return _error("GET or POST", 405)
-    sub = await _caller(request, required=True)
-    if isinstance(sub, JsonResponse):
-        return sub
     body = _json_body(request)
     if isinstance(body, JsonResponse):
         return body
     try:
-        island = await asyncio.to_thread(islands.create_island, body, sub)
+        island = await asyncio.to_thread(islands.create_island, body)
     except islands.IslandError as e:
         return _error(str(e), 400)
     return JsonResponse(await _snapshot(island.id))
 
 
-# The two GitHub lookups use this machine's `gh` login: with login on, logged-in callers only.
+# The two GitHub lookups use this machine's `gh` login.
 @require_GET
 async def github_repos(request: HttpRequest) -> JsonResponse:
-    sub = await _caller(request, required=True)
-    if isinstance(sub, JsonResponse):
-        return sub
     try:
         return JsonResponse({"repos": await asyncio.to_thread(github.list_repos, request.GET.get("q", ""))})
     except github.GitHubError as e:
@@ -308,9 +275,6 @@ async def github_repos(request: HttpRequest) -> JsonResponse:
 
 @require_GET
 async def github_branches(request: HttpRequest) -> JsonResponse:
-    sub = await _caller(request, required=True)
-    if isinstance(sub, JsonResponse):
-        return sub
     repo = request.GET.get("repo", "")
     if not islands.REPO.match(repo):
         return _error("repo must look like owner/name", 400)
@@ -321,19 +285,12 @@ async def github_branches(request: HttpRequest) -> JsonResponse:
 
 
 @csrf_exempt
-@island_guard
 async def island_view(request: HttpRequest, island_id: str) -> JsonResponse:
     """GET: the island snapshot. PATCH: rename / link a repo / change branch or rules.
-    DELETE: abandon the island (its git repository stays on disk). With login on or on the
-    public demo, only the island's owner may: members and visitors of a public island get 403."""
+    DELETE: abandon the island (its git repository stays on disk; refused on the public demo)."""
     if request.method == "DELETE":
-        if auth.enabled() or config.public_demo:
-            sub = await _caller(request, required=True)
-            if isinstance(sub, JsonResponse):
-                return sub
-            island = await Island.objects.filter(pk=island_id).afirst()
-            if island is not None and (island.owner is None or island.owner != sub):
-                return _error("only the island's owner can abandon it", 403)
+        if config.public_demo:
+            return _error("the public demo keeps its islands", 403)
         try:
             kept = await islands.delete_island(island_id)
         except Island.DoesNotExist:
@@ -342,14 +299,11 @@ async def island_view(request: HttpRequest, island_id: str) -> JsonResponse:
             return _error(str(e), 409)
         return JsonResponse({"deleted": island_id, "repo_kept": kept})
     if request.method == "PATCH":
-        sub = await _caller(request)
-        if isinstance(sub, JsonResponse):
-            return sub
         body = _json_body(request)
         if isinstance(body, JsonResponse):
             return body
         try:
-            island = await asyncio.to_thread(islands.update_island, island_id, body, sub)
+            island = await asyncio.to_thread(islands.update_island, island_id, body)
         except Island.DoesNotExist:
             return _error(f"no island {island_id!r}", 404)
         except islands.IslandError as e:
@@ -366,7 +320,6 @@ async def island_view(request: HttpRequest, island_id: str) -> JsonResponse:
 
 
 @require_GET
-@island_guard
 async def island_issues(request: HttpRequest, island_id: str) -> JsonResponse:
     """Open issues on the island's GitHub repo, newest first, so a task can start from one."""
     island = await _island_or_404(island_id)
@@ -384,7 +337,6 @@ async def island_issues(request: HttpRequest, island_id: str) -> JsonResponse:
 
 
 @csrf_exempt
-@island_guard
 async def resident_view(request: HttpRequest, island_id: str, resident_id: str) -> JsonResponse:
     """DELETE: the resident moves away (same as the `delete_resident` message)."""
     if request.method != "DELETE":
@@ -399,7 +351,6 @@ async def resident_view(request: HttpRequest, island_id: str, resident_id: str) 
 
 
 @csrf_exempt
-@island_guard
 async def tasks_view(request: HttpRequest, island_id: str) -> JsonResponse:
     """GET: the island's tasks, newest first. POST: send a task package to the mailbox.
 
@@ -439,7 +390,6 @@ async def _list_tasks(request: HttpRequest, island_id: str) -> JsonResponse:
 
 
 @require_GET
-@island_guard
 async def get_task(request: HttpRequest, island_id: str, task_id: str) -> JsonResponse:
     task = await Task.objects.filter(pk=task_id, island_id=island_id).afirst()
     if task is None:
@@ -455,7 +405,6 @@ async def get_task(request: HttpRequest, island_id: str, task_id: str) -> JsonRe
 
 @csrf_exempt
 @require_POST
-@island_guard
 async def cancel_task(request: HttpRequest, island_id: str, task_id: str) -> JsonResponse:
     """Cancel a queued task, or stop the running one. Replies with the task (now `cancelled`)."""
     if await Task.objects.filter(pk=task_id, island_id=island_id).afirst() is None:
@@ -469,7 +418,6 @@ async def cancel_task(request: HttpRequest, island_id: str, task_id: str) -> Jso
 
 @csrf_exempt
 @require_POST
-@island_guard
 async def merge_task(request: HttpRequest, island_id: str, task_id: str) -> JsonResponse:
     """Merge a delivered package's branch into the island folder's checked-out branch.
     A conflict leaves the folder as it was and queues a package to fix it."""
@@ -503,7 +451,6 @@ async def _task_events(task: Task, limit: int = 200) -> list[dict]:
 
 
 @require_GET
-@island_guard
 async def get_insights(request: HttpRequest, island_id: str) -> JsonResponse:
     island = await _island_or_404(island_id)
     if isinstance(island, JsonResponse):
@@ -515,7 +462,6 @@ async def get_insights(request: HttpRequest, island_id: str) -> JsonResponse:
 
 
 @require_GET
-@island_guard
 async def get_events(request: HttpRequest, island_id: str) -> JsonResponse:
     """The newest `limit` stored events, oldest first: the stored payload plus `event_id`.
     Talk lines aren't island events (they're private to the talk scene): see talks_view."""
@@ -531,7 +477,6 @@ async def get_events(request: HttpRequest, island_id: str) -> JsonResponse:
 
 
 @require_GET
-@island_guard
 async def talks_view(request: HttpRequest, island_id: str) -> JsonResponse:
     """GET ?building=<id>: what was said in talks at that building, oldest first (talk.history)."""
     island = await _island_or_404(island_id)
@@ -547,7 +492,6 @@ async def talks_view(request: HttpRequest, island_id: str) -> JsonResponse:
 
 
 @csrf_exempt
-@island_guard
 async def layout_view(request: HttpRequest, island_id: str) -> JsonResponse:
     """PUT: build mode. Two forms (docs/protocol.md):
 
@@ -596,9 +540,6 @@ async def settings_view(request: HttpRequest) -> JsonResponse:
     if request.method == "PUT":
         if config.public_demo:
             return _error("settings are locked on the public demo", 403)
-        sub = await _caller(request, required=True)
-        if isinstance(sub, JsonResponse):
-            return sub
         body = _json_body(request)
         if isinstance(body, JsonResponse):
             return body
@@ -618,53 +559,3 @@ async def settings_view(request: HttpRequest) -> JsonResponse:
     if request.method != "GET":
         return _error("GET or PUT", 405)
     return JsonResponse(await asyncio.to_thread(prefs.snapshot))
-
-
-# --- Login (auth.py): the Device Authorization Flow, proxied to Auth0 --------------------
-
-
-@require_GET
-async def auth_config(request: HttpRequest) -> JsonResponse:
-    """Whether the game should show "Log in"."""
-    return JsonResponse({"enabled": auth.enabled()})
-
-
-@require_GET
-async def auth_me(request: HttpRequest) -> JsonResponse:
-    try:
-        claims = await asyncio.to_thread(auth.user, request)
-    except auth.AuthError as e:
-        return _error(str(e), 401)
-    return JsonResponse(claims) if claims else _error("not logged in", 401)
-
-
-@csrf_exempt
-@require_POST
-async def auth_device(request: HttpRequest) -> JsonResponse:
-    """Start a login: {user_code, verification_uri_complete, device_code, interval, expires_in}."""
-    if not auth.enabled():
-        return _error("login is off on this server", 404)
-    try:
-        return JsonResponse(await auth.device_code())
-    except (auth.AuthError, httpx.HTTPError, ValueError) as e:
-        return _error(f"could not start the login: {e}", 502)
-
-
-@csrf_exempt
-@require_POST
-async def auth_token(request: HttpRequest) -> JsonResponse:
-    """Poll a login with {device_code}: {pending: true}, or {access_token, expires_in, name, email}."""
-    if not auth.enabled():
-        return _error("login is off on this server", 404)
-    body = _json_body(request)
-    if isinstance(body, JsonResponse):
-        return body
-    code = body.get("device_code")
-    if not isinstance(code, str) or not code:
-        return _error("send the device_code from POST /auth/device", 400)
-    try:
-        return JsonResponse(await auth.poll_token(code))
-    except auth.AuthError as e:
-        return _error(str(e), 400)  # expired_token, access_denied: start again
-    except (httpx.HTTPError, ValueError) as e:
-        return _error(f"could not reach Auth0: {e}", 502)

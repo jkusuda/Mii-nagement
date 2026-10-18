@@ -76,8 +76,7 @@ Grouped by layer; a module only imports from its own layer or the ones below it.
 |---|---|---|---|
 | entry | `asgi.py` | ASGI app: HTTP (`urls.py`), `/ws` (`consumers.py`), lifespan (starts the engine via `runtime.py`) | |
 | entry | `urls.py`, `views.py` | HTTP routes; views parse the request and pick the status code | `test_views.py` |
-| entry | `consumers.py` | the `/ws` consumer: checks `?token=` (close 4401 / 4403), sends the snapshot (none while there is no island yet), dispatches commands in `_handle` | `test_residents.py`, `test_tasks.py`, `test_auth.py` |
-| entry | `auth.py` | optional Auth0 login: `verify` (JWKS, RS256), `can_see`, `island_guard`, the device-flow proxies behind `/auth/*` | `test_auth.py` |
+| entry | `consumers.py` | the `/ws` consumer: sends the snapshot (none while there is no island yet), dispatches commands in `_handle` | `test_residents.py`, `test_tasks.py`, `test_views.py` |
 | entry | `management/commands/` | `manage.py watch` (prints the event stream) | |
 | runtime | `runtime.py` | the one bus, bubbles, judge, spectator hook and engine per process; `reload()` applies saved settings | `test_judge.py` |
 | engine | `engine.py` | `IslandGraph`, the five `BuildingHandler`s, `WorkflowEngine` (one `Lane` per island) | `test_engine.py` |
@@ -364,26 +363,20 @@ game message, so protocol.md doesn't list it.
   keychain (or an owner-only file where there is none), never in the database.
 - Web pages can't drive the backend: `asgi.py` answers 403 to any request with an `Origin`
   header (browsers send one; the game and curl don't) and to Host names other than
-  localhost, IP addresses and `MII_DOMAIN` / `MII_HOSTS` (DNS rebinding).
+  localhost, IP addresses and the names in `MII_HOSTS` (DNS rebinding).
 - A socket only acts on its own island: `answer_bubble`, `cancel_task` and `set_layout`
   refuse bubbles, tasks and building ids of other islands.
-- Login (optional, `auth.py`): islands without an `owner` are **public**: anyone who can
-  reach the server sees them and can send packages there. Only owned islands are
-  private (owner + `members`). Only the owner may abandon an island while login is on.
-- The public demo (`PUBLIC_DEMO=1`) locks `PUT /settings`, refuses `folder` /
-  `existing_repo` on `POST /islands`, and refuses abandoning public islands.
-- With login on, the lookups that use the server's own `gh` and agent CLIs
-  (`/github/*`, `/brains/{brain}/models`) need a token too. The game has no login
-  screen: login is for HTTP clients, and a game connected to a server with login on
-  sees only its public islands.
-- The web deployment (`deploy/README.md`) runs with `PUBLIC_DEMO=1`, and `push.sh`
-  refuses real agents there without Auth0.
+- There is no login: anyone who can reach the backend can see every island and send
+  packages. It listens on 127.0.0.1 unless you start it with `--host 0.0.0.0` (a LAN
+  co-pilot), and the website (`deploy/`) hosts no backend at all.
+- `PUBLIC_DEMO=1` (for a shared demo server) locks `PUT /settings` and the gifts, refuses
+  `folder` / `existing_repo` on `POST /islands`, and refuses abandoning islands.
 
 ## Tables
 
 | Table | What it holds |
 |---|---|
-| `Island` | id, name, GitHub repo, `repo_path` (its local git repository), branch, town plan, house rules, `map` (land tiles, pond, plants, season), `owner` (Auth0 user id, null = public) and `members` |
+| `Island` | id, name, GitHub repo, `repo_path` (its local git repository), branch, town plan, house rules, `map` (land tiles, pond, plants, season) |
 | `Resident` | name, job, 4 personality sliders, `brain`, optional `model`, catchphrase, color, house `keys`, `gifts`, live state / building / mood / `notebook` / `activity`, `appearance`, `notes` (the diary: `REMEMBER:` lines from their own replies) |
 | `Building` | type, name, lot (`x`, `y`, `facing`), resident |
 | `Road` | from, to, condition |
@@ -423,12 +416,8 @@ Today a second Godot client is a full co-pilot: start the backend with
 bubbles and send packages to the same island. Everything still runs on the host: the
 agents, the host's CLI logins and keychain keys, `gh`, the repositories.
 
-With login on (`AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, `AUTH0_CLIENT_ID`), islands get an
-**owner**: whoever founded it while logged in (the game's device login, proxied through
-`/auth/*`). The owner adds **members** by user id (`update_island` with `members`); owner
-and members see the island and play it as co-pilots, everyone else gets 403 (HTTP) or
-close code 4403 (socket). Islands without an owner (founded without logging in) stay public.
-Agents still run as the host: per-user brains and house keys stay out of scope.
+There are no accounts: everyone who reaches the backend plays every island. Per-user
+islands, brains and house keys stay out of scope.
 
 ## Not in scope (on purpose)
 

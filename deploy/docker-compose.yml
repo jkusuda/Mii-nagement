@@ -1,14 +1,7 @@
-# The web deployment: `docker compose --env-file server.env up -d --build` (deploy/README.md).
+# The website: `docker compose --env-file server.env up -d` (deploy/README.md).
+# Caddy serves the landing page and the desktop download; there is no backend here
+# (the desktop app brings its own).
 services:
-  backend:
-    build:
-      context: ..
-      dockerfile: deploy/backend.Dockerfile
-    env_file: server.env
-    volumes:
-      - data:/data
-    restart: unless-stopped
-
   caddy:
     image: caddy:2.10.2
     ports:
@@ -21,10 +14,7 @@ services:
       - ./landing:/srv/landing:ro
       - ../downloads:/srv/downloads:ro
       - caddy:/data
-    depends_on:
-      - backend
     restart: unless-stopped
 
 volumes:
-  data:
   caddy:

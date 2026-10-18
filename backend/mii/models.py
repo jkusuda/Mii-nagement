@@ -50,10 +50,6 @@ class Island(models.Model):
     created_at = models.DateTimeField(default=utcnow)  # "Day 1" in the game
     # Land tiles, pond, plants, season: see island_map.py. {} = the classic island.
     map = models.JSONField(default=dict)
-    # Login (auth.py): the Auth0 user id that founded it, and who else may see it.
-    # No owner = a public island (everything made without login).
-    owner = models.CharField(max_length=200, null=True, blank=True, db_index=True)
-    members = models.JSONField(default=list)
 
 
 class Resident(models.Model):
@@ -256,8 +252,6 @@ def island_to_dict(i: Island) -> dict:
         "rules": i.rules,
         "test_command": i.test_command,
         "created_at": i.created_at.isoformat(),
-        "owner": i.owner,
-        "members": i.members,
     }
 
 

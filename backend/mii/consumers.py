@@ -1,4 +1,4 @@
-"""The WebSocket the game connects to: ws://localhost:8000/ws[?island=<id>][&token=<jwt>]
+"""The WebSocket the game connects to: ws://localhost:8000/ws[?island=<id>]
 
 Channels concept: a *consumer* is to a WebSocket what a view is to an HTTP
 request. One instance per connection. We don't use a channel layer (no Redis):
@@ -12,16 +12,14 @@ from urllib.parse import parse_qs
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 
-from mii import auth, events, islands, layout, residents, talk, tasks
+from mii import events, islands, layout, residents, talk, tasks
 from mii.models import Island, Task, island_layout, island_snapshot
 from mii.runtime import Runtime, get_runtime
 
 _talks: set[asyncio.Task] = set()  # running `talk` answers (kept so they aren't garbage collected)
 
 
-async def handle_message(
-    runtime: Runtime, island_id: str, message: object, send=None, sub: str | None = None
-) -> dict | None:
+async def handle_message(runtime: Runtime, island_id: str, message: object, send=None) -> dict | None:
     """Client -> server messages (docs/protocol.md). Unknown types are ignored.
 
     Returns an `error` event for the sender only, or None. Anything every client
@@ -31,13 +29,13 @@ async def handle_message(
     """
     if not isinstance(message, dict):
         return events.error("message must be a JSON object")
-    reply = await _handle(runtime, island_id, message, send, sub)
+    reply = await _handle(runtime, island_id, message, send)
     if reply is not None and message.get("request_id") is not None:
         reply["request_id"] = str(message["request_id"])
     return reply
 
 
-async def _handle(runtime: Runtime, island_id: str, message: dict, send=None, sub: str | None = None) -> dict | None:
+async def _handle(runtime: Runtime, island_id: str, message: dict, send=None) -> dict | None:
     kind = message.get("type")
     if kind in ("talk", "talk_open"):
         if send is None:
@@ -101,7 +99,7 @@ async def _handle(runtime: Runtime, island_id: str, message: dict, send=None, su
         if not isinstance(data, dict):
             return events.error("update_island needs an `island` object")
         try:
-            island = await asyncio.to_thread(islands.update_island, island_id, data, sub)
+            island = await asyncio.to_thread(islands.update_island, island_id, data)
         except Island.DoesNotExist:
             return events.error(f"no island {island_id!r}")
         except islands.IslandError as e:
@@ -110,40 +108,19 @@ async def _handle(runtime: Runtime, island_id: str, message: dict, send=None, su
     return None
 
 
-CLOSE_UNAUTHORIZED = 4401  # login on and the token is invalid or expired: log in again
-CLOSE_FORBIDDEN = 4403  # a private island you are not the owner or a member of
-
-
 class IslandConsumer(AsyncJsonWebsocketConsumer):
     island_id = ""
-    sub: str | None = None  # the logged-in user (auth.py), None without login
 
     async def connect(self) -> None:
-        # Read the token before accepting; the close codes below only reach the game after accept().
-        query_string = self.scope.get("query_string", b"")
-        token_error = None
-        try:
-            self.sub = auth.sub_of(await asyncio.to_thread(auth.user_from_query, query_string))
-        except auth.AuthError as e:
-            token_error = str(e)
         await self.accept()
-        if token_error:
-            await self.send_json(events.error(token_error))
-            await self.close(code=CLOSE_UNAUTHORIZED)
-            return
         runtime = get_runtime()
-        query = parse_qs(query_string.decode())
+        query = parse_qs(self.scope.get("query_string", b"").decode())
         island_id = (query.get("island") or [""])[0]
-        if not island_id:  # the first island this client may see
-            first = await anext((i async for i in Island.objects.order_by("id") if auth.can_see(i, self.sub)), None)
+        if not island_id:
+            first = await Island.objects.order_by("id").afirst()
             island_id = first.id if first else ""
-        island = await Island.objects.filter(pk=island_id).afirst()
-        if island is not None and not auth.can_see(island, self.sub):
-            await self.send_json(events.error("this island is not yours"))
-            await self.close(code=CLOSE_FORBIDDEN)
-            return
-        if not island_id or (island is None and not await Island.objects.aexists()):
-            return  # no island (yet) this client may see: stay connected until the game founds one
+        if not island_id or not await Island.objects.aexists():
+            return  # a fresh install: stay connected with no island until the game founds one
         try:
             snapshot = await island_snapshot(island_id, runtime.bubbles.for_island(island_id))
         except Island.DoesNotExist:
@@ -160,7 +137,7 @@ class IslandConsumer(AsyncJsonWebsocketConsumer):
         await talk.close_all(runtime, self._send_quietly)  # residents it was talking to can go back to work
 
     async def receive_json(self, message: object, **kwargs: object) -> None:
-        reply = await handle_message(get_runtime(), self.island_id, message, self._send_quietly, self.sub)
+        reply = await handle_message(get_runtime(), self.island_id, message, self._send_quietly)
         if reply is not None:
             await self.send_json(reply)
 

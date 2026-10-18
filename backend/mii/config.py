@@ -56,13 +56,8 @@ class Config:
     debug: bool = True  # DJANGO_DEBUG
     secret_key: str = DEV_SECRET_KEY  # DJANGO_SECRET_KEY
     public_demo: bool = False  # PUBLIC_DEMO: no PUT /settings, no repo paths on POST /islands
-    hosts: tuple[str, ...] = ()  # host names served besides localhost and IP addresses (MII_DOMAIN, MII_HOSTS)
+    hosts: tuple[str, ...] = ()  # host names served besides localhost and IP addresses (MII_HOSTS)
     database_url: str | None = None  # MII_DATABASE_URL: Postgres/TimescaleDB instead of SQLite (settings.py)
-
-    # Auth0 login (auth.py): off unless all three are set
-    auth0_domain: str | None = None
-    auth0_audience: str | None = None
-    auth0_client_id: str | None = None
 
     # Pacing (seconds)
     walk_seconds: float = 2.0  # how long a walk between buildings takes (lets the game animate)
@@ -88,15 +83,8 @@ def load_config() -> Config:
         debug=_flag("DJANGO_DEBUG", "1"),
         secret_key=_optional_str("DJANGO_SECRET_KEY") or DEV_SECRET_KEY,
         public_demo=_flag("PUBLIC_DEMO", "0"),
-        hosts=tuple(
-            h.strip().lower()
-            for h in f"{os.getenv('MII_DOMAIN', '')},{os.getenv('MII_HOSTS', '')}".split(",")
-            if h.strip()
-        ),
+        hosts=tuple(h.strip().lower() for h in os.getenv("MII_HOSTS", "").split(",") if h.strip()),
         database_url=_optional_str("MII_DATABASE_URL"),
-        auth0_domain=_optional_str("AUTH0_DOMAIN"),
-        auth0_audience=_optional_str("AUTH0_AUDIENCE"),
-        auth0_client_id=_optional_str("AUTH0_CLIENT_ID"),
     )
 
 

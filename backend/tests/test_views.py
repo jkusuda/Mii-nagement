@@ -6,7 +6,7 @@ from asgiref.testing import ApplicationCommunicator
 from conftest import db_test
 from django.test import AsyncClient
 
-from mii import islands, residents, views
+from mii import consumers, islands, residents, views
 from mii.config import config
 from mii.models import Attachment, Island
 
@@ -392,3 +392,16 @@ async def test_public_demo_locks_settings_paths_and_abandoning(island, fake_runt
     body = json.dumps({"name": "Mine", "folder": "/tmp"})
     assert (await client.post("/islands", data=body, content_type="application/json")).status_code == 400
     assert (await client.delete("/islands/sunny")).status_code == 403
+
+
+async def test_websocket_without_islands_stays_open(fake_runtime, monkeypatch):
+    """A fresh install has no island: the socket stays open (the game is online) and sends nothing."""
+    monkeypatch.setattr(consumers, "get_runtime", lambda: fake_runtime)
+    for query in ("", "island=gone"):
+        scope = {"type": "websocket", "path": "/ws", "query_string": query.encode(), "headers": [], "subprotocols": []}
+        communicator = ApplicationCommunicator(consumers.IslandConsumer.as_asgi(), scope)
+        await communicator.send_input({"type": "websocket.connect"})
+        assert (await communicator.receive_output())["type"] == "websocket.accept"
+        assert await communicator.receive_nothing()
+        await communicator.send_input({"type": "websocket.disconnect", "code": 1000})
+        await communicator.wait()

@@ -8,11 +8,6 @@ here first, then update both halves.
   server's first island). A client only gets events for the island it watches.
   A fresh install has no island: the server then keeps the connection open and
   sends nothing (no snapshot) until the client reconnects with an island it founded.
-- Login (optional, only when the server has `AUTH0_*` set; `GET /auth/config` says
-  so): add `&token=<jwt>`, the access token from the device login (docs/http-api.md).
-  Islands without an `owner` stay public and need no token. On a bad or expired token
-  the server sends an `error` and closes with code **4401** (log in again); on a private
-  island you are neither the owner nor a member of, an `error` and code **4403**.
 - Every message is one JSON object with a `"type"` field.
 - The server sends a `snapshot` as soon as a client connects, then a live stream
   of events.
@@ -51,8 +46,6 @@ The client should rebuild its view from scratch when it gets one.
     "rules": {"merge_pr": true, "install_packages": true, "shell": false},
     "test_command": "",
     "created_at": "2026-10-04T09:12:00+00:00",
-    "owner": null,
-    "members": [],
     "map": {
       "version": 1, "shape": "classic",
       "land": ["....................", ".##################.", "...", "...................."],
@@ -333,11 +326,8 @@ shapes are the snapshot's.
 The island's header changed (renamed, a repo linked, branch or house rules
 edited, by any client). Same fields as the top of the snapshot: replace them.
 ```json
-{"type": "island", "island": {"id": "sunny", "name": "Sunnier Isle", "repo": "me/sunny", "path": "/home/you/Documents/Mii-nagement/sunny", "branch": "main", "plan": "classic", "rules": {"merge_pr": true, "install_packages": true, "shell": false}, "test_command": "", "created_at": "2026-10-04T09:12:00+00:00", "owner": null, "members": []}}
+{"type": "island", "island": {"id": "sunny", "name": "Sunnier Isle", "repo": "me/sunny", "path": "/home/you/Documents/Mii-nagement/sunny", "branch": "main", "plan": "classic", "rules": {"merge_pr": true, "install_packages": true, "shell": false}, "test_command": "", "created_at": "2026-10-04T09:12:00+00:00"}}
 ```
-`owner` is the Auth0 user id that founded the island (`null`: a public island, the
-default without login); `members` are the other user ids who may see it.
-
 ### `chat`
 One resident said something to another: a request for help, the helper's reply, or a
 note left with a `SAY TO <Name>:` line. Show a speech bubble over `from`; there is
@@ -508,8 +498,6 @@ the island repository's `origin` at it, so the post office can push.
 ```json
 {"type": "update_island", "island": {"name": "Sunnier Isle", "repo": "me/sunny", "rules": {"shell": true}}}
 ```
-With login on, the owner may also send `"members": ["auth0|abc", ...]` (the whole
-list); anyone else gets an `error`.
 The server replies with `error` (bad name or repo, nothing to change), or an
 `island` event to every client. Same thing over HTTP: `PATCH /islands/{id}`.
 
