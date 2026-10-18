@@ -200,15 +200,19 @@
   .chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 12px; }
   .chips span { background: var(--peach); border-radius: 999px; padding: 3px 12px; font-size: 13px; font-weight: 800; color: var(--orange-deep); }
 
-  /* Around town: the road. */
+  /* Around town: the five buildings (renders of the game's own models) in a row, with
+     arrows between them, the way a package travels. */
   .town-section { padding: 10px 0 50px; }
   .town-section h2, .get h2 { font-size: clamp(30px, 4vw, 42px); text-align: center; margin-bottom: 8px; }
-  .town { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-top: 26px; }
-  .stop { background: var(--white); border-radius: 18px; padding: 18px 16px; box-shadow: 0 5px 0 rgba(36, 71, 108, .1); position: relative; }
-  .stop .n { width: 34px; height: 34px; border-radius: 50%; background: var(--orange); color: var(--white); display: grid; place-items: center; font: 900 16px var(--display); }
-  .stop .e { font-size: 34px; line-height: 1; margin: 12px 0 4px; }
-  .stop b { display: block; font: 900 20px var(--display); color: var(--navy); margin-bottom: 2px; }
-  .stop span { font-size: 14px; color: var(--ink-soft); }
+  .town { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr auto 1fr; gap: 6px; align-items: end; margin-top: 30px; }
+  .stop { text-align: center; }
+  .stop .house { height: 150px; display: grid; place-items: end center; margin-bottom: 10px; }
+  .stop .house img { max-height: 150px; width: auto; filter: drop-shadow(0 8px 0 rgba(36, 71, 108, .12)); transition: transform .15s ease; }
+  .stop:hover .house img { transform: translateY(-6px); }
+  .stop .pill { display: block; background: var(--white); border: 2px solid var(--navy); border-radius: 999px; padding: 9px 10px; font: 900 18px var(--display); color: var(--navy); }
+  .stop.last .pill { background: var(--yellow); }
+  .stop span { display: block; font-size: 14px; color: var(--ink-soft); margin-top: 8px; }
+  .town .go { align-self: center; margin-bottom: 36px; color: var(--navy); font-size: 26px; font-weight: 900; }
 
   /* Get it: sky band with the steps. */
   .band-sky { background: var(--sky); }
@@ -256,7 +260,8 @@
     .store-card, .getit, .feature { grid-template-columns: 1fr; }
     .feature.flip .shot { order: 0; }
     .feature .blob { min-height: 150px; }
-    .town { grid-template-columns: repeat(2, 1fr); }
+    .town { grid-template-columns: 1fr; gap: 14px; }
+    .town .go { transform: rotate(90deg); margin: 0; justify-self: center; }
     .specs { grid-template-columns: 1fr 1fr; }
     .cols { grid-template-columns: 1fr 1fr; }
     .site-nav { display: none; }
@@ -265,7 +270,7 @@
     .scene .faces { font-size: 80px; } .scene .faces span:nth-child(2) { font-size: 96px; }
   }
   @media (max-width: 600px) {
-    .trio, .specs, .town { grid-template-columns: 1fr; }
+    .trio, .specs { grid-template-columns: 1fr; }
     .store-card { padding: 18px; }
     .info h2 { font-size: 28px; }
     .logo-blob .word { font-size: 38px; }
@@ -423,14 +428,18 @@
   </div>
 
   <section class="town-section wrap" id="town">
-    <h2>Around town</h2>
-    <p class="lede center">The classic town plan. Build your own in build mode, and choose which roads a package takes when a step passes or fails.</p>
+    <h2>A small-town route to a real pull request.</h2>
+    <p class="lede center">Your Planner, Coder and Reviewer carry the task across town. You approve the commands along the way.</p>
     <div class="town">
-      <div class="stop"><span class="n">1</span><div class="e" aria-hidden="true">📬</div><b>Mailbox</b><span>Tasks arrive and get planned.</span></div>
-      <div class="stop"><span class="n">2</span><div class="e" aria-hidden="true">🔨</div><b>Workshop</b><span>The code gets written.</span></div>
-      <div class="stop"><span class="n">3</span><div class="e" aria-hidden="true">🧪</div><b>Lab</b><span>The tests run.</span></div>
-      <div class="stop"><span class="n">4</span><div class="e" aria-hidden="true">⚖️</div><b>Courthouse</b><span>A reviewer reads the change.</span></div>
-      <div class="stop"><span class="n">5</span><div class="e" aria-hidden="true">📮</div><b>Post Office</b><span>Out it goes as a pull request.</span></div>
+      <div class="stop"><div class="house"><img src="town_mailbox.png" alt="The Mailbox: a small white house with a red roof and a red letterbox" loading="lazy"></div><b class="pill">Mailbox</b><span>Tasks arrive &amp; get planned</span></div>
+      <span class="go" aria-hidden="true">→</span>
+      <div class="stop"><div class="house"><img src="town_workshop.png" alt="The Workshop: an orange-roofed house with tools and a workbench outside" loading="lazy"></div><b class="pill">Workshop</b><span>Write the code</span></div>
+      <span class="go" aria-hidden="true">→</span>
+      <div class="stop"><div class="house"><img src="town_lab.png" alt="The Lab: an observatory with a glass dome and a telescope" loading="lazy"></div><b class="pill">Lab</b><span>Run the tests</span></div>
+      <span class="go" aria-hidden="true">→</span>
+      <div class="stop"><div class="house"><img src="town_courthouse.png" alt="The Courthouse: a white building with columns and a purple roof" loading="lazy"></div><b class="pill">Courthouse</b><span>Review the changes</span></div>
+      <span class="go" aria-hidden="true">→</span>
+      <div class="stop last"><div class="house"><img src="town_post_office.png" alt="The Post Office: a yellow-roofed house with parcels stacked outside" loading="lazy"></div><b class="pill">Post Office</b><span>Ship a GitHub PR</span></div>
     </div>
   </section>
 
