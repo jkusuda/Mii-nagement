@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from conftest import db_test
 
@@ -27,7 +27,9 @@ ISLAND_FIELDS = {
 
 
 async def test_insights_has_every_section_and_counts_tasks(island):
-    t0 = utcnow() - timedelta(minutes=5)
+    # Five minutes ago, but never before today's midnight: "today" must hold the finished task.
+    midnight = datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
+    t0 = max(utcnow() - timedelta(minutes=5), midnight)
     t1 = await Task.objects.acreate(
         id="t1",
         island_id="sunny",

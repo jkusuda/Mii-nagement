@@ -9,367 +9,487 @@
 <meta property="og:title" content="Mii-nagement">
 <meta property="og:description" content="Little lives. Real work. A cozy island where coding agents do your real software work.">
 <meta property="og:image" content="https://mii-nagement.work/island.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
 <style>
+  /* The look: a cream page covered in faint doodles, wavy edges between sections, one
+     orange polka-dot band, white cards with orange frames, a yellow blob behind the logo
+     and a store card with a red download button. Headings are chunky rounded Nunito in
+     navy; the wordmark is the DreamLife font. */
   @font-face {
     font-family: "DreamLife";
     src: url("dreamlife.ttf") format("truetype");
     font-display: swap;
   }
   :root {
-    --ink: #222433;
-    --ink-soft: #55586b;
-    --line: #e4e4ea;
-    --page: #ffffff;
-    --tint: #f5f5f8;
-    --navy: #292e50;
-    --sea: #0b2a8f;
-    --yellow: #ffec01;
-    --yellow-hover: #fff36b;
-    --cream: #fff8dc;
-    --mint: #e6f5ee;
-    --lavender: #efecfa;
-    --peach: #ffefe2;
-    --sky: #e3f4fb;
-    --radius: 16px;
-    --display: "DreamLife", ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
-    --body: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --cream: #fff5d2;
+    --cream-deep: #ffecae;
+    --cream-card: #fff9e3;
+    --yellow: #ffe24a;
+    --yellow-deep: #ffd21f;
+    --orange: #f2912c;
+    --orange-deep: #e07a16;
+    --orange-band: #f7a528;
+    --orange-dot: #ee9414;
+    --navy: #24476c;
+    --ink: #2d3140;
+    --ink-soft: #5b6070;
+    --red: #e4002b;
+    --red-deep: #c60025;
+    --white: #ffffff;
+    --line: #ece4c9;
+    --sky: #d9f0fb;
+    --mint: #dff4e4;
+    --peach: #ffe3cf;
+    --radius: 22px;
+    --display: "Nunito", ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+    --wordmark: "DreamLife", "Nunito", ui-rounded, system-ui, sans-serif;
+    --body: "Nunito", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    /* Faint hand-drawn doodles (squiggles, rings, beans) tiled over the cream. */
+    --doodles: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='280' height='280' viewBox='0 0 280 280' fill='none' stroke='%23efd48a' stroke-opacity='.55' stroke-width='7' stroke-linecap='round'%3E%3Cpath d='M22 52c14-24 30 22 46-2'/%3E%3Ccircle cx='212' cy='62' r='17'/%3E%3Cpath d='M68 196c-14-28 32-46 50-18 12 22-26 50-50 18z'/%3E%3Cpath d='M160 226l44 10'/%3E%3Ccircle cx='246' cy='182' r='8'/%3E%3Cpath d='M104 118c10-12 22 12 32 0s22 12 32 0'/%3E%3Cpath d='M230 250c-8 14 10 26 22 14'/%3E%3Cpath d='M18 258c0-14 24-14 24 0'/%3E%3Cpath d='M140 20c18-8 28 14 10 24'/%3E%3C/svg%3E");
   }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
-  body { margin: 0; background: var(--page); color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.55; }
-  a { color: var(--sea); }
+  body {
+    margin: 0; background: var(--cream) var(--doodles); color: var(--ink);
+    font-family: var(--body); font-size: 17px; line-height: 1.55; font-weight: 500;
+  }
+  a { color: var(--navy); }
   img { max-width: 100%; height: auto; display: block; }
-  h1, h2, h3 { font-family: var(--display); font-weight: normal; color: var(--navy); }
-  .wrap { max-width: 1200px; margin: 0 auto; padding: 0 16px; }
+  h1, h2, h3, h4 { font-family: var(--display); font-weight: 900; color: var(--navy); line-height: 1.12; margin: 0; }
+  p { margin: 0 0 1em; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 0 16px; }
   .skip { position: absolute; left: -999px; top: 8px; background: var(--yellow); padding: 8px 12px; border-radius: 8px; z-index: 10; }
   .skip:focus { left: 8px; }
+  .center { text-align: center; }
+  .lede { color: var(--ink-soft); font-size: 18px; max-width: 640px; margin: 0 auto 1.4em; }
 
-  /* Site header */
-  .site-header { border-bottom: 1px solid var(--line); background: var(--page); position: sticky; top: 0; z-index: 5; }
-  .site-header .wrap { display: flex; align-items: center; gap: 24px; height: 64px; }
-  .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--navy); }
-  .brand img { width: 34px; height: 34px; }
-  .brand span { font-family: var(--display); font-size: 24px; }
-  .site-nav { display: flex; gap: 22px; margin-left: 8px; }
-  .site-nav a { color: var(--ink); text-decoration: none; font-weight: 600; font-size: 15px; }
-  .site-nav a:hover { color: var(--sea); }
-  .header-cta { margin-left: auto; }
-
-  /* Buttons */
+  /* Buttons: fat yellow pills with navy text, like the reference's "Watch trailer". */
   .btn {
-    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-    border-radius: 999px; padding: 12px 26px; font: 600 16px var(--body);
-    text-decoration: none; cursor: pointer; border: 2px solid transparent; transition: background .12s ease;
+    display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+    border-radius: 999px; padding: 14px 30px; font: 800 17px var(--display); color: var(--navy);
+    background: var(--yellow); text-decoration: none; cursor: pointer; border: 0;
+    box-shadow: 0 4px 0 rgba(36, 71, 108, .18); transition: transform .1s ease, background .12s ease;
   }
-  .btn-primary { background: var(--yellow); color: var(--navy); border-color: var(--navy); }
-  .btn-primary:hover { background: var(--yellow-hover); }
-  .btn-outline { background: var(--page); color: var(--navy); border-color: var(--navy); }
-  .btn-outline:hover { background: var(--tint); }
-  .btn-small { padding: 8px 18px; font-size: 14px; }
-  .btn-block { width: 100%; padding: 15px 26px; font-size: 17px; }
-  .btn:focus-visible, .thumb:focus-visible, .arrow:focus-visible, .edition button:focus-visible { outline: 3px solid var(--sea); outline-offset: 2px; }
+  .btn:hover { background: var(--yellow-deep); transform: translateY(-1px); }
+  .btn:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(36, 71, 108, .18); }
+  .btn-small { padding: 9px 20px; font-size: 15px; }
+  .btn-red { background: var(--red); color: var(--white); border-radius: 8px; box-shadow: none; padding: 16px 26px; font-size: 20px; width: 100%; }
+  .btn-red:hover { background: var(--red-deep); transform: none; }
+  .btn svg { width: 1.1em; height: 1.1em; }
+  :focus-visible { outline: 3px solid var(--navy); outline-offset: 3px; }
 
-  /* Breadcrumb */
-  .crumbs { font-size: 14px; color: var(--ink-soft); padding: 16px 0 8px; }
-  .crumbs ol { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; }
-  .crumbs li + li::before { content: "›"; margin-right: 6px; color: #9a9cab; }
-  .crumbs a { color: var(--ink-soft); text-decoration: none; }
-  .crumbs a:hover { text-decoration: underline; }
+  /* Header */
+  .site-header { position: sticky; top: 0; z-index: 5; background: rgba(255, 245, 210, .92); backdrop-filter: blur(6px); border-bottom: 2px solid var(--cream-deep); }
+  .site-header .wrap { display: flex; align-items: center; gap: 22px; height: 66px; }
+  .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; font: 26px var(--wordmark); color: var(--navy); }
+  .brand img { width: 34px; height: 34px; border-radius: 9px; }
+  .site-nav { display: flex; gap: 22px; margin-left: auto; }
+  .site-nav a { text-decoration: none; font-weight: 800; color: var(--navy); font-size: 15px; }
+  .site-nav a:hover { color: var(--orange-deep); }
 
-  /* Product hero: gallery + info panel */
-  .product { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(300px, 1fr); gap: 40px; padding: 8px 0 48px; }
-  .stage { position: relative; border-radius: var(--radius); overflow: hidden; background: var(--tint); aspect-ratio: 16 / 9; }
+  /* Wavy edges: an SVG strip whose fill matches the section it belongs to. */
+  .wave { display: block; width: 100%; height: 44px; }
+
+  /* Hero: the island in a wobbly cloud shape, the logo on a yellow blob, a big headline. */
+  .hero { padding: 36px 0 20px; text-align: center; }
+  .cloud { width: min(960px, 100%); margin: 0 auto; clip-path: url(#cloud); aspect-ratio: 16 / 8; }
+  /* Zoom into the island itself so the game's menus stay out of the picture. */
+  .cloud img { width: 100%; height: 100%; object-fit: cover; transform: scale(1.75); transform-origin: 36% 38%; }
+  .logo-blob { position: relative; width: 380px; max-width: 92vw; margin: -70px auto 0; aspect-ratio: 330 / 240; display: grid; place-items: center; align-content: center; }
+  .logo-blob svg { position: absolute; inset: 0; width: 100%; height: 100%; filter: drop-shadow(0 6px 0 rgba(224, 122, 22, .25)); }
+  .logo-blob .word { position: relative; font: 58px/1 var(--wordmark); color: var(--navy); text-shadow: 3px 3px 0 var(--white); white-space: nowrap; }
+  .logo-blob .sub { position: relative; font: 900 20px var(--display); color: var(--orange-deep); margin-top: 4px; }
+  .logo-blob .sub b { color: #2f9e5b; } .logo-blob .sub i { font-style: normal; color: #2b7fc2; }
+  .hero h1 { font-size: clamp(32px, 5vw, 54px); max-width: 900px; margin: 22px auto 14px; }
+  .hero .lede { font-size: 19px; max-width: 760px; }
+  .hero .ctas { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px 20px; align-items: center; margin-top: 8px; }
+  .hero .ctas a:not(.btn) { font-weight: 800; }
+
+  /* Store card: the product page, white on cream. */
+  .store { padding: 30px 0 56px; }
+  .store-card { background: var(--white); border-radius: 26px; box-shadow: 0 10px 30px rgba(120, 90, 20, .12); padding: 34px; display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(300px, 1fr); gap: 40px; }
+  .stage { position: relative; border-radius: 14px; overflow: hidden; background: var(--cream-card); aspect-ratio: 16 / 9; }
   .stage img { width: 100%; height: 100%; object-fit: cover; }
+  .ribbon { position: absolute; left: 0; top: 0; background: #3b3f8f; color: var(--white); font: 800 20px var(--display); padding: 6px 18px; border-bottom-right-radius: 12px; }
   .arrow {
-    position: absolute; top: 50%; transform: translateY(-50%); width: 44px; height: 44px; border-radius: 50%;
-    border: 0; background: rgba(255, 255, 255, .92); color: var(--navy); font-size: 22px; cursor: pointer;
+    position: absolute; top: 50%; transform: translateY(-50%); width: 42px; height: 42px; border-radius: 50%;
+    border: 0; background: rgba(255, 255, 255, .92); color: var(--navy); font-size: 24px; cursor: pointer;
     box-shadow: 0 2px 8px rgba(0, 0, 0, .2); display: grid; place-items: center;
   }
   .arrow.prev { left: 12px; } .arrow.next { right: 12px; }
-  .counter { position: absolute; right: 12px; bottom: 12px; background: rgba(34, 36, 51, .75); color: #fff; font-size: 13px; padding: 3px 10px; border-radius: 999px; }
+  .counter { position: absolute; right: 12px; bottom: 12px; background: rgba(36, 71, 108, .8); color: #fff; font-size: 13px; font-weight: 800; padding: 3px 10px; border-radius: 999px; }
   .thumbs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 12px; }
   .thumb { padding: 0; border: 3px solid transparent; border-radius: 10px; overflow: hidden; cursor: pointer; background: none; aspect-ratio: 16 / 9; }
   .thumb img { width: 100%; height: 100%; object-fit: cover; }
-  .thumb[aria-current="true"] { border-color: var(--navy); }
-
-  .info { align-self: start; position: sticky; top: 84px; }
-  .info .kind { font-size: 14px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .06em; }
-  .info h1 { font-size: 44px; line-height: 1.05; margin: 6px 0 4px; }
-  .info .platforms { color: var(--ink-soft); margin: 0 0 20px; }
-  .edition-label { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
-  .edition { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 20px; }
-  .edition button {
-    font: 600 15px var(--body); padding: 12px 10px; border-radius: 12px; cursor: pointer;
-    background: var(--page); color: var(--ink); border: 2px solid var(--line); text-align: left;
-  }
-  .edition button small { display: block; font-weight: 400; color: var(--ink-soft); font-size: 13px; }
-  .edition button[aria-pressed="true"] { border-color: var(--navy); background: var(--cream); }
-  .price { font-family: var(--display); font-size: 30px; color: var(--navy); margin: 0 0 14px; }
-  .price small { font-family: var(--body); font-size: 14px; color: var(--ink-soft); margin-left: 6px; }
-  .info .alt { display: block; text-align: center; margin-top: 12px; font-weight: 600; font-size: 15px; }
+  .thumb[aria-current="true"] { border-color: var(--orange); }
+  .badges { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-top: 18px; }
+  .pill { background: #fde2e4; color: #b6003f; font-weight: 800; font-size: 14px; padding: 5px 12px; border-radius: 8px; }
+  .rating { display: flex; gap: 12px; align-items: center; font-size: 14px; color: var(--ink-soft); }
+  .rating .e { width: 46px; height: 60px; border: 3px solid var(--ink); border-radius: 4px; display: grid; place-items: center; font: 900 30px var(--display); color: var(--ink); background: var(--white); }
+  .compat { background: #f3f1ea; border-radius: 12px; padding: 14px 18px; margin-top: 18px; display: flex; gap: 12px; align-items: flex-start; font-size: 14px; }
+  .compat .ok { flex: none; width: 22px; height: 22px; border-radius: 50%; background: #2a7de1; color: #fff; display: grid; place-items: center; font-weight: 900; font-size: 14px; }
+  .compat b { display: block; }
+  .info .kicker { font-size: 14px; font-weight: 800; color: var(--ink-soft); border-left: 3px solid var(--navy); padding-left: 8px; }
+  .info h2 { font-size: 34px; margin: 10px 0 18px; color: var(--ink); }
+  .info .row { display: flex; gap: 12px; align-items: center; margin-bottom: 18px; font-weight: 800; }
+  .info .chip { background: #f3f1ea; padding: 6px 14px; border-radius: 8px; font-weight: 700; }
+  .info .label { font-weight: 800; margin-bottom: 8px; }
+  .edition { border: 2px solid #dedbd0; border-radius: 12px; padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+  .edition b { display: block; font-size: 18px; } .edition small { color: var(--ink-soft); }
+  .edition .dl { flex: none; width: 36px; height: 36px; border-radius: 50%; background: var(--red); color: #fff; display: grid; place-items: center; }
+  .price { font: 800 34px var(--display); color: var(--ink); margin: 0 0 16px; display: flex; justify-content: space-between; align-items: center; }
+  .price small { font-size: 15px; font-weight: 700; color: var(--ink-soft); }
+  .redlink { display: inline-flex; gap: 8px; align-items: center; color: var(--red); font-weight: 800; text-decoration: none; margin-top: 18px; }
+  .redlink:hover { text-decoration: underline; }
   .info .note { font-size: 14px; color: var(--ink-soft); margin: 14px 0 0; }
-  .facts { list-style: none; margin: 22px 0 0; padding: 18px 0 0; border-top: 1px solid var(--line); display: grid; gap: 12px; }
-  .facts li { display: flex; gap: 12px; align-items: flex-start; font-size: 15px; }
-  .facts .ic { flex: none; width: 34px; height: 34px; border-radius: 50%; background: var(--tint); display: grid; place-items: center; font-size: 17px; }
-  .facts b { display: block; font-size: 13px; color: var(--ink-soft); font-weight: 600; }
+  .info .note a { color: var(--red); font-weight: 800; }
 
-  /* Intro */
-  .intro { text-align: center; padding: 56px 0 24px; }
-  .intro .logo { font-family: var(--display); font-size: clamp(42px, 7vw, 68px); color: var(--navy); line-height: 1; margin: 0; }
-  .intro .tag { font-family: var(--display); font-size: clamp(22px, 3vw, 30px); color: var(--sea); margin: 10px 0 14px; }
-  .intro p { max-width: 640px; margin: 0 auto; color: var(--ink-soft); font-size: 18px; }
+  /* Orange polka-dot band (make residents). */
+  .band-orange {
+    background-color: var(--orange-band);
+    background-image: radial-gradient(circle at 15px 15px, var(--orange-dot) 11px, transparent 12px), radial-gradient(circle at 42px 42px, var(--orange-dot) 11px, transparent 12px);
+    background-size: 54px 54px; color: var(--ink);
+  }
+  .band-orange .wrap { padding-top: 30px; padding-bottom: 50px; }
+  .band-orange h2 { color: var(--navy); }
+  .portrait { position: relative; width: 420px; max-width: 90vw; margin: 0 auto 10px; aspect-ratio: 420 / 290; display: grid; place-items: center; }
+  .portrait svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .portrait img { position: relative; width: 70%; border-radius: 16px; box-shadow: 0 6px 0 rgba(0, 0, 0, .12); transform: rotate(-2deg); }
+  .sticker { position: absolute; width: 64px; height: 64px; border-radius: 50%; background: var(--yellow); display: grid; place-items: center; font-size: 32px; box-shadow: 0 3px 0 rgba(0, 0, 0, .12); }
+  .sticker.a { left: -6px; top: 10px; } .sticker.b { right: -4px; bottom: 16px; width: 56px; height: 56px; font-size: 28px; }
+  .band-orange .lede { color: #4b3a12; }
+  .trio { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; margin-top: 36px; }
+  .trio .card { background: var(--cream-card); border: 5px solid var(--white); border-radius: 26px; padding: 18px 18px 22px; text-align: center; }
+  .trio .screen { background: var(--white); border-radius: 16px; height: 170px; display: grid; place-items: center; font-size: 74px; line-height: 1; margin-bottom: 18px; }
+  .trio h3 { font-size: 22px; margin-bottom: 8px; }
+  .trio p { margin: 0; color: #4b4f5c; font-size: 16px; }
 
-  /* Section heading */
-  .section { padding: 40px 0; }
-  .section h2 { font-size: clamp(30px, 4vw, 42px); text-align: center; margin: 0 0 8px; line-height: 1.1; }
-  .section .lede { text-align: center; color: var(--ink-soft); max-width: 620px; margin: 0 auto 32px; }
+  /* Get to know: little tilted list cards around a sticker scene. */
+  .know { padding: 20px 0 10px; text-align: center; }
+  .scene { position: relative; max-width: 980px; margin: 0 auto; min-height: 370px; display: grid; place-items: center; }
+  .scene .faces { display: flex; gap: 10px; align-items: flex-end; font-size: 110px; line-height: 1; filter: drop-shadow(0 6px 0 rgba(36, 71, 108, .12)); }
+  .scene .faces span { animation: bob 3.2s ease-in-out infinite; }
+  .scene .faces span:nth-child(2) { animation-delay: -1s; font-size: 130px; } .scene .faces span:nth-child(3) { animation-delay: -2s; }
+  @keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+  .list-card { position: absolute; background: var(--cream-card); border: 4px solid var(--white); border-radius: 14px; padding: 10px 12px 12px; min-width: 190px; text-align: left; box-shadow: 0 5px 0 rgba(36, 71, 108, .12); }
+  .list-card b { display: block; font-size: 13px; font-weight: 800; color: var(--orange-deep); margin-bottom: 6px; }
+  .list-card ol, .list-card ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+  .list-card li { background: var(--white); border-radius: 7px; padding: 4px 10px; font-size: 14px; font-weight: 700; }
+  .list-card.blue b { color: #2b7fc2; } .list-card.blue li { background: #e6f2fb; }
+  .list-card.peach li { background: var(--peach); }
+  .list-card.c1 { left: 0; top: 10px; transform: rotate(-3deg); }
+  .list-card.c2 { right: 0; top: 10px; transform: rotate(2deg); }
+  .list-card.c3 { left: 70px; bottom: 0; transform: rotate(2deg); }
+  .know h2 { font-size: clamp(30px, 4vw, 44px); margin-top: 10px; }
 
-  /* Three cards */
-  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-  .card { border-radius: var(--radius); padding: 26px 22px; text-align: center; }
-  .card .big { font-size: 44px; line-height: 1; }
-  .card h3 { font-size: 24px; margin: 14px 0 6px; }
-  .card p { margin: 0; color: #3e4155; }
-  .bg-cream { background: var(--cream); } .bg-mint { background: var(--mint); } .bg-lavender { background: var(--lavender); }
+  /* Feature rows: an orange-framed screenshot with a white caption card tucked under it. */
+  .features { padding: 10px 0 40px; display: grid; gap: 54px; }
+  .feature { display: grid; grid-template-columns: 1fr 1.25fr; gap: 30px; align-items: center; }
+  .feature.flip .shot { order: 2; }
+  .feature .blob { position: relative; display: grid; place-items: center; min-height: 220px; }
+  .feature .blob svg { position: absolute; width: 90%; height: 90%; }
+  .feature .blob .emoji { position: relative; font-size: 110px; line-height: 1; filter: drop-shadow(0 5px 0 rgba(36, 71, 108, .14)); }
+  .shot { position: relative; padding-bottom: 72px; }
+  .shot .frame { border: 6px solid var(--orange); border-radius: 20px; overflow: hidden; background: #1a1a1a; box-shadow: 0 8px 0 rgba(224, 122, 22, .2); }
+  .shot .frame img { width: 100%; }
+  .shot .caption { position: absolute; left: 7%; right: 7%; bottom: 0; background: var(--white); border-radius: 16px; padding: 16px 20px 18px; text-align: center; box-shadow: 0 4px 0 rgba(36, 71, 108, .12); }
+  .shot .caption h3 { font-size: 21px; margin-bottom: 6px; }
+  .shot .caption p { margin: 0; font-size: 15px; color: #4b4f5c; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 12px; }
+  .chips span { background: var(--peach); border-radius: 999px; padding: 3px 12px; font-size: 13px; font-weight: 800; color: var(--orange-deep); }
 
-  /* Wavy band with alternating rows */
-  .band { background: var(--sky); position: relative; margin: 40px 0; padding: 30px 0 40px; }
-  .wave { display: block; width: 100%; height: 40px; position: absolute; left: 0; }
-  .wave.top { top: -39px; } .wave.bottom { bottom: -39px; transform: rotate(180deg); }
-  .row { display: grid; grid-template-columns: 1.2fr 1fr; gap: 40px; align-items: center; padding: 26px 0; }
-  .row.flip .media { order: 2; }
-  .media { background: var(--page); padding: 10px; border-radius: 20px; box-shadow: 0 6px 0 rgba(41, 46, 80, .12); }
-  .media img { border-radius: 12px; }
-  .row h3 { font-size: clamp(28px, 3.4vw, 36px); margin: 0 0 10px; line-height: 1.1; }
-  .row p { margin: 0 0 10px; color: #3e4155; font-size: 17px; }
-  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
-  .chips span { background: var(--page); border: 1px solid #c9dbe6; border-radius: 999px; padding: 4px 12px; font-size: 14px; font-weight: 600; }
-
-  /* Town map list */
-  .town { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
-  .stop { border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
-  .stop .n { width: 28px; height: 28px; border-radius: 50%; background: var(--navy); color: var(--yellow); display: grid; place-items: center; font-weight: 700; font-size: 14px; }
-  .stop b { display: block; font-family: var(--display); font-weight: normal; font-size: 21px; color: var(--navy); margin: 10px 0 2px; }
+  /* Around town: the road. */
+  .town-section { padding: 10px 0 50px; }
+  .town-section h2, .get h2 { font-size: clamp(30px, 4vw, 42px); text-align: center; margin-bottom: 8px; }
+  .town { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-top: 26px; }
+  .stop { background: var(--white); border-radius: 18px; padding: 18px 16px; box-shadow: 0 5px 0 rgba(36, 71, 108, .1); position: relative; }
+  .stop .n { width: 34px; height: 34px; border-radius: 50%; background: var(--orange); color: var(--white); display: grid; place-items: center; font: 900 16px var(--display); }
+  .stop .e { font-size: 34px; line-height: 1; margin: 12px 0 4px; }
+  .stop b { display: block; font: 900 20px var(--display); color: var(--navy); margin-bottom: 2px; }
   .stop span { font-size: 14px; color: var(--ink-soft); }
 
-  /* Get it */
-  .getit { background: var(--tint); border-radius: 24px; padding: 36px 28px; display: grid; grid-template-columns: 1fr 1.2fr; gap: 32px; }
+  /* Get it: sky band with the steps. */
+  .band-sky { background: var(--sky); }
+  .get { padding: 20px 0 50px; }
+  .getit { display: grid; grid-template-columns: 1fr 1.25fr; gap: 32px; align-items: start; margin-top: 26px; }
   .getit h2 { text-align: left; }
-  .getit .lede { text-align: left; margin: 0 0 18px; }
-  .why { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
-  .why li { display: flex; gap: 10px; }
-  .why li::before { content: "✓"; flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--yellow); border: 2px solid var(--navy); display: grid; place-items: center; font-size: 13px; font-weight: 700; }
+  .why { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+  .why li { display: flex; gap: 12px; align-items: flex-start; }
+  .why li::before { content: "✓"; flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--yellow); color: var(--navy); display: grid; place-items: center; font-size: 14px; font-weight: 900; }
   .steps { display: grid; gap: 12px; counter-reset: step; }
-  .step { background: var(--page); border-radius: 14px; padding: 14px 14px 14px 54px; position: relative; border: 1px solid var(--line); }
-  .step::before { counter-increment: step; content: counter(step); position: absolute; left: 14px; top: 14px; width: 28px; height: 28px; border-radius: 50%; background: var(--navy); color: var(--yellow); display: grid; place-items: center; font-weight: 700; font-size: 14px; }
-  .step b { display: block; margin-bottom: 6px; }
-  .step small { display: block; color: var(--ink-soft); margin-top: 6px; }
+  .step { background: var(--white); border-radius: 16px; padding: 16px 16px 16px 58px; position: relative; box-shadow: 0 4px 0 rgba(36, 71, 108, .1); }
+  .step::before { counter-increment: step; content: counter(step); position: absolute; left: 16px; top: 16px; width: 30px; height: 30px; border-radius: 50%; background: var(--orange); color: var(--white); display: grid; place-items: center; font: 900 15px var(--display); }
+  .step b { display: block; margin-bottom: 8px; font-weight: 800; color: var(--navy); }
+  .step small { display: block; color: var(--ink-soft); margin-top: 8px; font-size: 14px; }
+  .step .btn { margin: 4px 0 2px; }
   .code { display: flex; align-items: center; gap: 8px; background: var(--navy); color: #f3f4ff; border-radius: 10px; padding: 9px 9px 9px 12px; overflow-x: auto; }
   .code code { font: 14px ui-monospace, "SF Mono", Menlo, Consolas, monospace; white-space: pre; flex: 1; }
-  .copy { flex: none; font: 600 13px var(--body); border: 0; border-radius: 8px; background: var(--yellow); color: var(--navy); padding: 4px 10px; cursor: pointer; }
+  .source { padding-left: 16px; }
+  .source::before { content: none; }
+  .source summary { cursor: pointer; font-weight: 800; color: var(--navy); }
+  .source .step { margin-top: 12px; }
+  .copy { flex: none; font: 800 13px var(--display); border: 0; border-radius: 8px; background: var(--yellow); color: var(--navy); padding: 4px 10px; cursor: pointer; }
 
-  /* About this item */
-  .about { border-top: 1px solid var(--line); }
-  .about h2 { text-align: left; }
-  .specs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 32px; margin: 0; }
-  .specs div { padding: 14px 0; border-bottom: 1px solid var(--line); }
-  .specs dt { font-weight: 700; font-size: 14px; }
-  .specs dd { margin: 4px 0 0; color: var(--ink-soft); }
-  .tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
-  .tags a { border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; text-decoration: none; color: var(--ink); font-size: 14px; font-weight: 600; }
-  .tags a:hover { border-color: var(--navy); }
+  /* About */
+  .about { padding: 40px 0 50px; }
+  .about h2 { font-size: 30px; margin-bottom: 18px; }
+  .specs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 32px; margin: 0; background: var(--white); border-radius: 20px; padding: 10px 26px; }
+  .specs div { padding: 14px 0; border-bottom: 2px solid var(--line); }
+  .specs dt { font-weight: 800; font-size: 14px; color: var(--navy); }
+  .specs dd { margin: 4px 0 0; color: var(--ink-soft); font-size: 15px; }
+  .tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+  .tags a { background: var(--white); border-radius: 999px; padding: 7px 16px; text-decoration: none; color: var(--navy); font-size: 14px; font-weight: 800; box-shadow: 0 3px 0 rgba(36, 71, 108, .1); }
+  .tags a:hover { background: var(--yellow); }
 
   /* Footer */
-  footer { background: var(--navy); color: #cfd2ea; margin-top: 56px; padding: 40px 0 28px; font-size: 14px; }
+  footer { background: var(--navy); color: #cfd8e6; padding: 44px 0 28px; font-size: 14px; }
   .cols { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; }
-  footer h4 { color: #fff; margin: 0 0 10px; font-size: 15px; }
+  footer h4 { color: var(--yellow); margin: 0 0 10px; font-size: 16px; }
   footer ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-  footer a { color: #cfd2ea; text-decoration: none; }
+  footer a { color: #cfd8e6; text-decoration: none; }
   footer a:hover { color: #fff; text-decoration: underline; }
   .legal { border-top: 1px solid rgba(255, 255, 255, .15); margin-top: 28px; padding-top: 18px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; }
 
   @media (max-width: 960px) {
-    .product, .row, .getit { grid-template-columns: 1fr; }
-    .row.flip .media { order: 0; }
-    .info { position: static; }
+    .store-card, .getit, .feature { grid-template-columns: 1fr; }
+    .feature.flip .shot { order: 0; }
+    .feature .blob { min-height: 150px; }
     .town { grid-template-columns: repeat(2, 1fr); }
     .specs { grid-template-columns: 1fr 1fr; }
     .cols { grid-template-columns: 1fr 1fr; }
     .site-nav { display: none; }
+    .scene { min-height: 0; }
+    .list-card { position: static; transform: none; margin: 8px auto 0; min-width: 0; width: 100%; max-width: 420px; }
+    .scene .faces { font-size: 80px; } .scene .faces span:nth-child(2) { font-size: 96px; }
   }
   @media (max-width: 600px) {
-    .cards, .specs { grid-template-columns: 1fr; }
-    .town { grid-template-columns: 1fr; }
-    .info h1 { font-size: 36px; }
-    .getit { padding: 26px 16px; }
+    .trio, .specs, .town { grid-template-columns: 1fr; }
+    .store-card { padding: 18px; }
+    .info h2 { font-size: 28px; }
+    .logo-blob .word { font-size: 38px; }
     .header-cta { display: none; }
+    .shot .caption { left: 4%; right: 4%; }
     .arrow { width: 36px; height: 36px; font-size: 18px; }
   }
-  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .scene .faces span { animation: none; } }
 </style>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
 
+<!-- Clip shape for the hero picture: a rounded rectangle with soft wobbly edges. -->
+<svg width="0" height="0" aria-hidden="true" style="position:absolute">
+  <defs>
+    <clipPath id="cloud" clipPathUnits="objectBoundingBox">
+      <path d="M0.055 0.14 C0.04 0.03 0.12 -0.01 0.2 0.02 C0.4 -0.01 0.6 0.035 0.8 0.01 C0.92 -0.005 0.995 0.05 0.975 0.16 C1.005 0.4 0.98 0.6 0.995 0.84 C1.005 0.96 0.93 1.005 0.84 0.985 C0.6 1.01 0.4 0.975 0.17 0.995 C0.07 1.005 0.005 0.95 0.02 0.84 C-0.005 0.6 0.03 0.4 0.01 0.2 Z"/>
+    </clipPath>
+  </defs>
+</svg>
+
 <header class="site-header">
   <div class="wrap">
-    <a class="brand" href="/"><img src="icon.svg" alt=""><span>Mii-nagement</span></a>
+    <a class="brand" href="/"><img src="icon.svg" alt="">Mii-nagement</a>
     <nav class="site-nav" aria-label="Main">
       <a href="#how">How it works</a>
+      <a href="#town">Around town</a>
       <a href="#get">Get it</a>
-      <a href="#about">Details</a>
       <a href="https://github.com/jkusuda/Mii-nagement">GitHub</a>
     </nav>
-    <a class="btn btn-outline btn-small header-cta" href="/app/">Play in browser</a>
+    <a class="btn btn-small header-cta" href="/download/Mii-nagement.dmg">Download for Mac</a>
   </div>
 </header>
 
-<main id="main" class="wrap">
-  <nav class="crumbs" aria-label="Breadcrumb">
-    <ol><li><a href="/">Home</a></li><li><a href="https://github.com/jkusuda/Mii-nagement">Projects</a></li><li aria-current="page">Mii-nagement</li></ol>
-  </nav>
-
-  <section class="product" aria-label="Mii-nagement">
-    <div class="gallery">
-      <div class="stage">
-        <img id="stage-img" src="island.jpg" alt="" width="1280" height="720">
-        <button class="arrow prev" type="button" aria-label="Previous picture">‹</button>
-        <button class="arrow next" type="button" aria-label="Next picture">›</button>
-        <span class="counter" id="counter" aria-live="polite">1 of 4</span>
-      </div>
-      <div class="thumbs" id="thumbs">
-        <button class="thumb" type="button" aria-current="true" data-alt="Build mode: the island up close, with houses, a pond, trees and sleeping residents"><img src="island.jpg" alt="Island"></button>
-        <button class="thumb" type="button" data-alt="Residents: three Miis with jobs and moods"><img src="residents.jpg" alt="Residents"></button>
-        <button class="thumb" type="button" data-alt="The Sunny Isle Gazette, the island's daily newspaper"><img src="gazette.jpg" alt="Island News"></button>
-        <button class="thumb" type="button" data-alt="The Archipelago: every island in one sea"><img src="archipelago.jpg" alt="Archipelago"></button>
-      </div>
+<main id="main">
+  <section class="hero wrap" aria-label="Welcome">
+    <div class="cloud"><img src="island.jpg" alt="Sunny Isle: a small island with five buildings, a pond and trees, seen from above" width="1280" height="720"></div>
+    <div class="logo-blob">
+      <svg viewBox="0 0 330 240" aria-hidden="true"><path fill="#ffe24a" d="M62 28C110 2 200 -4 262 20c48 18 70 60 60 108-8 42-40 86-88 98-56 14-134 8-182-20C10 182-4 134 10 92 20 60 34 42 62 28z"/></svg>
+      <div class="word">Mii-nagement</div>
+      <div class="sub">Little <b>lives</b>. Real <i>work</i>.</div>
     </div>
-
-    <aside class="info">
-      <div class="kind">Desktop app · Hackathon project</div>
-      <h1>Mii-nagement</h1>
-      <p class="platforms">macOS · Windows · Linux</p>
-
-      <div class="edition-label" id="edition-label">Version</div>
-      <div class="edition" role="group" aria-labelledby="edition-label">
-        <button type="button" data-edition="desktop" aria-pressed="true">Desktop<small>Recommended</small></button>
-        <button type="button" data-edition="web" aria-pressed="false">Browser<small>Lighter demo</small></button>
-      </div>
-
-      <p class="price">Free<small>source on GitHub</small></p>
-      <a class="btn btn-primary btn-block" id="main-cta" href="#get">Get the desktop version</a>
-      <a class="alt" id="alt-cta" href="/app/">Or try it in your browser</a>
-      <p class="note" id="edition-note">Runs real coding agents with the logins you already have. Smooth 3D, full textures.</p>
-
-      <ul class="facts">
-        <li><span class="ic">🧠</span><span><b>Brains</b>Claude Code, Codex, Gemini CLI, OpenRouter</span></li>
-        <li><span class="ic">🎮</span><span><b>Play modes</b>Mock agents (free) or real agents</span></li>
-        <li><span class="ic">👥</span><span><b>Players</b>You, your team, and your residents</span></li>
-      </ul>
-    </aside>
-  </section>
-
-  <section class="intro">
-    <p class="logo">Mii-nagement</p>
-    <p class="tag">Little lives. Real work.</p>
-    <p>A cozy island where your coding agents live, carry tasks from building to building, and ship real pull requests. You keep them happy and answer when they need you.</p>
-  </section>
-
-  <section class="section" id="how">
-    <h2>Your project is an island</h2>
-    <p class="lede">The town layout is the workflow. Residents walk your task down the roads, one building at a time.</p>
-    <div class="cards">
-      <div class="card bg-cream"><div class="big">🏝️</div><h3>Found an island</h3><p>Every island is a git repository: a new one, a GitHub clone, or a folder you already have.</p></div>
-      <div class="card bg-mint"><div class="big">💬</div><h3>Answer bubbles</h3><p>When a resident needs a decision or permission to run a command, a bubble pops up over their head.</p></div>
-      <div class="card bg-lavender"><div class="big">📮</div><h3>Ship pull requests</h3><p>Finished work leaves the island at the Post Office as a pull request on GitHub.</p></div>
+    <h1>Become the caretaker of an island full of tiny coders, naps, drama, and real pull requests!</h1>
+    <p class="lede">Your project is an island. Your coding agents are the residents. Give them a task, watch them carry it from the Mailbox to the Post Office, and answer when a bubble pops up over somebody's head.</p>
+    <div class="ctas">
+      <a class="btn" href="/download/Mii-nagement.dmg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>Download for Mac</a>
+      <a href="#get">Windows, Linux or from source</a>
     </div>
   </section>
-</main>
 
-<div class="band">
-  <svg class="wave top" viewBox="0 0 1440 40" preserveAspectRatio="none" aria-hidden="true"><path d="M0 40 C 240 0, 480 0, 720 20 S 1200 40, 1440 10 L 1440 40 Z" fill="#e3f4fb"/></svg>
-  <div class="wrap">
-    <div class="row">
-      <div class="media"><img src="residents.jpg" alt="The Residents screen: Carlos the Coder, Jun the Planner and Sydney the Reviewer" width="1280" height="720" loading="lazy"></div>
-      <div>
-        <h3>Meet the residents</h3>
-        <p>Each resident has a job, a personality and a brain. Sliders set how blunt, careful, chatty or creative they are, and their mood changes as they work: happy, focused, confused, tired or proud.</p>
-        <div class="chips"><span>Planner</span><span>Coder</span><span>Reviewer</span></div>
+  <section class="store wrap" aria-label="Get Mii-nagement">
+    <div class="store-card">
+      <div class="gallery">
+        <div class="stage">
+          <img id="stage-img" src="island.jpg" alt="" width="1280" height="720">
+          <span class="ribbon">Free download</span>
+          <button class="arrow prev" type="button" aria-label="Previous picture">‹</button>
+          <button class="arrow next" type="button" aria-label="Next picture">›</button>
+          <span class="counter" id="counter" aria-live="polite">1 of 4</span>
+        </div>
+        <div class="thumbs" id="thumbs">
+          <button class="thumb" type="button" aria-current="true" data-alt="Build mode: the island up close, with houses, a pond, trees and sleeping residents"><img src="island.jpg" alt="Island"></button>
+          <button class="thumb" type="button" data-alt="Residents: three Miis with jobs and moods"><img src="residents.jpg" alt="Residents"></button>
+          <button class="thumb" type="button" data-alt="The Sunny Isle Gazette, the island's daily newspaper"><img src="gazette.jpg" alt="Island News"></button>
+          <button class="thumb" type="button" data-alt="The Archipelago: every island in one sea"><img src="archipelago.jpg" alt="Archipelago"></button>
+        </div>
+        <div class="badges">
+          <span class="pill">Free</span>
+          <div class="rating"><span class="e" aria-hidden="true">E</span><span>Everyone<br>Comic Mischief, Mild Merge Conflicts</span></div>
+        </div>
+        <div class="compat"><span class="ok" aria-hidden="true">✓</span><span><b>Apple Silicon and Intel</b>Supported. The first launch sets up the backend by itself (about a minute, needs the internet).</span></div>
+      </div>
+
+      <aside class="info">
+        <div class="kicker">Desktop app</div>
+        <h2>Mii-nagement: Little Lives, Real Work</h2>
+        <div class="row"><span>Version</span><span class="chip">macOS</span></div>
+        <div class="label">Select an edition</div>
+        <div class="edition">
+          <div><b>Digital</b><small>Mii-nagement.dmg · about 150 MB</small></div>
+          <span class="dl" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
+        </div>
+        <p class="price">Free <small>source on GitHub</small></p>
+        <a class="btn btn-red" href="/download/Mii-nagement.dmg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>Direct download</a>
+        <a class="redlink" href="#get"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 9l-4 3 4 3m8-6l4 3-4 3m-6 4l4-14"/></svg>Build from source on Windows or Linux</a>
+        <p class="note">Not from the App Store, so macOS asks you to allow it once. <a href="#get">How to install</a></p>
+        <p class="note">Runs real coding agents with the Claude Code, Codex or Gemini CLI logins you already have. Or any OpenRouter model.</p>
+      </aside>
+    </div>
+  </section>
+
+  <svg class="wave" viewBox="0 0 1440 44" preserveAspectRatio="none" aria-hidden="true"><path d="M0 44 C 180 0, 360 0, 540 22 S 900 44, 1080 20 S 1350 0, 1440 24 L 1440 44 Z" fill="#f7a528"/></svg>
+  <section class="band-orange" id="how">
+    <div class="wrap center">
+      <div class="portrait">
+        <svg viewBox="0 0 420 290" aria-hidden="true"><path fill="#fff5d2" d="M70 40C120 0 300 -10 360 30c50 34 66 110 44 170-18 50-70 86-150 86-90 0-180-20-220-70C-6 170 10 86 70 40z"/></svg>
+        <img src="residents.jpg" alt="The Residents screen: Carlos the Coder, Jun the Planner and Sydney the Reviewer" width="1280" height="720" loading="lazy">
+        <span class="sticker a" aria-hidden="true">🧑‍💻</span>
+        <span class="sticker b" aria-hidden="true">💬</span>
+      </div>
+      <h2 style="font-size: clamp(28px, 4vw, 40px); max-width: 760px; margin: 0 auto 10px;">Create residents based on teammates, friends, or your own original ideas</h2>
+      <p class="lede">Each resident has a job, four personality sliders and a brain. The island is yours to lay out, and the town plan is the workflow.</p>
+      <div class="trio">
+        <div class="card"><div class="screen" aria-hidden="true">🏝️</div><h3>Found an island</h3><p>Every island is a git repository: a new one, a GitHub clone, or a folder you already have.</p></div>
+        <div class="card"><div class="screen" aria-hidden="true">💬</div><h3>Answer bubbles</h3><p>When a resident needs a decision or permission to run a command, a bubble pops up over their head.</p></div>
+        <div class="card"><div class="screen" aria-hidden="true">📮</div><h3>Ship pull requests</h3><p>Finished work leaves the island at the Post Office as a pull request on GitHub.</p></div>
       </div>
     </div>
-    <div class="row flip">
-      <div class="media"><img src="gazette.jpg" alt="The Sunny Isle Gazette with today's stories and weekly stats" width="1280" height="720" loading="lazy"></div>
-      <div>
-        <h3>Read the island news</h3>
-        <p>Every island prints its own gazette: who shipped what, who fell asleep at the Courthouse, and how many pull requests went out this week.</p>
-        <p>Insights shows packages done per day, the test pass rate and how fast you answer bubbles.</p>
+  </section>
+  <svg class="wave" viewBox="0 0 1440 44" preserveAspectRatio="none" aria-hidden="true" style="transform: scaleY(-1)"><path d="M0 44 C 180 0, 360 0, 540 22 S 900 44, 1080 20 S 1350 0, 1440 24 L 1440 44 Z" fill="#f7a528"/></svg>
+
+  <section class="know wrap">
+    <div class="scene">
+      <div class="list-card c1 peach"><b>Jobs</b><ol><li>1. Planner</li><li>2. Coder</li><li>3. Reviewer</li></ol></div>
+      <div class="faces" aria-hidden="true"><span>🙂</span><span>😴</span><span>🤔</span></div>
+      <div class="list-card c2 blue"><b>Brains</b><ul><li>Claude Code</li><li>Codex</li><li>Gemini CLI</li><li>OpenRouter</li></ul></div>
+      <div class="list-card c3 peach"><b>Moods</b><ul><li>😊 happy</li><li>😤 frustrated</li><li>😴 tired</li></ul></div>
+    </div>
+    <h2>Get to know your residents</h2>
+    <p class="lede">Sliders set how blunt, careful, chatty or creative they are. Their mood changes as they work, they keep a diary, and they ask for help when they're stuck.</p>
+  </section>
+
+  <div class="features wrap">
+    <div class="feature">
+      <div class="blob">
+        <svg viewBox="0 0 400 300" aria-hidden="true"><path fill="#ffe24a" d="M90 40C150 0 300 -10 350 40c40 40 50 120 20 180-30 60-120 90-200 70C70 270 0 200 10 130 16 90 50 60 90 40z"/></svg>
+        <span class="emoji" aria-hidden="true">🧑‍🔧</span>
+      </div>
+      <div class="shot">
+        <div class="frame"><img src="residents.jpg" alt="The Residents screen with three residents and their moods" width="1280" height="720" loading="lazy"></div>
+        <div class="caption"><h3>Befriend your residents</h3><p>Personalities shape how they write, review and argue. Neighbours drop by to help when a package keeps bouncing back.</p><div class="chips"><span>Planner</span><span>Coder</span><span>Reviewer</span></div></div>
       </div>
     </div>
-    <div class="row">
-      <div class="media"><img src="archipelago.jpg" alt="The Archipelago: an island in a blue sea, with room for a new island" width="1280" height="720" loading="lazy"></div>
-      <div>
-        <h3>Grow an archipelago</h3>
-        <p>One island per project, all in the same sea. The "Waiting on you" list gathers every bubble from every island in one place.</p>
+    <div class="feature flip">
+      <div class="blob">
+        <svg viewBox="0 0 400 300" aria-hidden="true"><path fill="#ffe24a" d="M60 60C110 10 250 -10 330 30c50 26 70 90 60 150-10 70-80 120-170 115C120 290 20 240 10 170 2 120 30 90 60 60z"/></svg>
+        <span class="emoji" aria-hidden="true">📰</span>
+      </div>
+      <div class="shot">
+        <div class="frame"><img src="gazette.jpg" alt="The Sunny Isle Gazette with today's stories and weekly stats" width="1280" height="720" loading="lazy"></div>
+        <div class="caption"><h3>Read the island news</h3><p>Every island prints its own gazette: who shipped what, who fell asleep at the Courthouse, and how many pull requests went out this week.</p></div>
+      </div>
+    </div>
+    <div class="feature">
+      <div class="blob">
+        <svg viewBox="0 0 400 300" aria-hidden="true"><path fill="#ffe24a" d="M80 30C140 -5 280 -5 340 40c50 36 60 120 30 180-28 56-110 80-190 70C90 280 10 220 10 150 10 100 40 55 80 30z"/></svg>
+        <span class="emoji" aria-hidden="true">🗺️</span>
+      </div>
+      <div class="shot">
+        <div class="frame"><img src="archipelago.jpg" alt="The Archipelago: an island in a blue sea, with room for a new island" width="1280" height="720" loading="lazy"></div>
+        <div class="caption"><h3>Grow an archipelago</h3><p>One island per project, all in the same sea. The "Waiting on you" list gathers every bubble from every island in one place.</p></div>
       </div>
     </div>
   </div>
-  <svg class="wave bottom" viewBox="0 0 1440 40" preserveAspectRatio="none" aria-hidden="true"><path d="M0 40 C 240 0, 480 0, 720 20 S 1200 40, 1440 10 L 1440 40 Z" fill="#e3f4fb"/></svg>
-</div>
 
-<div class="wrap">
-  <section class="section">
+  <section class="town-section wrap" id="town">
     <h2>Around town</h2>
-    <p class="lede">The classic town plan. Build your own in build mode, and choose which roads a package takes when a step passes or fails.</p>
+    <p class="lede center">The classic town plan. Build your own in build mode, and choose which roads a package takes when a step passes or fails.</p>
     <div class="town">
-      <div class="stop"><span class="n">1</span><b>Mailbox</b><span>Tasks arrive and get planned.</span></div>
-      <div class="stop"><span class="n">2</span><b>Workshop</b><span>The code gets written.</span></div>
-      <div class="stop"><span class="n">3</span><b>Lab</b><span>The tests run.</span></div>
-      <div class="stop"><span class="n">4</span><b>Courthouse</b><span>A reviewer reads the change.</span></div>
-      <div class="stop"><span class="n">5</span><b>Post Office</b><span>Out it goes as a pull request.</span></div>
+      <div class="stop"><span class="n">1</span><div class="e" aria-hidden="true">📬</div><b>Mailbox</b><span>Tasks arrive and get planned.</span></div>
+      <div class="stop"><span class="n">2</span><div class="e" aria-hidden="true">🔨</div><b>Workshop</b><span>The code gets written.</span></div>
+      <div class="stop"><span class="n">3</span><div class="e" aria-hidden="true">🧪</div><b>Lab</b><span>The tests run.</span></div>
+      <div class="stop"><span class="n">4</span><div class="e" aria-hidden="true">⚖️</div><b>Courthouse</b><span>A reviewer reads the change.</span></div>
+      <div class="stop"><span class="n">5</span><div class="e" aria-hidden="true">📮</div><b>Post Office</b><span>Out it goes as a pull request.</span></div>
     </div>
   </section>
 
-  <section class="section" id="get">
-    <div class="getit">
-      <div>
-        <h2>Get the desktop version</h2>
-        <p class="lede">The island runs best on your own computer.</p>
-        <ul class="why">
-          <li>Smooth 3D with the full renderer and textures</li>
-          <li>Real agents, using the Claude Code, Codex or Gemini CLI logins you already have</li>
-          <li>Islands are git repositories on your machine; agents work in their own worktrees</li>
-          <li>Mock mode to try it first, at no cost</li>
-        </ul>
-      </div>
-      <div class="steps">
-        <div class="step">
-          <b>Install uv and Godot 4</b>
-          <div class="code"><code>brew install uv</code><button class="copy" type="button">Copy</button></div>
-          <small>Then Godot 4.4 or newer from <a href="https://godotengine.org/download">godotengine.org</a>. Linux and Windows: see the README.</small>
+  <svg class="wave" viewBox="0 0 1440 44" preserveAspectRatio="none" aria-hidden="true"><path d="M0 44 C 180 0, 360 0, 540 22 S 900 44, 1080 20 S 1350 0, 1440 24 L 1440 44 Z" fill="#d9f0fb"/></svg>
+  <section class="band-sky" id="get">
+    <div class="wrap get">
+      <h2>Get the desktop version</h2>
+      <p class="lede center">The island runs on your own computer, next to your repositories.</p>
+      <div class="getit">
+        <div>
+          <ul class="why">
+            <li>Smooth 3D with the full renderer and textures</li>
+            <li>Real agents, using the Claude Code, Codex or Gemini CLI logins you already have</li>
+            <li>Islands are git repositories on your machine; agents work in their own worktrees</li>
+          </ul>
         </div>
-        <div class="step">
-          <b>Get the code</b>
-          <div class="code"><code>git clone https://github.com/jkusuda/Mii-nagement.git
+        <div class="steps">
+          <div class="step">
+            <b>Download and install</b>
+            <a class="btn" href="/download/Mii-nagement.dmg">Download for Mac (.dmg)</a>
+            <small>Open the .dmg and drag Mii-nagement onto Applications. Apple Silicon and Intel.</small>
+          </div>
+          <div class="step">
+            <b>Open it the first time</b>
+            <span>Double-click Mii-nagement in Applications. macOS says it can't verify the app: click <b style="display:inline">Done</b>. Then open System Settings &gt; Privacy &amp; Security, scroll down to "Mii-nagement was blocked", click <b style="display:inline">Open Anyway</b>, and confirm with your password. You only do this once.</span>
+            <small>The app isn't notarized by Apple (that needs a paid developer account), so macOS asks once. The first launch also sets up its backend, which takes about a minute and needs the internet.</small>
+          </div>
+          <details class="step source">
+            <summary>Windows, Linux, or from source</summary>
+            <div class="step">
+              <b>Install uv and Godot 4</b>
+              <div class="code"><code>brew install uv</code><button class="copy" type="button">Copy</button></div>
+              <small>Then Godot 4.4 or newer from <a href="https://godotengine.org/download">godotengine.org</a>. Linux and Windows: see the README.</small>
+            </div>
+            <div class="step">
+              <b>Get the code</b>
+              <div class="code"><code>git clone https://github.com/jkusuda/Mii-nagement.git
 cd Mii-nagement</code><button class="copy" type="button">Copy</button></div>
-        </div>
-        <div class="step">
-          <b>Start the island</b>
-          <div class="code"><code>make dev</code><button class="copy" type="button">Copy</button></div>
-          <small><code>make dev</code> uses pretend agents; <code>make</code> uses real ones.</small>
+            </div>
+            <div class="step">
+              <b>Start the island</b>
+              <div class="code"><code>make dev</code><button class="copy" type="button">Copy</button></div>
+              <small><code>make dev</code> uses pretend agents; <code>make</code> uses real ones.</small>
+            </div>
+          </details>
         </div>
       </div>
     </div>
   </section>
+  <svg class="wave" viewBox="0 0 1440 44" preserveAspectRatio="none" aria-hidden="true" style="transform: scaleY(-1)"><path d="M0 44 C 180 0, 360 0, 540 22 S 900 44, 1080 20 S 1350 0, 1440 24 L 1440 44 Z" fill="#d9f0fb"/></svg>
 
-  <section class="section about" id="about">
+  <section class="about wrap" id="about">
     <h2>About this project</h2>
     <dl class="specs">
-      <div><dt>Platforms</dt><dd>macOS, Windows, Linux; a lighter browser demo</dd></div>
+      <div><dt>Platforms</dt><dd>macOS app; Windows and Linux from source</dd></div>
       <div><dt>Game</dt><dd>Godot 4 (display and input only)</dd></div>
       <div><dt>Backend</dt><dd>Python, Django + Channels, SQLite or TimescaleDB</dd></div>
       <div><dt>Brains</dt><dd>Claude Code, Codex, Gemini CLI over the Agent Client Protocol; OpenRouter</dd></div>
       <div><dt>Safety</dt><dd>Agents only touch git worktrees of the island's repo; commands wait for your ✋</dd></div>
-      <div><dt>Login</dt><dd>Auth0, for shared servers</dd></div>
       <div><dt>Hosting</dt><dd>Vultr</dd></div>
       <div><dt>Built at</dt><dd>SwampHacks XII</dd></div>
       <div><dt>Price</dt><dd>Free</dd></div>
@@ -378,15 +498,14 @@ cd Mii-nagement</code><button class="copy" type="button">Copy</button></div>
       <a href="https://github.com/jkusuda/Mii-nagement">GitHub</a>
       <a href="https://github.com/jkusuda/Mii-nagement/blob/main/README.md">README</a>
       <a href="https://github.com/jkusuda/Mii-nagement/blob/main/docs/architecture.md">Architecture</a>
-      <a href="/app/">Browser demo</a>
     </div>
   </section>
-</div>
+</main>
 
 <footer>
   <div class="wrap">
     <div class="cols">
-      <div><h4>Play</h4><ul><li><a href="#get">Desktop version</a></li><li><a href="/app/">Browser demo</a></li></ul></div>
+      <div><h4>Play</h4><ul><li><a href="/download/Mii-nagement.dmg">Download for Mac</a></li><li><a href="#get">From source</a></li></ul></div>
       <div><h4>Project</h4><ul><li><a href="https://github.com/jkusuda/Mii-nagement">GitHub</a></li><li><a href="https://github.com/jkusuda/Mii-nagement/blob/main/README.md">README</a></li><li><a href="https://github.com/jkusuda/Mii-nagement/blob/main/TODO.md">Roadmap</a></li></ul></div>
       <div><h4>Learn</h4><ul><li><a href="#how">How it works</a></li><li><a href="https://github.com/jkusuda/Mii-nagement/blob/main/docs/architecture.md">Architecture</a></li><li><a href="https://agentclientprotocol.com">Agent Client Protocol</a></li></ul></div>
       <div><h4>Built at</h4><ul><li>SwampHacks XII</li><li>University of Florida</li></ul></div>
@@ -416,23 +535,6 @@ cd Mii-nagement</code><button class="copy" type="button">Copy</button></div>
   document.querySelector(".arrow.prev").addEventListener("click", () => show(current - 1));
   document.querySelector(".arrow.next").addEventListener("click", () => show(current + 1));
   show(0);
-
-  // Version picker: desktop or browser changes the main button.
-  const editions = {
-    desktop: { cta: "Get the desktop version", href: "#get", alt: "Or try it in your browser", altHref: "/app/",
-      note: "Runs real coding agents with the logins you already have. Smooth 3D, full textures." },
-    web: { cta: "Play in your browser", href: "/app/", alt: "Or get the desktop version", altHref: "#get",
-      note: "Pretend agents, nothing to install. It's slower and loads about 50 MB the first time." },
-  };
-  document.querySelectorAll(".edition button").forEach((button) => {
-    button.addEventListener("click", () => {
-      document.querySelectorAll(".edition button").forEach((b) => b.setAttribute("aria-pressed", b === button ? "true" : "false"));
-      const e = editions[button.dataset.edition];
-      const cta = document.getElementById("main-cta"), alt = document.getElementById("alt-cta");
-      cta.textContent = e.cta; cta.href = e.href; alt.textContent = e.alt; alt.href = e.altHref;
-      document.getElementById("edition-note").textContent = e.note;
-    });
-  });
 
   // Copy buttons: copy the command next to them.
   document.querySelectorAll(".copy").forEach((button) => {

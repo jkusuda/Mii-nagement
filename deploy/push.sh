@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Deploy to the server: export the game for the web, copy it with the backend and the
-# deploy files, and (re)start the containers.   deploy/push.sh root@<server ip>
+# Deploy to the server: copy the backend, the landing page and the deploy files (and the
+# desktop app when built), and (re)start the containers.   deploy/push.sh root@<server ip>
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -15,9 +15,13 @@ if [ "$(setting MOCK_AGENTS)" = "0" ] && { [ -z "$(setting AUTH0_DOMAIN)" ] || [
 fi
 [ "$(setting PUBLIC_DEMO)" = "1" ] || { echo "Set PUBLIC_DEMO=1 in deploy/server.env."; exit 1; }
 
-make web
 rsync -azR --delete \
   --exclude .venv --exclude .worktrees --exclude __pycache__ --exclude '*.db' --exclude .secrets.json \
-  backend deploy game/builds/web "$host:/opt/mii/"
+  backend deploy "$host:/opt/mii/"
+# The desktop app, when one was built (`make app`): the landing page's download button.
+ssh "$host" 'mkdir -p /opt/mii/downloads'
+if [ -f game/builds/macos/Mii-nagement.dmg ]; then
+  rsync -az game/builds/macos/Mii-nagement.dmg "$host:/opt/mii/downloads/"
+fi
 ssh "$host" 'cd /opt/mii/deploy && docker compose --env-file server.env up -d --build && docker compose --env-file server.env ps'
 echo "Deployed: https://$(setting MII_DOMAIN)"

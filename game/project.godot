@@ -17,6 +17,7 @@ config/icon="res://icon.svg"
 
 [autoload]
 
+Launcher="*res://launcher.gd"
 Net="*res://net.gd"
 Islands="*res://islands.gd"
 Clock="*res://clock.gd"
@@ -32,7 +33,6 @@ window/stretch/mode="canvas_items"
 [rendering]
 
 renderer/rendering_method.mobile="gl_compatibility"
-anti_aliasing/quality/msaa_3d.web=2
 
 [shader_globals]
 

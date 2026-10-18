@@ -59,6 +59,11 @@ For development, `make dev` runs the backend with `--reload` and every resident
 on the free mock brain. Other targets: `make server`, `make watch`, `make game`,
 `make test`. If Godot isn't found, pass it: `make GODOT=/path/to/godot`.
 
+**Just want the app?** On a Mac, `make app` builds `game/builds/macos/Mii-nagement.dmg`:
+the game with its own backend inside (`tools/package_mac.sh`, `game/launcher.gd`). It's
+not notarized: the first time macOS refuses it, so go to System Settings > Privacy &
+Security > Open Anyway. The website offers it as a download (`deploy/`).
+
 ## Setup (once, by hand)
 
 You need [uv](https://docs.astral.sh/uv) and [Godot 4](https://godotengine.org/download)

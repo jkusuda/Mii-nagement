@@ -1,18 +1,21 @@
-# Web deployment
+# Website
 
 The website and the backend on one server: a Vultr VM running two containers, the
 backend (`backend.Dockerfile`) and Caddy (`Caddyfile`), which serves the landing page
-(`landing/`, at `/`) and the web export of the game (at `/app/`), forwards the API and
-WebSocket to the backend, and gets the HTTPS certificate. The game finds the backend at
-the address it was loaded from (`net.gd`). The landing page points people to the
-desktop version first: the browser build is lighter and slower.
+(`landing/`, at `/`) and the desktop download (`/download/`), forwards the API and
+WebSocket to the backend, and gets the HTTPS certificate.
+
+The game itself is the desktop app (`make app`, see the README); the server only hosts
+the page, the download, and a backend for HTTP clients.
 
 ## One-time setup
 
-1. **Godot web export templates** (for `make web`): Godot > Editor > Manage Export
-   Templates > Download, or unzip the `web_*` files of the release's `.tpz` into
+1. **Godot macOS export template** (for `make app`): Godot > Editor > Manage Export
+   Templates > Download, or unzip `macos.zip` from the release's `.tpz` into
    `~/Library/Application Support/Godot/export_templates/4.7.2.stable/`.
-2. **Auth0** (login; required when `MOCK_AGENTS=0`), in the Auth0 dashboard:
+2. **Auth0** (login; required when `MOCK_AGENTS=0`; skip it for a mock-mode server). The
+   game has no login screen, so with login on it only sees public islands. In the Auth0
+   dashboard:
    - Applications > APIs > Create API. Its *Identifier* (e.g. `https://mii-nagement/api`)
      is `AUTH0_AUDIENCE`. Signing algorithm RS256.
    - Applications > Create Application > *Native*. Its *Client ID* is `AUTH0_CLIENT_ID`,
@@ -29,10 +32,10 @@ desktop version first: the browser build is lighter and slower.
 
 ## Deploy (and redeploy after changes)
 
+    make app                         # optional, on a Mac: the .dmg behind "Download for Mac"
     deploy/push.sh root@<server ip>
 
-Then open `https://<MII_DOMAIN>/app/`, Log in (the button next to Settings). Only logged-in players can found
-islands; an island is visible to its owner and its members.
+Then open `https://<MII_DOMAIN>`.
 
 ## On the server
 
@@ -47,9 +50,5 @@ volume, so they survive a redeploy.
 
 ## Notes
 
-- The web export is about 50 MB compressed (mostly the building models' meshes), so
-  the first load takes a while; later visits reuse the browser's cache. `make web`
-  makes it lighter than the desktop game (see the Makefile).
-- In a browser, "Use a folder on this computer" is hidden (that would be the server's
-  disk) and attaching files to a package doesn't work yet.
+- The .dmg isn't notarized: the landing page walks people through Open Anyway.
 - `PUBLIC_DEMO=1` locks the Settings screen: settings and keys come from `server.env`.

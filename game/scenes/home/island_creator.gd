@@ -306,8 +306,6 @@ func _show_repo_mode() -> void:
 	for child in _mode_row.get_children():
 		child.queue_free()
 	for mode in REPO_MODES:
-		if mode[0] == "folder" and OS.has_feature("web"):
-			continue  # in a browser, "this computer" is the server: nothing to browse
 		var chip := Button.new()
 		chip.text = mode[1]
 		chip.focus_mode = Control.FOCUS_NONE
