@@ -5,8 +5,7 @@ extends Control
 ## Island work, Brains, API keys, and the Jukebox (Audio: songs and volumes).
 ##
 ## It reads and writes the backend's saved settings and API keys (GET / PUT
-## /settings), logs in when the server has Auth0 on (POST /auth/device, /auth/token;
-## the Account strip under the title), shows which real brains can run on this
+## /settings), shows which real brains can run on this
 ## computer (GET /brains/detail), and OpenRouter's catalogue (GET /models) for the
 ## default model's dropdown.
 ##
@@ -75,11 +74,6 @@ var _disc := Control.new()  # the jukebox's record
 var _song: Label
 var _song_note: Label
 var _play: Button
-var _account := PanelContainer.new()  # shown only when the server has login on
-var _account_text := Label.new()
-var _login := Button.new()
-var _login_page := Button.new()  # opens Auth0's page while a login waits
-var _login_code := ""  # the device_code being polled, "" when not logging in
 var _dialog_for := ""  # which setting the open file dialog fills
 
 
@@ -114,7 +108,6 @@ func _init() -> void:
 	panel.add_child(rows)
 
 	rows.add_child(_header())
-	rows.add_child(_account_strip())
 	var columns := HBoxContainer.new()
 	columns.add_theme_constant_override("separation", 14)
 	rows.add_child(columns)
@@ -414,7 +407,7 @@ func _text_field(key: String, browse := false) -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)
 	row.add_child(edit)
-	if browse and not OS.has_feature("web"):  # in a browser, "this computer" is the server: nothing to browse
+	if browse:
 		var button := _icon_button(FOLDER_ICON, "Browse…")
 		button.pressed.connect(_browse_for.bind(key))
 		_browse[key] = button
@@ -472,12 +465,6 @@ func _icon(texture: Texture2D, tint: Color, px: int) -> TextureRect:
 
 
 func _load() -> void:
-	Net.request_json(
-		"/auth/config",
-		func(ok: bool, data: Dictionary):
-			_account.visible = ok and data.get("enabled", false)
-			_show_account()
-	)
 	Net.request_json(
 		"/settings",
 		func(ok: bool, data: Dictionary):
@@ -681,104 +668,6 @@ func _on_save() -> void:
 			_load_brains(),
 		HTTPClient.METHOD_PUT,
 		{"settings": settings, "secrets": secrets}
-	)
-
-
-# --- Account (login on the server) ---------------------------------------------------
-
-
-## A strip under the title: who is logged in (or why to log in), and the buttons.
-func _account_strip() -> Control:
-	_account.theme_type_variation = &"NoteBox"
-	_account.visible = false
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
-	row.add_child(_icon(USER_ICON, INK, 18))
-	_account_text.theme_type_variation = &"LabelStrong"
-	_account_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_account_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_account_text.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	row.add_child(_account_text)
-	_login.theme_type_variation = &"OutlineButton"
-	_login.custom_minimum_size = Vector2(100, 34)
-	_login.pressed.connect(_on_login_pressed)
-	_login_page.text = "Open the login page"
-	_login_page.theme_type_variation = &"SelectorButton"
-	_login_page.custom_minimum_size.y = 34
-	_login_page.visible = false
-	row.add_child(_login_page)
-	row.add_child(_login)
-	_account.add_child(row)
-	return _account
-
-
-## Who is logged in, or why to log in.
-func _show_account() -> void:
-	if _login_code:
-		return  # a login is waiting; its text stays
-	_login_page.visible = false
-	_login.disabled = false
-	if Net.token:
-		_account_text.text = "Logged in as %s." % (Net.user_name if Net.user_name else "you")
-		_login.text = "Log out"
-	else:
-		_account_text.text = "Log in to found islands and to see your private ones."
-		_login.text = "Log in"
-
-
-## Log out, or start a device login: Auth0 shows a page where the player types a code,
-## and we ask the backend every few seconds whether they did.
-func _on_login_pressed() -> void:
-	if Net.token:
-		Net.log_out()
-		_show_account()
-		return
-	_login.disabled = true
-	Net.request_json(
-		"/auth/device",
-		func(ok: bool, data: Dictionary):
-			if not ok:
-				_login.disabled = false
-				_account_text.text = "Couldn't start the login: %s" % data["error"]
-				return
-			_login_code = str(data["device_code"])
-			var page := str(data["verification_uri_complete"])
-			_account_text.text = (
-				"Check that the login page shows the code %s, then confirm it there." % data["user_code"]
-			)
-			# A button, not an automatic tab: browsers block pages opened without a click.
-			for old in _login_page.pressed.get_connections():
-				_login_page.pressed.disconnect(old["callable"])
-			_login_page.pressed.connect(func(): OS.shell_open(page))
-			_login_page.visible = true
-			_poll_login(float(data.get("interval", 5))),
-		HTTPClient.METHOD_POST,
-		{}
-	)
-
-
-func _poll_login(interval: float) -> void:
-	# Godot concept: create_timer() is a one-shot timer; `await` pauses this function
-	# until its `timeout` signal fires, without freezing the game.
-	await get_tree().create_timer(interval).timeout
-	if not _login_code:
-		return
-	Net.request_json(
-		"/auth/token",
-		func(ok: bool, data: Dictionary):
-			if ok and data.get("pending"):
-				_poll_login(interval)
-				return
-			_login_code = ""
-			if ok:
-				var who = data.get("name") if data.get("name") else data.get("email", "")
-				Net.log_in(str(data["access_token"]), str(who), float(data.get("expires_in", 86400)))
-				_show_account()
-			else:
-				_show_account()
-				_account_text.text = "The login didn't go through (%s). Try again." % data["error"],
-		HTTPClient.METHOD_POST,
-		{"device_code": _login_code}
 	)
 
 

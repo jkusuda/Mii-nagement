@@ -107,4 +107,4 @@ Backend design: [docs/architecture.md](docs/architecture.md).
 - [ ] Mood expressions, body shape ([docs/mii-customization.md](docs/mii-customization.md))
 - [ ] Dreams, parties, apartment interiors
 - [ ] Blueprints (save and share island layouts as workflow templates)
-- [x] Web deployment (Godot web export + backend on a Vultr VM behind Caddy, Auth0 login): `deploy/`
+- [x] Website with a Mac download (`make app`; landing page and backend on a Vultr VM behind Caddy): `deploy/`

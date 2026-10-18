@@ -112,6 +112,7 @@ island. The tests bring their own island (`island` fixture in `tests/conftest.py
 
 | Autoload | File | What it does |
 |---|---|---|
+| `Launcher` | `launcher.gd` | only in the packaged Mac app (`make app`): gets uv, installs and starts the backend inside the app on port 8765, stops it on quit |
 | `Net` | `net.gd` | the WebSocket, `Net.island` (the live snapshot), one signal per event, `send_*` commands, `request_json` for HTTP |
 | `Islands` | `islands.gd` | every island (`GET /islands` + their snapshots) and their 3D thumbnails, for the home screen |
 | `Clock` | `clock.gd` | time of day (+ the dev slider), "Day N", a fallback weather roll |
@@ -368,8 +369,9 @@ lives in `spectator/`; this is not a game message, so protocol.md doesn't list i
 - The public demo (`PUBLIC_DEMO=1`) locks `PUT /settings`, refuses `folder` /
   `existing_repo` on `POST /islands`, and refuses abandoning public islands.
 - With login on, the lookups that use the server's own `gh` and agent CLIs
-  (`/github/*`, `/brains/{brain}/models`) need a token too. The game logs in from
-  Settings (Auth0 device code) and sends the token on every call (`Net.token`).
+  (`/github/*`, `/brains/{brain}/models`) need a token too. The game has no login
+  screen: login is for HTTP clients, and a game connected to a server with login on
+  sees only its public islands.
 - The web deployment (`deploy/README.md`) runs with `PUBLIC_DEMO=1`, and `push.sh`
   refuses real agents there without Auth0.
 

@@ -46,12 +46,9 @@ signal talk_closed(conversation_id: String, message: String)
 signal event_received(event: Dictionary)
 ## Something in `island` changed (after any of the signals above).
 signal island_changed
-## Logged in or out (Auth0, see log_in()): `user_name` and `token` changed.
-signal login_changed
 
 const RECONNECT_SECONDS := 2.0
-const LOGIN_FILE := "user://login.cfg"
-const CLOSE_UNAUTHORIZED := 4401  # the server's close code for an invalid or expired token
+const CONNECT_TIMEOUT_SECONDS := 5.0  # give up on a connection attempt that gets no answer
 const THINKING_KEEP := 400  # entries per task (Net.thinking)
 ## The resident fields the server accepts (docs/protocol.md, create_resident).
 const RESIDENT_FIELDS := [
@@ -77,15 +74,8 @@ const RESIDENT_FIELDS := [
 ## `thinking` events add to it; building_panel.gd loads older ones on demand.
 var thinking := {}
 
-## Set MII_SERVER (e.g. "127.0.0.1:8001") to use another backend. The default is
-## 127.0.0.1, not "localhost": on Windows, localhost can resolve to the IPv6
-## address ::1 first, which the backend (uvicorn on 127.0.0.1) doesn't answer.
-## In a browser (the web export) the backend is the server that served the page.
+## Set MII_SERVER (e.g. "127.0.0.1:8001") to use another backend.
 var url := _server_url()
-
-## The Auth0 access token when logged in (sent on every call), else "".
-var token := ""
-var user_name := ""
 
 var is_online := false
 ## The latest island from the server: the last snapshot, kept up to date with
@@ -99,6 +89,10 @@ var island_id := ""
 
 var _socket := WebSocketPeer.new()
 var _seconds_until_retry := 0.0
+var _seconds_connecting := 0.0
+## True while visit_island() swaps sockets: the backend is still there, so the
+## game doesn't show "offline" unless the new connection fails.
+var _switching := false
 
 
 ## Switch to another island: drop the current connection and reconnect to that
@@ -110,62 +104,25 @@ func visit_island(id: String) -> void:
 	island = {}
 	_socket.close()
 	if is_online:
-		is_online = false
-		disconnected.emit()
+		is_online = false  # no sends until the new socket is open
+		_switching = true
 	island_changed.emit()
 	_try_connect()
 
 
 ## Godot concept: _ready() runs once, when the node enters the scene tree.
 func _ready() -> void:
-	_load_login()
 	_try_connect()
 
 
-## Godot concept: OS.has_feature("web") is true only in the web export, where
-## JavaScriptBridge.eval() runs a line of the page's JavaScript. An https page
-## needs wss://: browsers block plain ws:// there.
+## MII_SERVER, else 127.0.0.1:8000. "localhost" becomes 127.0.0.1: on Windows it
+## resolves to the IPv6 address ::1 first, which the backend (uvicorn on
+## 127.0.0.1) never answers, and the connection hangs instead of failing.
 static func _server_url() -> String:
-	if OS.has_feature("web"):
-		var secure: bool = JavaScriptBridge.eval("location.protocol") == "https:"
-		return "%s://%s/ws" % ["wss" if secure else "ws", JavaScriptBridge.eval("location.host")]
-	return "ws://%s/ws" % (OS.get_environment("MII_SERVER") if OS.has_environment("MII_SERVER") else "127.0.0.1:8000")
-
-
-## Remember a login (POST /auth/token's reply) and reconnect with it.
-func log_in(access_token: String, name: String, expires_in: float) -> void:
-	token = access_token
-	user_name = name
-	var saved := ConfigFile.new()
-	saved.set_value("login", "token", token)
-	saved.set_value("login", "name", user_name)
-	saved.set_value("login", "expires", Time.get_unix_time_from_system() + expires_in)
-	saved.save(LOGIN_FILE)
-	_relogin()
-
-
-func log_out() -> void:
-	token = ""
-	user_name = ""
-	DirAccess.remove_absolute(LOGIN_FILE)
-	_relogin()
-
-
-## The saved login, unless it has expired.
-func _load_login() -> void:
-	var saved := ConfigFile.new()
-	if saved.load(LOGIN_FILE) != OK:
-		return
-	if float(saved.get_value("login", "expires", 0.0)) > Time.get_unix_time_from_system() + 60.0:
-		token = str(saved.get_value("login", "token", ""))
-		user_name = str(saved.get_value("login", "name", ""))
-
-
-## Reconnect so the server sees the new login; Islands lists again on `connected`.
-func _relogin() -> void:
-	login_changed.emit()
-	_socket.close()
-	_seconds_until_retry = 0.0
+	var server := OS.get_environment("MII_SERVER") if OS.has_environment("MII_SERVER") else "127.0.0.1:8000"
+	if server == "localhost" or server.begins_with("localhost:"):
+		server = "127.0.0.1" + server.trim_prefix("localhost")
+	return "ws://%s/ws" % server
 
 
 ## Godot concept: _process(delta) runs every frame. `delta` is the number of
@@ -178,15 +135,22 @@ func _process(delta: float) -> void:
 		WebSocketPeer.STATE_OPEN:
 			if not is_online:
 				is_online = true
+				_switching = false
 				connected.emit()
 			while _socket.get_available_packet_count() > 0:
 				_handle_message(_socket.get_packet().get_string_from_utf8())
 
+		WebSocketPeer.STATE_CONNECTING:
+			# A connection attempt can hang (no answer at all) instead of failing: start over.
+			_seconds_connecting += delta
+			if _seconds_connecting >= CONNECT_TIMEOUT_SECONDS:
+				_socket.close()
+				_try_connect()
+
 		WebSocketPeer.STATE_CLOSED:
-			if token and _socket.get_close_code() == CLOSE_UNAUTHORIZED:
-				log_out()  # expired: the game carries on logged out
-			if is_online:
+			if is_online or _switching:
 				is_online = false
+				_switching = false
 				disconnected.emit()
 			_seconds_until_retry -= delta
 			if _seconds_until_retry <= 0.0:
@@ -205,7 +169,7 @@ func send_resident(resident: Dictionary) -> bool:
 
 ## The backend's HTTP address for `path`, e.g. http_url("/brains").
 func http_url(path: String) -> String:
-	return "http" + url.trim_prefix("ws").trim_suffix("/ws") + path  # ws -> http, wss -> https
+	return url.replace("ws://", "http://").trim_suffix("/ws") + path
 
 
 ## One HTTP call to the backend: `done` is called later with (ok, data), where
@@ -232,8 +196,6 @@ func request_json(path: String, done: Callable, method := HTTPClient.METHOD_GET,
 			done.call(ok, data)
 	)
 	var headers := PackedStringArray(["Content-Type: application/json"] if body != null else [])
-	if token:
-		headers.append("Authorization: Bearer %s" % token)
 	var error := http.request(http_url(path), headers, method, JSON.stringify(body) if body != null else "")
 	if error != OK:
 		http.queue_free()
@@ -297,13 +259,9 @@ func send_talk(
 
 func _try_connect() -> void:
 	_seconds_until_retry = RECONNECT_SECONDS
+	_seconds_connecting = 0.0
 	_socket = WebSocketPeer.new()  # a fresh peer for each attempt
-	var query := []
-	if island_id:
-		query.append("island=%s" % island_id.uri_encode())
-	if token:
-		query.append("token=%s" % token.uri_encode())
-	var error := _socket.connect_to_url(url + ("?" + "&".join(query) if query else ""))
+	var error := _socket.connect_to_url(url + ("?island=%s" % island_id.uri_encode() if island_id else ""))
 	if error != OK:
 		push_warning("Could not start connecting to %s (error %d)" % [url, error])
 
