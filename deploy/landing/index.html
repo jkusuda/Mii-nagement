@@ -144,7 +144,7 @@
   .brains .brain { display: inline-flex; align-items: center; gap: 8px; }
   .brains .brain img { width: 22px; height: 22px; }
 
-  /* The Mac first-launch popup (a <dialog>, opened when the Mac download starts). */
+  /* The first-launch popups (<dialog>s, opened when a download starts): Mac and Windows. */
   .howto { border: 4px solid var(--navy); border-radius: 22px; padding: 0; max-width: 560px; width: calc(100% - 32px); color: var(--ink); box-shadow: 0 6px 0 var(--navy), 0 20px 50px rgba(21, 60, 97, .35); }
   .howto::backdrop { background: rgba(21, 60, 97, .45); }
   .howto .inner { padding: 28px 30px 26px; }
@@ -220,7 +220,7 @@
       <p class="lede">Your repo is an island. Your AI agents are the residents. Give them a task. Get a real GitHub PR.</p>
       <div class="ctas">
         <a class="btn btn-yellow" href="/download/Mii-nagement.dmg" data-howto><img src="brands/apple.svg" alt="" width="20" height="20">Download for Mac</a>
-        <a class="btn" href="/download/Mii-nagement-windows.zip"><img src="brands/windows.svg" alt="" width="18" height="18">Download for Windows</a>
+        <a class="btn" href="/download/Mii-nagement-Setup.exe" data-howto="howto-win"><img src="brands/windows.svg" alt="" width="18" height="18">Download for Windows</a>
       </div>
       <p class="free">Don't pay extra: use your own AI subscription or API key.</p>
 
@@ -285,7 +285,7 @@
         </div>
         <div class="ctas">
           <a class="btn btn-yellow" href="/download/Mii-nagement.dmg" data-howto><img src="brands/apple.svg" alt="" width="20" height="20">Download for Mac</a>
-          <a class="btn" href="/download/Mii-nagement-windows.zip"><img src="brands/windows.svg" alt="" width="18" height="18">Download for Windows</a>
+          <a class="btn" href="/download/Mii-nagement-Setup.exe" data-howto="howto-win"><img src="brands/windows.svg" alt="" width="18" height="18">Download for Windows</a>
         </div>
       </div>
       <div class="steps">
@@ -341,11 +341,26 @@
     <form method="dialog" class="close"><button class="btn btn-yellow btn-small">Got it!</button></form>
   </div>
 </dialog>
+<dialog class="howto" id="howto-win" aria-labelledby="howto-win-title">
+  <div class="inner">
+    <h2 id="howto-win-title">Your download has started!</h2>
+    <p class="why">Mii-nagement isn't signed by Microsoft yet, so the first time Windows asks you to confirm it.</p>
+    <ol>
+      <li><span class="n">1</span><div>Open <b>Mii-nagement-Setup.exe</b>.</div></li>
+      <li><span class="n">2</span><div>If Windows says <b>Windows protected your PC</b>, click <b>More info</b>, then <b>Run anyway</b>.</div></li>
+      <li><span class="n">3</span><div>Click through the installer (no admin password needed) and start <b>Mii-nagement</b> from the Start menu or your desktop.</div></li>
+    </ol>
+    <p class="alt">Everything it needs comes with it: its own Python, Git and Node. Your residents think with the AI you already use: log in to Claude Code, Codex or Gemini once, or add an OpenRouter key in Settings.</p>
+    <form method="dialog" class="close"><button class="btn btn-yellow btn-small">Got it!</button></form>
+  </div>
+</dialog>
 <script>
-  // The Mac download keeps going (the link's normal click); the popup explains the first launch.
-  const howto = document.getElementById("howto");
-  document.querySelectorAll("[data-howto]").forEach((a) => a.addEventListener("click", () => howto.showModal()));
-  howto.addEventListener("click", (e) => { if (e.target === howto) howto.close(); });
+  // The download keeps going (the link's normal click); its popup explains the first launch.
+  // data-howto names the popup: empty for the Mac one (#howto), "howto-win" for Windows.
+  document.querySelectorAll("[data-howto]").forEach((a) =>
+    a.addEventListener("click", () => document.getElementById(a.dataset.howto || "howto").showModal()));
+  document.querySelectorAll("dialog.howto").forEach((d) =>
+    d.addEventListener("click", (e) => { if (e.target === d) d.close(); }));
 </script>
 </body>
 </html>

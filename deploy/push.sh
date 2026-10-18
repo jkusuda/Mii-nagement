@@ -29,10 +29,12 @@ rsync -azR --delete \
   --exclude server.env \
   backend deploy "$host:/opt/mii/"
 [ ! -f deploy/server.env ] || rsync -az deploy/server.env "$host:/opt/mii/deploy/server.env"
-# The desktop app, when one was built (`make app`): the landing page's download button.
+# The desktop apps, when built (`make app`, `make windows`): the landing page's download buttons.
 ssh "$host" 'mkdir -p /opt/mii/downloads'
-if [ -f game/builds/macos/Mii-nagement.dmg ]; then
-  rsync -az game/builds/macos/Mii-nagement.dmg "$host:/opt/mii/downloads/"
-fi
+for built in game/builds/macos/Mii-nagement.dmg game/builds/windows/Mii-nagement-Setup.exe; do
+  if [ -f "$built" ]; then
+    rsync -az "$built" "$host:/opt/mii/downloads/"
+  fi
+done
 ssh "$host" 'cd /opt/mii/deploy && docker compose --env-file server.env up -d --build && docker compose --env-file server.env ps'
 echo "Deployed: https://$(setting MII_DOMAIN)"
