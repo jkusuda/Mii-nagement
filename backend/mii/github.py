@@ -79,8 +79,10 @@ def list_repos(query: str = "", limit: int = 100) -> list[dict]:
 
 
 def list_branches(repo: str) -> list[str]:
-    """Branch names of `owner/name`."""
-    return [line for line in _run([*GH, "api", f"repos/{repo}/branches", "--jq", ".[].name"]).splitlines() if line]
+    """Branch names of `owner/name`, its default branch first (the island creator picks that one)."""
+    names = [line for line in _run([*GH, "api", f"repos/{repo}/branches", "--jq", ".[].name"]).splitlines() if line]
+    default = _run([*GH, "api", f"repos/{repo}", "--jq", ".default_branch"]).strip()
+    return [default, *[n for n in names if n != default]] if default else names
 
 
 def list_issues(repo: str, limit: int = 50) -> list[dict]:

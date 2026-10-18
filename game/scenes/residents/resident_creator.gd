@@ -432,7 +432,7 @@ func _build_brains() -> void:
 			_refresh()  # clears a "Pick a brain first" warning
 	)
 
-	# The brain's models, next to the brain picker (every brain but mock).
+	# The brain's models, next to the brain picker.
 	_model_picker.theme_type_variation = &"OutlineButton"
 	_model_picker.add_theme_icon_override("arrow", ARROW)
 	_model_picker.custom_minimum_size = Vector2(0, 34)
@@ -451,11 +451,11 @@ func _build_brains() -> void:
 	%BrainPicker.add_sibling(_model_picker)
 
 
-## Show the model picker for the picked brain (none for mock or no brain yet), loading that brain's
+## Show the model picker for the picked brain (none until one is picked), loading that brain's
 ## models from GET /brains/{brain}/models the first time.
 func _show_model_picker() -> void:
 	var brain := str(_data["brain"])
-	_model_picker.visible = brain not in ["mock", ""]
+	_model_picker.visible = brain != ""
 	if not _model_picker.visible:
 		return
 	if _models.has(brain):

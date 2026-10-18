@@ -7,8 +7,8 @@ Working rules for Claude Code sessions on this repo. Humans: this is a good shor
 **Mii-nagement**: a Tomodachi Life-style manager for teams of coding agents doing real
 software work (hackathon project). An *island* is a project: a local git repository,
 optionally linked to GitHub. *Residents* have jobs, personality sliders and a *brain*
-(Claude Code, Codex or Gemini CLI over the Agent Client Protocol, an OpenRouter model, or
-`mock`). *Buildings* are workflow steps, *roads* are handoffs (`always` / `pass` /
+(Claude Code, Codex or Gemini CLI over the Agent Client Protocol, or an OpenRouter model).
+*Buildings* are workflow steps, *roads* are handoffs (`always` / `pass` /
 `fail`), and a *task package* travels the roads.
 
 - `backend/`: Python 3.12, uv, Django + Channels, SQLite. Owns **all** logic.
@@ -32,7 +32,6 @@ Run from the repo root (`make help` lists them all):
 make check        # after every change: ruff + backend tests + gdlint/gdformat + Godot script check
 make fmt          # format both halves
 make              # backend + game, for real agents (tools/run.sh; Ctrl+C or closing the game stops both)
-make dev          # backend (--reload) + game with mock brains: development
 make server       # just the backend, http://localhost:8000
 cd backend && uv run pytest tests/test_engine.py -q        # one test file
 cd backend && uv run python manage.py makemigrations mii   # after changing models.py
@@ -63,8 +62,8 @@ binary exists: a missing Godot is skipped, and that looks like a pass.
   keychain go through `asyncio.to_thread` (or `sync_to_async` for ORM code).
 - **Brains:** each ACP brain is one entry in `BRAINS` (`agents/acp.py`); brain-specific
   details stay in the runners, never in the engine, protocol or game.
-- **Real agents are the backend's default** (`MOCK_AGENTS=0`, so a packaged app runs real brains).
-  Mock mode (`MOCK_AGENTS=1`: `make dev` forces it on, the tests use it) must keep working for every feature.
+- **Residents always run real brains.** There is no mock mode; the tests give the engine
+  fake runners (`tests/conftest.py`, `tests/mock_runner.py`).
 - **No built-in islands or demo data:** a fresh database starts empty and the game
   founds the first island. Test data (the "sunny" island) lives in `backend/tests/conftest.py`.
 - **No `.env` required.** Settings go through `PUT /settings` (`prefs.py`); secrets go to

@@ -31,7 +31,7 @@ An island is a project: a local git repository (created, cloned, or adopted when
 island is founded). Buildings are workflow steps, roads are handoffs (`always` / `pass` /
 `fail`), and a task is a package that travels the roads. Each resident has a **brain**:
 Claude Code, Codex or Gemini CLI over the Agent Client Protocol (ACP), any OpenRouter
-model, or the free mock brain (for development). There is no default: every resident is
+model. There is no default: every resident is
 created with a brain picked in the creator.
 
 ## Where to look
@@ -65,8 +65,8 @@ Rules that save time:
 - Never put workflow or agent logic in the game, and never loosen `sandbox.py`'s checks.
 - The engine runs on the event loop: use the async ORM (`aget`, `asave`, `async for`) and
   `asyncio.to_thread` for git, `gh` and keychain calls.
-- Mock mode (`MOCK_AGENTS=1`; the default is 0, real agents) must keep working: it is how
-  `make dev` and the tests run without agents.
+- The tests run without agents: they give the engine fake runners (`ScriptedRunner` in
+  `tests/conftest.py`, `MockRunner` in `tests/mock_runner.py`).
 
 ## Backend map (`backend/mii/`)
 
@@ -88,7 +88,6 @@ Grouped by layer; a module only imports from its own layer or the ones below it.
 | agents | `agents/__init__.py` | `AgentJob`, `StepResult`, `build_prompt`, `parse_verdict`, `permission_for`, `make_runner` | `test_acp.py` |
 | agents | `agents/acp.py` | `AcpRunner` (Claude Code, Codex, Gemini over ACP; one kept agent per resident per task), `BRAINS`, `KEY_FOR_KIND` | `test_acp.py` (with `fake_acp_agent.py`) |
 | agents | `agents/openrouter.py` | `OpenRouterRunner`: a small tool loop over OpenRouter's chat API | `test_openrouter.py` |
-| agents | `agents/mock.py` | `MockRunner`: fake work, random bubbles and outcomes | |
 | agents | `gifts.py` | gifts (MCP servers): the built-in `GIFTS`, the gift shop (MCP Registry search, added gifts), `gift_servers` | `test_gifts.py` |
 | domain | `islands.py` | found / change / abandon islands, build mode's `set_map` | `test_islands.py`, `test_island_map.py` |
 | domain | `island_map.py` | map shapes, `validate_map`, `build_roads` (pure functions) | `test_island_map.py` |
@@ -233,10 +232,11 @@ Bubbles sidebar, and every screen (`show_screen()` shows one).
    - **OpenRouterRunner**: the same contract over OpenRouter's chat API with
      built-in tools.
    Some handlers do more: the **Workshop** commits the worktree after the
-   coder and, with `TEST_COMMAND` set, runs the tests itself before the
+   coder and, with a test command (the island's `test_command`, else the
+   `TEST_COMMAND` setting), runs the tests itself before the
    handoff: a failure goes back to the coder in the same step with the output
    on top (`PRETEST_RETRIES`, 2, at most; the last attempt is left to the Lab),
-   the **Lab** runs `TEST_COMMAND` itself and uses the exit code, the
+   the **Lab** runs that command itself and uses the exit code, the
    **Courthouse** prepends `git diff --stat` and, once the reviewer passes it on
    an island with a GitHub repo, asks you with a ✅ `ready` bubble ("Approve &
    merge" / "Send back"; skipped when the `merge_pr` house rule is off, which
@@ -269,7 +269,6 @@ rules to its own tools (`read`, `edit`, `execute`).
 
 | `Resident.brain` | Runs | How we start it | Pays with |
 |---|---|---|---|
-| `mock` | MockRunner | n/a | free (development and tests) |
 | `claude-code` | Claude Code over ACP | `npx -y @agentclientprotocol/claude-agent-acp` | Claude Pro/Max login, or `ANTHROPIC_API_KEY` |
 | `codex` | Codex over ACP | `npx -y @agentclientprotocol/codex-acp` (bundles Codex) | ChatGPT login (`codex login`), or `OPENAI_API_KEY` |
 | `gemini` | Gemini CLI over ACP | `gemini --experimental-acp` | Google login, or `GEMINI_API_KEY` |
@@ -279,8 +278,7 @@ The three ACP brains share one code path (`agents/acp.py`); only the `BRAINS`
 table entry differs (command, login hint, session modes). The `openrouter`
 brain is the "bring any model without installing a CLI" path: a ~150-line agent
 loop with five tools (list/read/write files inside the worktree, run a command
-after a ✋ bubble, ask the user). `MOCK_AGENTS=1` forces every resident onto
-the mock brain.
+after a ✋ bubble, ask the user).
 
 `Resident.model`: for ACP brains, a model the agent itself offers (set through
 ACP's `model` config option when available, otherwise the agent's default).
@@ -306,8 +304,7 @@ scratch worktree, never in the island's repo); a short name is matched by `pick_
 
 The `judge` setting picks one: `off` = rules; `jev` / `gemini` = that judge when its key is
 set; `auto` (default) = Jev, else Gemini, else rules. A model judge falls back to the rules
-on any error and warns once. Mock mode included: the calls cost a fraction of a cent and
-are the demo. `GET /health` says which judge is active. The judge never decides permissions.
+on any error and warns once. `GET /health` says which judge is active. The judge never decides permissions.
 
 | decision | when | with a model judge | with the rules |
 |---|---|---|---|

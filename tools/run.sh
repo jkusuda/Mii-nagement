@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
-# Run the whole stack and stop it as one: the backend in the background, the game in front. Used by `make` (real agents) and `make dev`.
-#
-#   tools/run.sh            backend + game, real agents (MOCK_AGENTS=0)
-#   tools/run.sh --dev      backend (--reload) + game, mock brains (MOCK_AGENTS=1)
+# Run the whole stack and stop it as one: the backend in the background, the game in front. Used by `make`.
 #
 # Whichever ends first takes the rest down: Ctrl+C, closing the game window, the backend
 # dying, or the terminal going away (SIGHUP). Shutdown is graceful first: the backend gets
@@ -20,8 +17,6 @@ cd "$(dirname "$0")/.."
 PORT=${PORT:-8000}
 GODOT=${GODOT:-}
 UV=${UV:-uv}
-DEV=0
-[ "${1:-}" = "--dev" ] && DEV=1
 
 listeners() { command -v lsof >/dev/null && lsof -t -nP -iTCP:"$PORT" -sTCP:LISTEN 2>/dev/null; }
 
@@ -56,19 +51,13 @@ stop() {
 trap stop EXIT
 trap 'stop; exit 130' INT TERM HUP
 
-# Real agents by default, mock brains with --dev. Exported before the backend starts, so it
-# wins over a root .env and over the saved setting (the environment locks it; see prefs.py).
-if [ $DEV = 1 ]; then export MOCK_AGENTS=1; else export MOCK_AGENTS=0; fi
-
-RELOAD=""
-[ $DEV = 1 ] && RELOAD="--reload"
-# Windows: with --reload, uvicorn picks an event loop that can't start subprocesses, and
-# every agent (and git/test command) is one. The Proactor loop can, with or without reload.
+# Windows: uvicorn's default event loop there can't start subprocesses, and every agent
+# (and git/test command) is one. The Proactor loop can.
 LOOP=""
 [ "${OS:-}" = "Windows_NT" ] && LOOP="--loop asyncio:ProactorEventLoop"
-# shellcheck disable=SC2086  # $RELOAD and $LOOP are empty or flags
+# shellcheck disable=SC2086  # $LOOP is empty or flags
 (cd backend && exec "$UV" run python -m uvicorn mii.asgi:application --port "$PORT" \
-  --timeout-graceful-shutdown 5 $RELOAD $LOOP) &
+  --timeout-graceful-shutdown 5 $LOOP) &
 SERVER=$!
 PIDS+=("$SERVER")
 

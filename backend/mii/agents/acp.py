@@ -171,7 +171,7 @@ def available_brains(
     `saved_keys`: API keys saved in Settings, by environment variable (prefs.secrets_env()).
     """
     saved_keys = saved_keys or {}
-    result: dict[str, dict] = {"mock": {"ok": True, "hint": "free fake work"}}
+    result: dict[str, dict] = {}
     for brain, spec in BRAINS.items():
         installed = shutil.which(spec["needs"]) is not None
         marker = spec["login_marker"]

@@ -64,7 +64,7 @@ async def test_create_keeps_every_creator_field(island):
 )
 async def test_create_rejects_bad_fields(island, bad):
     with pytest.raises(residents.ResidentError):
-        await residents.create_resident("sunny", {"brain": "mock", **bad})  # every other field is fine
+        await residents.create_resident("sunny", {"brain": "claude-code", **bad})  # every other field is fine
 
 
 async def test_create_needs_a_brain(island):
@@ -85,7 +85,7 @@ async def test_resident_can_be_given_buildings(island):
     from mii.models import Building
 
     r = await residents.create_resident(
-        "sunny", {"name": "Mo", "job": "coder", "brain": "mock", "buildings": ["lab", "courthouse"]}
+        "sunny", {"name": "Mo", "job": "coder", "brain": "claude-code", "buildings": ["lab", "courthouse"]}
     )
     assert (await Building.objects.aget(pk="lab")).resident_id == r.id
     assert (await Building.objects.aget(pk="courthouse")).resident_id == r.id
@@ -100,7 +100,7 @@ async def test_websocket_create_broadcasts_resident(island):
     workflow, watcher = make_workflow(ScriptedRunner())
     runtime = type("Runtime", (), {"bus": workflow.bus, "bubbles": workflow.bubbles})()
 
-    msg = {"type": "create_resident", "resident": {"name": "Pip", "job": "coder", "brain": "mock", "color": "#EE7C93"}}
+    msg = {"type": "create_resident", "resident": {"name": "Pip", "job": "coder", "brain": "codex", "color": "#EE7C93"}}
     assert await handle_message(runtime, "sunny", msg) is None
     [event] = watcher.sent
     assert event["type"] == "resident"
@@ -135,12 +135,12 @@ async def test_bus_sends_events_only_to_that_islands_clients(island):
 
 async def test_appearance_is_stored_and_echoed(island):
     look = {"eyes": 2, "hair": "bob", "hair_color": "#4A3426"}
-    r = await residents.create_resident("sunny", {"name": "Mo", "brain": "mock", "appearance": look})
+    r = await residents.create_resident("sunny", {"name": "Mo", "brain": "claude-code", "appearance": look})
     assert (await Resident.objects.aget(pk=r.id)).appearance == look
     sent = next(x for x in (await island_snapshot("sunny", []))["residents"] if x["id"] == r.id)
     assert sent["appearance"] == look and sent["activity"] == ""
     with pytest.raises(residents.ResidentError):
-        await residents.create_resident("sunny", {"name": "Bea", "brain": "mock", "appearance": ["not", "a", "dict"]})
+        await residents.create_resident("sunny", {"name": "Bea", "brain": "codex", "appearance": ["not", "a", "dict"]})
 
 
 async def test_update_island_message_and_request_id_echo(island):

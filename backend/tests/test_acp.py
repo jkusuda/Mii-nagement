@@ -16,7 +16,6 @@ from mii.agents.acp import (
     available_brains,
     describe_command,
 )
-from mii.agents.mock import MockRunner
 
 FAKE_AGENT = Path(__file__).parent / "fake_acp_agent.py"
 
@@ -57,7 +56,7 @@ class AlwaysPass:
 def test_brains_table_has_the_three_vendors():
     assert set(BRAINS) == {"claude-code", "codex", "gemini"}
     brains = available_brains()
-    assert brains["mock"]["ok"] is True
+    assert "mock" not in brains
     assert brains["openrouter"]["ok"] is False
     assert available_brains("sk-or-x")["openrouter"]["ok"] is True
     assert {"ok", "installed", "logged_in", "api_key", "hint"} <= set(brains["codex"])
@@ -68,8 +67,8 @@ def test_brains_count_api_keys_saved_in_settings(monkeypatch):
     assert available_brains(saved_keys={"OPENAI_API_KEY": "sk-1"})["codex"]["api_key"] is True
 
 
-def test_mock_mode_puts_everyone_on_the_mock_brain():
-    assert isinstance(make_runner(mock=True), MockRunner)
+def test_every_brain_gets_a_runner():
+    assert set(make_runner().runners) == {*BRAINS, "openrouter"}
 
 
 async def test_brain_runner_picks_by_resident_brain():

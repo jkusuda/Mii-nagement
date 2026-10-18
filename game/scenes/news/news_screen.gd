@@ -217,7 +217,7 @@ func _story_row(story: Dictionary) -> Control:
 	tag.add_theme_color_override("font_color", story["color"])
 
 	var parts: Array[Control] = [time, avatar, text, tag]
-	if story.has("task") and not Net.island.get("mock_agents", true):  # mock packages have no git branch
+	if story.has("task"):
 		parts.append(_merge_button(story))
 	for part in parts:
 		part.size_flags_vertical = Control.SIZE_SHRINK_CENTER

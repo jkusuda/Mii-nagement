@@ -7,10 +7,10 @@ import shutil
 import pytest
 from conftest import RecordingAsk, db_test, make_job
 from django.test import AsyncClient
+from mock_runner import MockRunner
 
 from mii import gifts, prefs, residents
 from mii.agents.acp import KEY_FOR_KIND, _gifts, _gifts_left_home
-from mii.agents.mock import MockRunner
 from mii.gifts import GIFTS, available_gifts, gift_in, gift_servers, key_for
 from mii.models import DEFAULT_KEYS, Resident, resident_to_dict
 

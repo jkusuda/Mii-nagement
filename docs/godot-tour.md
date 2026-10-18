@@ -113,8 +113,8 @@ looks or sits on its lot*, open its scene in `scenes/buildings/`.
   (`game.gd` `show_screen()` just toggles `visible`). "+ New resident", "Invite a
   resident", and each card's **Edit** open `resident_creator`; the sidebar hides
   so the creator gets the full width. The back button steps back one screen.
-- `resident_data.gd` holds the lists (jobs, brains, sliders, house keys, gifts)
-  and the mock residents shown until the backend sends a snapshot. The vocabulary
+- `resident_data.gd` holds the lists (jobs, brains, sliders, house keys, gifts).
+  The vocabulary
   shared with the backend (building types, bubble kinds...) is in `scenes/protocol.gd`.
 - `mii.tscn` is the 3D Mii: the model plus `mii.gd`, which tints it and plays
   idle / walk / run. `mii_preview.tscn` puts one Mii on its own little stage
@@ -202,7 +202,7 @@ a pond, plants, a season, and each building's lot and facing.
 - Scroll, pinch, or the − / + buttons zoom; click and drag pans. The name pills
   follow their buildings.
 - The connection pill turns green when the backend is running.
-- Once you found an island and send it a package (`make dev` runs it on mock brains),
+- Once you found an island and send it a package,
   residents walk the sand path between buildings, hop while working, show
   "z Z" when asleep, and get an icon over their head when they need you. The
   sidebar fills with their bubbles, and the building pills count who's there.

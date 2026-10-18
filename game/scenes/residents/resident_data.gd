@@ -16,9 +16,8 @@ const JOBS := ["planner", "coder", "reviewer"]
 const JOB_HOMES := {"planner": "Mailbox", "coder": "Workshop", "reviewer": "Courthouse"}
 
 ## Brain id -> label. Must match BRAINS in backend/mii/agents/acp.py, plus
-## `mock` and `openrouter` (backend/mii/agents/openrouter.py).
+## `openrouter` (backend/mii/agents/openrouter.py).
 const BRAINS := {
-	"mock": "Mock · free",
 	"claude-code": "Claude Code",
 	"codex": "Codex",
 	"gemini": "Gemini CLI",

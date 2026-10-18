@@ -11,10 +11,9 @@ from mii.models import BrainUsage, Resident
 pytestmark = db_test
 
 
-async def test_record_adds_up_and_skips_mock_and_nothing():
+async def test_record_adds_up_and_skips_nothing():
     await usage.record("claude-code", turns=1, tokens=1200, cost=0.25)
     await usage.record("claude-code", turns=1, tokens=800)
-    await usage.record("mock", turns=1, tokens=5)
     await usage.record("codex")
     rows = [u async for u in BrainUsage.objects.all()]
     assert [(u.brain, u.turns, u.tokens, u.cost) for u in rows] == [("claude-code", 2, 2000, 0.25)]

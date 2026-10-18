@@ -74,7 +74,9 @@ var _folder_edit: LineEdit  # the path, for "folder" mode
 var _folder_row: HBoxContainer  # _folder_edit + the Browse button
 var _folder_dialog: FileDialog  # the folder picker behind Browse
 var _mode_hint: Label  # one line about the chosen mode
+var _test_edit: LineEdit  # what the Lab runs in this island's repo ("" = the default in Settings)
 var _branch := "main"
+var _typing_branch := false  # "Other…" picked: the text box shows, whatever is typed
 var _plan := "classic"  # the plan card that matches _steps ("" = a custom mix)
 var _steps: Array = IslandLayout.STEP_ORDER.duplicate()
 var _shape := "classic"
@@ -125,7 +127,9 @@ func open() -> void:
 	_repo_mode = "new"
 	_repo = ""
 	_folder_edit.text = ""
+	_test_edit.text = ""
 	_branch = "main"
+	_typing_branch = false
 	_plan = "classic"
 	_steps = IslandLayout.STEP_ORDER.duplicate()
 	_shape = "classic"
@@ -291,6 +295,16 @@ func _build_repo_modes() -> void:
 		right.add_child(nodes[i])
 		right.move_child(nodes[i], at + i)
 
+	# Under the branch: this island's test command, for every kind of code.
+	var test_label := Label.new()
+	test_label.theme_type_variation = &"FieldLabel"
+	test_label.text = "Test command"
+	_test_edit = LineEdit.new()
+	_test_edit.placeholder_text = "e.g. uv run pytest, npm test (empty: the default in Settings)"
+	_test_edit.clear_button_enabled = true
+	right.add_child(test_label)
+	right.add_child(_test_edit)
+
 
 ## Open the folder picker, starting where the field already points.
 func _browse_folder() -> void:
@@ -391,6 +405,8 @@ func _repo_row(r: Dictionary) -> Control:
 	row.pressed.connect(
 		func():
 			_repo = "" if _repo == repo else repo  # click again to unlink
+			_branch = "main"  # until the repo's own branches arrive
+			_typing_branch = false
 			_show_repos()
 			_show_branches([])
 			if _repo:
@@ -430,18 +446,19 @@ func _repo_row(r: Dictionary) -> Control:
 
 func _on_branches(ok: bool, data: Dictionary, asked: int) -> void:
 	if asked == _branch_request:
-		_show_branches(data.get("branches", []) if ok else [])
+		var names: Array = data.get("branches", []) if ok else []
+		if names and not _typing_branch:
+			_branch = str(names[0])  # the backend lists the repo's default branch first
+		_show_branches(names)
 
 
-## Branch chips: main first, a few others, then "Other…" to type one.
+## Branch chips: the repo's default branch first, a few others, then "Other…" to type one.
+## Drawing them never changes _branch: only a click (or the branch list arriving) does.
 func _show_branches(names: Array) -> void:
 	for child in %Branches.get_children():
 		child.queue_free()
-	var chips: Array = ["main"] if names.is_empty() or "main" in names else []
-	chips.append_array(names.filter(func(n): return n != "main").slice(0, 3))
-	if names and "main" not in names:
-		_branch = str(names[0])
-	%BranchEdit.visible = _branch not in chips and _branch != ""
+	var chips: Array = names.slice(0, 4) if names else ["main"]
+	%BranchEdit.visible = _typing_branch or (_branch != "" and _branch not in chips)
 	for b in chips + ["Other…"]:
 		var chip := Button.new()
 		chip.text = b
@@ -450,15 +467,15 @@ func _show_branches(names: Array) -> void:
 		chip.theme_type_variation = &"FilterChipActive" if on else &"FilterChip"
 		chip.pressed.connect(
 			func():
-				if b == "Other…":
-					%BranchEdit.visible = true
+				_typing_branch = b == "Other…"
+				if _typing_branch:
 					%BranchEdit.text = ""
 					_branch = ""
-					%BranchEdit.grab_focus()
 				else:
 					_branch = b
-					%BranchEdit.visible = false
 				_show_branches(names)
+				if _typing_branch:
+					%BranchEdit.grab_focus()
 		)
 		%Branches.add_child(chip)
 
@@ -760,7 +777,12 @@ func _found() -> void:
 	_busy = true
 	_refresh()
 	var body := {
-		"name": %NameEdit.text.strip_edges(), "shape": _shape, "steps": _steps, "season": _season, "rules": _rules
+		"name": %NameEdit.text.strip_edges(),
+		"shape": _shape,
+		"steps": _steps,
+		"season": _season,
+		"rules": _rules,
+		"test_command": _test_edit.text.strip_edges(),
 	}
 	match _repo_mode:
 		"github":  # the backend clones it (can take a while; Net.request_json has no timeout)

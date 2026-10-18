@@ -17,7 +17,6 @@ A conversation (`talk_open` ... `talk_close`):
 Every turn is stored per building (Event rows of type `talk_turn`, never broadcast, kept
 out of News) for the talk scene's history: GET /islands/{id}/talks?building=<id>.
 A `talk` without a conversation is answered one-off (its own worktree and agent).
-Mock mode answers with a canned line (agents/mock.py).
 """
 
 import asyncio
@@ -129,7 +128,7 @@ async def open_conversation(runtime, island_id: str, message: dict, send: SendFn
         _conversations[conv_id] = conv
         runtime.workflow.holds.hold(resident.id)
         conv.watchdog = asyncio.create_task(_expire(runtime, conv))
-        if runtime.sandboxes is not None and resident.brain != "mock":
+        if runtime.sandboxes is not None:
             try:
                 conv.sandbox = runtime.sandboxes.for_island(island)
                 conv.workdir = await asyncio.to_thread(conv.sandbox.create_worktree, conv.worktree_id, island.branch)
@@ -287,7 +286,7 @@ async def _one_off(runtime, resident, island, building, talk_id, history, text, 
     runner = runtime.workflow.runner
     sandbox, workdir = None, None
     worktree_id = f"talk-{uuid.uuid4().hex[:8]}"
-    if runtime.sandboxes is not None and resident.brain != "mock":
+    if runtime.sandboxes is not None:
         try:
             sandbox = runtime.sandboxes.for_island(island)
             workdir = await asyncio.to_thread(sandbox.create_worktree, worktree_id, island.branch)

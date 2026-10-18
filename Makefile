@@ -2,8 +2,7 @@
 #
 #   make           same as `make up`: backend (no reload) + the game, for real agents
 #   make setup     install deps (first time; also run by `make up`). No .env needed.
-#   make up        backend + game with real agents (sets MOCK_AGENTS=0, whatever .env or the settings say)
-#   make dev       backend (--reload) + game with mock brains: development
+#   make up        backend + game
 #   make server    just the backend (http://localhost:8000)
 #   make watch     print the live event stream (needs the backend)
 #   make game      just the game
@@ -29,12 +28,12 @@ UVICORN_LOOP := $(if $(filter Windows_NT,$(OS)),--loop asyncio:ProactorEventLoop
 # Find Godot: $GODOT, then `godot` on PATH, then the macOS app bundle.
 GODOT ?= $(shell command -v godot 2>/dev/null || ([ -x /Applications/Godot.app/Contents/MacOS/Godot ] && echo /Applications/Godot.app/Contents/MacOS/Godot))
 
-.PHONY: all help up dev setup server watch game check lint fmt test godot-check check-tools app
+.PHONY: all help up setup server watch game check lint fmt test godot-check check-tools app
 
 all: up
 
 help:
-	@sed -n '2,19p' Makefile | sed 's/^#//'
+	@sed -n '2,18p' Makefile | sed 's/^#//'
 
 check-tools:
 	@command -v $(UV) >/dev/null || { echo "uv is missing. macOS: brew install uv   Linux: curl -LsSf https://astral.sh/uv/install.sh | sh   Windows: winget install astral-sh.uv"; exit 1; }
@@ -55,17 +54,11 @@ game:
 	@[ -n "$(GODOT)" ] || { echo "Godot not found (set GODOT=/path/to/godot)"; exit 1; }
 	"$(GODOT)" --path game
 
-# Both run tools/run.sh: the backend in the background, the game in front.
-# Ctrl+C, closing the game, or the backend dying stops everything; nothing stays on the port.
-
-# Real agents (the default `make`): no --reload (editing the code would restart the
-# server and stop a running task).
+# tools/run.sh: the backend in the background, the game in front. Ctrl+C, closing the
+# game, or the backend dying stops everything; nothing stays on the port. No --reload:
+# editing the code would restart the server and stop a running task.
 up: setup
 	@PORT=$(PORT) GODOT="$(GODOT)" UV="$(UV)" tools/run.sh
-
-# Mock-mode development: backend (--reload), every resident on the free mock brain.
-dev: setup
-	@PORT=$(PORT) GODOT="$(GODOT)" UV="$(UV)" tools/run.sh --dev
 
 # --- Checks -----------------------------------------------------------------------
 

@@ -1,4 +1,4 @@
-"""MockRunner: fakes agent work for free, so the whole app runs without any agents."""
+"""MockRunner: a test fake that does pretend agent work (activity, bubbles, random outcomes)."""
 
 import asyncio
 import random

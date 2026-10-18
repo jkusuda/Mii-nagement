@@ -208,7 +208,7 @@ def require_worktree(job) -> str | None:
     `job` is an agents.AgentJob; every runner that starts a process calls this first.
     """
     if job.sandbox is None or job.workdir is None:
-        return f"The {job.resident.brain} brain needs a worktree (MOCK_AGENTS=0 and an island repository)."
+        return f"The {job.resident.brain} brain needs a worktree (an island repository)."
     try:
         job.sandbox.check_workdir(job.workdir)
     except SandboxError as e:

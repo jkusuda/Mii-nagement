@@ -26,7 +26,6 @@ class Runtime:
     """Built from defaults; start() and reload() apply the saved settings (prefs.py)."""
 
     def __init__(self):
-        self.mock_agents = config.mock_agents
         self.sandboxes = None
         self.bus = events.EventBus()
         self.bubbles = events.Bubbles(self.bus)
@@ -36,7 +35,7 @@ class Runtime:
         self.workflow = WorkflowEngine(
             self.bus,
             self.bubbles,
-            make_runner(True),
+            make_runner(),
             sandboxes=None,
             judge=self.judge,
             walk_seconds=config.walk_seconds,
@@ -56,18 +55,16 @@ class Runtime:
         await sync_to_async(self._ensure_island_repos)()
         await self.workflow.recover()
         self.worker = asyncio.create_task(self.workflow.run_forever())
-        log.info("Mii-nagement ready (%s agents)", "MOCK" if self.mock_agents else "REAL")
+        log.info("Mii-nagement ready")
 
     async def reload(self) -> dict:
         """Re-read settings + secrets and apply them. Takes effect from the next task. Returns the snapshot."""
         snap = await sync_to_async(prefs.snapshot)()
         settings = snap["settings"]
-        self.mock_agents = settings["mock_agents"]
-        # Mock mode never cuts worktrees; real mode works in worktrees of each island's repo.
-        self.sandboxes = None if self.mock_agents else Sandboxes(config.worktree_root)
+        # Residents work in worktrees of each island's repo.
+        self.sandboxes = Sandboxes(config.worktree_root)
         self.workflow.sandboxes = self.sandboxes
         self.workflow.runner = make_runner(
-            self.mock_agents,
             openrouter_api_key=await sync_to_async(prefs.secret)("openrouter_api_key"),  # keychain: off the loop
             openrouter_model=settings["openrouter_model"],
         )
@@ -75,7 +72,7 @@ class Runtime:
         self.workflow.keep_worktrees = settings["keep_worktrees"]
         self.workflow.parallel = settings["parallel_packages"]
         self.workflow.master_key = settings["master_key"]
-        # The judge (moods, missing verdicts, flaky re-runs, tips, help), in mock mode too.
+        # The judge (moods, missing verdicts, flaky re-runs, tips, help).
         await self.judge.aclose()
         self.judge = await self._pick_judge(str(settings.get("judge") or "auto").lower(), settings["judge_model"])
         self.workflow.judge = self.judge

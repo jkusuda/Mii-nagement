@@ -6,10 +6,10 @@ from types import SimpleNamespace
 
 import pytest
 from conftest import FakeClient, ScriptedRunner, db_test, make_job, make_workflow
+from mock_runner import MockRunner
 
 from mii import talk
 from mii.agents import StepResult, build_prompt, parse_verdict
-from mii.agents.mock import MockRunner
 from mii.consumers import handle_message
 from mii.models import Island, Resident
 

@@ -1,7 +1,6 @@
 """Agent runners: run one resident on one step of one task.
 
 A resident's `brain` decides which runner does the work:
-- "mock"                             -> MockRunner (free, fake work; the default)
 - "claude-code" / "codex" / "gemini" -> AcpRunner (a real coding agent over ACP, on your subscription)
 - "openrouter"                       -> OpenRouterRunner (any OpenRouter model, no CLI needed)
 
@@ -64,8 +63,8 @@ class AgentJob:
     island: Island | None = None  # the task's island (repo, branch, rules); None in runner unit tests
     attempt: int = 1  # 2+ means the package came back here after a fail
     history: list[str] = field(default_factory=list)  # notes from earlier steps
-    workdir: Path | None = None  # the task's worktree (None in mock mode)
-    sandbox: "Sandbox | None" = None  # the island's Sandbox, for path checks (None in mock mode)
+    workdir: Path | None = None  # the task's worktree (None when the engine has no sandboxes, as in tests)
+    sandbox: "Sandbox | None" = None  # the island's Sandbox, for path checks
     read_only: bool = False  # True at buildings where the resident must not change files
     rules: dict = field(default_factory=dict)  # the island's house rules (see permission_for)
     master_key: bool = False  # the `master_key` setting: every "ask" house key counts as "yes"
@@ -280,17 +279,12 @@ class BrainRunner:
             await prepare(runner, job)
 
 
-def make_runner(
-    mock: bool, *, openrouter_api_key: str | None = None, openrouter_model: str = DEFAULT_MODEL
-) -> AgentRunner:
-    """MOCK_AGENTS=1 puts every resident on the mock brain, whatever they're set to."""
+def make_runner(*, openrouter_api_key: str | None = None, openrouter_model: str = DEFAULT_MODEL) -> AgentRunner:
+    """One runner per brain, picked by each resident's `brain`."""
     from mii.agents.acp import BRAINS, AcpRunner
-    from mii.agents.mock import MockRunner
     from mii.agents.openrouter import OpenRouterRunner
 
-    if mock:
-        return MockRunner()
-    runners: dict[str, AgentRunner] = {"mock": MockRunner()}
+    runners: dict[str, AgentRunner] = {}
     for brain in BRAINS:
         runners[brain] = AcpRunner(brain)
     runners["openrouter"] = OpenRouterRunner(openrouter_api_key, openrouter_model)

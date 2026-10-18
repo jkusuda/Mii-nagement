@@ -87,7 +87,7 @@ Backend design: [docs/architecture.md](docs/architecture.md).
 - [x] ACP residents ask questions (`QUESTION:` line -> ❓ bubble -> answer in the same session)
 - [ ] Several packages at once on one island
 - [x] The judge (`judge.py`): moods, missing verdicts, flaky Lab re-runs, Insights tip, who helps.
-      Rules by default; TypeSafe Jev with a `typesafe_api_key` (mock mode too)
+      Rules by default; TypeSafe Jev with a `typesafe_api_key`
 - [x] Residents help each other: `HELP:` → a free neighbour walks over and does the step; `SAY TO <Name>:`
       notes; `REMEMBER:` diary; `chat` events. Game: speech lines, mood words on the island
 - [x] Island life (game only): idle residents stroll, visit friends and chat, gaze at the pond, mutter, wave,

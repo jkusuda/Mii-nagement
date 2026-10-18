@@ -96,7 +96,7 @@ actually do. The look stayed the same.
 |---|---|---|
 | Name, job, catchphrase, 4 sliders | already exist | `personality.build_system_prompt()`, the first ACP prompt |
 | Colour | `color` (exists) | the game only |
-| Brain | `brain` (exists): `mock`, `claude-code`, `codex`, `gemini` | which `BRAINS` command `AcpRunner` starts. The creator greys out brains `GET /brains` says aren't installed. |
+| Brain | `brain` (exists): `claude-code`, `codex`, `gemini`, `openrouter` | which `BRAINS` command `AcpRunner` starts. The creator greys out brains `GET /brains` says aren't installed. |
 | Model | `model` (exists, `null` = default) | ACP session config, where the agent supports picking a model |
 | **House keys** | new `keys` JSON: `{"read": "yes", "edit": "ask", "execute": "ask", "fetch": "no"}` | `AcpRunner`'s `session/request_permission` handler. Look up the tool call's `kind`: **yes** answers with the agent's "allow once" option by itself, **ask** shows a ✋ bubble (today's behaviour), **no** answers "reject". |
 | **Gifts** | new `gifts` JSON list, e.g. `["browser", "docs"]` | `mcpServers` in ACP `session/new`. Add a `GIFTS` table next to `BRAINS` (gift id → MCP server command), so the game only ever sends ids. |

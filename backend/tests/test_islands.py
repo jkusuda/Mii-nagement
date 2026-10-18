@@ -7,7 +7,7 @@ import pytest
 from asgiref.sync import sync_to_async
 from conftest import db_test, make_git_repo
 
-from mii import github, islands, residents
+from mii import github, islands, repos, residents
 from mii.models import Building, Island, Road, island_snapshot
 
 pytestmark = db_test
@@ -48,6 +48,7 @@ async def test_found_classic_island_with_buildings_roads_and_a_repo(island, repo
     assert (path / "README.md").read_text().startswith("# Fern Harbor")
     log = subprocess.run(["git", "-C", str(path), "log", "--oneline"], capture_output=True, text=True).stdout
     assert "New island" in log
+    assert repos.current_branch(path) == "develop"  # residents branch off a branch that exists
 
     snap = await island_snapshot(new.id, [])
     assert sorted(b["type"] for b in snap["buildings"]) == ["courthouse", "lab", "mailbox", "post_office", "workshop"]
@@ -58,12 +59,21 @@ async def test_found_classic_island_with_buildings_roads_and_a_repo(island, repo
     # Same name again gets its own id and folder.
     again = await found({"name": "Fern Harbor"})
     assert again.id == "fern_harbor_2" and Path(again.repo_path) != path
+    assert again.branch == "main" == repos.current_branch(Path(again.repo_path))  # not git's own default
 
 
 def test_quick_fixes_plan_is_smaller(island):
     new = islands.create_island({"name": "Quick", "plan": "quick_fixes"})
     assert {b.type for b in Building.objects.filter(island_id=new.id)} == {"mailbox", "workshop", "post_office"}
     assert Road.objects.filter(island_id=new.id).count() == 2
+
+
+def test_each_island_has_its_own_test_command(island):
+    new = islands.create_island({"name": "Tested", "test_command": "  npm test  "})
+    assert new.test_command == "npm test" and islands.create_island({"name": "Plain"}).test_command == ""
+    assert islands.update_island(new.id, {"test_command": "cargo test"}).test_command == "cargo test"
+    with pytest.raises(islands.IslandError, match="one line"):
+        islands.update_island(new.id, {"test_command": "a\nb"})
 
 
 def test_found_in_a_chosen_folder_or_adopt_an_existing_repo(island, tmp_path):
@@ -102,17 +112,17 @@ def test_found_refuses_a_non_empty_folder(island, tmp_path):
 async def test_new_residents_move_into_their_islands_buildings(island):
     found = sync_to_async(islands.create_island)
     new = await found({"name": "Fern Harbor"})
-    coder = await residents.create_resident(new.id, {"name": "Pip", "job": "coder", "brain": "mock"})
+    coder = await residents.create_resident(new.id, {"name": "Pip", "job": "coder", "brain": "claude-code"})
     assert coder.building_id == "fern_harbor_workshop"
     works = {b.type: b.resident_id async for b in Building.objects.filter(island_id=new.id)}
     assert works["workshop"] == coder.id and works["lab"] == coder.id and works["mailbox"] is None
     # A second coder doesn't take over.
-    await residents.create_resident(new.id, {"name": "Juniper", "job": "coder", "brain": "mock"})
+    await residents.create_resident(new.id, {"name": "Juniper", "job": "coder", "brain": "claude-code"})
     assert (await Building.objects.aget(pk="fern_harbor_workshop")).resident_id == coder.id
     # A reviewer on an island without a courthouse still gets a home.
     quick = await found({"name": "Quick", "plan": "quick_fixes"})
     assert (
-        await residents.create_resident(quick.id, {"name": "Bea", "job": "reviewer", "brain": "mock"})
+        await residents.create_resident(quick.id, {"name": "Bea", "job": "reviewer", "brain": "claude-code"})
     ).building_id is not None
 
 

@@ -45,6 +45,8 @@ class Island(models.Model):
     # House rules (vocab.RULES), True = ask me first: merge_pr (Courthouse approval),
     # install_packages and shell (tighten the residents' house keys).
     rules = models.JSONField(default=dict)
+    # What the Lab runs in this island's repo (e.g. `uv run pytest`). "" = the TEST_COMMAND setting.
+    test_command = models.CharField(max_length=500, blank=True, default="")
     created_at = models.DateTimeField(default=utcnow)  # "Day 1" in the game
     # Land tiles, pond, plants, season: see island_map.py. {} = the classic island.
     map = models.JSONField(default=dict)
@@ -66,7 +68,7 @@ class Resident(models.Model):
     chattiness = models.FloatField(default=0.5)
     creativity = models.FloatField(default=0.5)
 
-    brain = models.CharField(max_length=50)  # mock | claude-code | codex | gemini | openrouter; no default
+    brain = models.CharField(max_length=50)  # claude-code | codex | gemini | openrouter; no default
     model = models.CharField(max_length=200, null=True, blank=True)  # model override; None = the brain's default
     catchphrase = models.CharField(max_length=200, blank=True, default="")
     color = models.CharField(max_length=20, default="#FFFFFF")
@@ -252,6 +254,7 @@ def island_to_dict(i: Island) -> dict:
         "branch": i.branch,
         "plan": i.plan,
         "rules": i.rules,
+        "test_command": i.test_command,
         "created_at": i.created_at.isoformat(),
         "owner": i.owner,
         "members": i.members,

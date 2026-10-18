@@ -62,7 +62,7 @@ echoed by the backend; the game owns its meaning).
 ```bash
 make check                          # lint + backend tests + Godot script check (fails on script errors)
 make fmt                            # gdformat + ruff format
-make dev                            # backend + game on mock brains: found an island, send packages
+make                                # backend + game: found an island, send packages
 # Godot not on PATH or in /Applications? Add GODOT=/path/to/Godot to any make command.
 ```
 

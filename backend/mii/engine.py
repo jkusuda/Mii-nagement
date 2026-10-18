@@ -121,9 +121,9 @@ class Mailbox(BuildingHandler):
 class Workshop(BuildingHandler):
     """The coder implements the plan in the task's worktree, then the engine commits it.
 
-    With TEST_COMMAND set, the engine then runs the tests itself before the handoff. A
-    failure goes straight back to the coder in this same step (PRETEST_RETRIES times at
-    most), so a red test doesn't cost a whole Workshop -> Lab -> Workshop trip. The last
+    With a test command (the island's, else TEST_COMMAND), the engine then runs the tests
+    itself before the handoff. A failure goes straight back to the coder in this same step
+    (PRETEST_RETRIES times at most), so a red test doesn't cost a whole Workshop -> Lab -> Workshop trip. The last
     attempt is left for the Lab to test.
     """
 
@@ -139,11 +139,12 @@ class Workshop(BuildingHandler):
     async def run(self, job: AgentJob, runner: AgentRunner, engine: "WorkflowEngine") -> StepResult:
         result = await self._code(job, runner, engine)
         asked, failing = job.instructions, None
+        command = engine.test_command_for(job.island)
         for retry in range(1, PRETEST_RETRIES + 1):
-            if result.outcome != "pass" or not (engine.test_command and job.workdir):
+            if result.outcome != "pass" or not (command and job.workdir):
                 break
-            await job.report(f"Checking before the handoff: {engine.test_command}")
-            code, output = await run_shell(engine.test_command, job.workdir, timeout=engine.step_timeout)
+            await job.report(f"Checking before the handoff: {command}")
+            code, output = await run_shell(command, job.workdir, timeout=engine.step_timeout)
             if code == 0:
                 result.summary += " The tests pass."
                 break
@@ -174,7 +175,7 @@ class Workshop(BuildingHandler):
 class Lab(BuildingHandler):
     """Tests run here. Pass goes on to review; fail goes back to the workshop.
 
-    With TEST_COMMAND set (real mode) the engine runs the command itself and the
+    With a test command (the island's, else TEST_COMMAND; real mode) the engine runs it itself and the
     exit code decides. Otherwise the resident is asked to run the tests.
     """
 
@@ -184,11 +185,12 @@ class Lab(BuildingHandler):
         return f"Run the project's tests for: {task.title}"
 
     async def run(self, job: AgentJob, runner: AgentRunner, engine: "WorkflowEngine") -> StepResult:
-        if not (engine.test_command and job.workdir):
+        command = engine.test_command_for(job.island)
+        if not (command and job.workdir):
             return await runner.run(job)
-        await job.report(f"Running: {engine.test_command}")
+        await job.report(f"Running: {command}")
         started = time.monotonic()
-        code, output = await run_shell(engine.test_command, job.workdir, timeout=engine.step_timeout)
+        code, output = await run_shell(command, job.workdir, timeout=engine.step_timeout)
         tail = _tail(output)
         if code == 0:
             return StepResult("pass", f"Tests passed.\n{tail}".strip())
@@ -200,7 +202,7 @@ class Lab(BuildingHandler):
             stat = await asyncio.to_thread(job.sandbox.diff_stat, job.task.id) if job.sandbox else ""
             if await engine.judge.flaky(output, stat) >= FLAKY_RERUN_AT:
                 await job.report("That failure looks flaky; running the tests once more")
-                code, output = await run_shell(engine.test_command, job.workdir, timeout=left - 1.0)
+                code, output = await run_shell(command, job.workdir, timeout=left - 1.0)
                 tail = _tail(output)
                 if code == 0:
                     return StepResult(
@@ -422,7 +424,7 @@ class WorkflowEngine:
         bubbles: events.Bubbles,
         runner: AgentRunner,
         *,
-        sandboxes: Sandboxes | None = None,  # None in mock mode: no git at all
+        sandboxes: Sandboxes | None = None,  # None (tests): no git at all
         walk_seconds: float = 2.0,
         bubble_timeout: float = 30.0,
         permission_timeout: float | None = None,  # None = bubble_timeout
@@ -488,6 +490,10 @@ class WorkflowEngine:
         await self.queue.put(task.id)
         return task
 
+    def test_command_for(self, island: Island | None) -> str | None:
+        """What the Lab runs on this island: its own test command, else the TEST_COMMAND setting."""
+        return (island.test_command if island else "") or self.test_command
+
     async def cancel(self, task_id: str) -> Task:
         """Cancel a queued task, or stop the one running (its resident drops the package).
 
@@ -522,7 +528,7 @@ class WorkflowEngine:
             raise ValueError("only a delivered package with a branch can be merged")
         island = await Island.objects.aget(pk=task.island_id)
         if self.sandboxes is None:
-            raise ValueError("mock mode doesn't use git, so there is nothing to merge")
+            raise ValueError("this server doesn't use git, so there is nothing to merge")
         sandbox = self.sandboxes.for_island(island)
         async with self._git:
             branch, conflicts = await asyncio.to_thread(sandbox.merge_into_checkout, task.id, self.git_author)
@@ -650,6 +656,7 @@ class WorkflowEngine:
     async def _drop_package(self, task_id: str) -> Task:
         """cancel() stopped this task mid-step: the resident puts the package down."""
         task = await self._update(Task, task_id, status="cancelled", finished_at=utcnow())
+        await self.bubbles.drop_task(task_id)
         if task.agent_id:
             resident = await self._get(Resident, task.agent_id)
             await self._set_mood(resident, "confused")

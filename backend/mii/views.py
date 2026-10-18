@@ -85,10 +85,10 @@ async def _island_or_404(island_id: str) -> Island | JsonResponse:
 
 
 async def _snapshot(island_id: str) -> dict:
-    """The snapshot event's `island`, including `mock_agents`. Raises Island.DoesNotExist."""
+    """The snapshot event's `island`. Raises Island.DoesNotExist."""
     runtime = get_runtime()
     island = await island_snapshot(island_id, runtime.bubbles.for_island(island_id))
-    return events.snapshot(island, runtime.mock_agents)["island"]
+    return events.snapshot(island)["island"]
 
 
 @require_GET
@@ -97,7 +97,6 @@ async def health(request: HttpRequest) -> JsonResponse:
     return JsonResponse(
         {
             "ok": True,
-            "mock_agents": runtime.mock_agents,
             "judge": runtime.judge.name,
             "database": metrics.database(),  # sqlite | postgres | timescale
         }
@@ -218,7 +217,7 @@ async def gift_view(request: HttpRequest, gift: str) -> JsonResponse:
         else:
             runtime = get_runtime()
             for island_id in await gifts.remove(gift):  # their residents lost the gift: redraw
-                await runtime.bus.emit(island_id, events.snapshot(await _snapshot(island_id), runtime.mock_agents))
+                await runtime.bus.emit(island_id, events.snapshot(await _snapshot(island_id)))
     except gifts.GiftError as e:
         return _error(str(e), 400)
     return JsonResponse(await asyncio.to_thread(gifts.available_gifts))
@@ -406,7 +405,7 @@ async def tasks_view(request: HttpRequest, island_id: str) -> JsonResponse:
 
     A posted task is queued and run by the engine worker: each building's resident
     does their step through their brain (Claude Code, Codex, Gemini over ACP, or
-    OpenRouter; the mock brain while `mock_agents` is on). Follow it over the
+    OpenRouter). Follow it over the
     WebSocket, or poll GET /islands/{id}/tasks/{task_id}.
     """
     island = await _island_or_404(island_id)
@@ -575,7 +574,7 @@ async def layout_view(request: HttpRequest, island_id: str) -> JsonResponse:
             return _error(str(e), 400)
         runtime = get_runtime()
         snapshot = await _snapshot(island_id)
-        await runtime.bus.emit(island_id, events.snapshot(snapshot, runtime.mock_agents))  # every client redraws
+        await runtime.bus.emit(island_id, events.snapshot(snapshot))  # every client redraws
         return JsonResponse(snapshot)
     try:
         buildings, roads = layout.clean_layout(island_id, body)

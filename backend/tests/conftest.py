@@ -82,7 +82,7 @@ class RecordingReport:
 
 
 def make_job(
-    brain: str = "mock",
+    brain: str = "claude-code",
     workdir: Path | None = None,
     building_type: str = "lab",
     instructions: str = "",
@@ -242,7 +242,6 @@ def fake_runtime(monkeypatch):
         bubbles=workflow.bubbles,
         bus=workflow.bus,
         judge=workflow.judge,
-        mock_agents=True,
         reload=reload,
         client=client,
     )

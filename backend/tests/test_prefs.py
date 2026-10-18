@@ -65,16 +65,16 @@ def no_env(monkeypatch):
 
 @db_test
 def test_settings_default_then_saved_then_env(no_env, monkeypatch):
-    assert prefs.get("mock_agents") is False and prefs.get("test_command") is None  # real agents by default
+    assert prefs.get("keep_worktrees") is False and prefs.get("test_command") is None
     assert prefs.get("master_key") is False  # residents ask until you hand over the master key
-    prefs.set_many({"mock_agents": True, "test_command": "  pytest -q  ", "islands_root": "~/isles"})
-    assert prefs.get("mock_agents") is True
+    prefs.set_many({"keep_worktrees": True, "test_command": "  pytest -q  ", "islands_root": "~/isles"})
+    assert prefs.get("keep_worktrees") is True
     assert prefs.get("test_command") == "pytest -q"
     root = Path(prefs.get("islands_root"))
     assert root.name == "isles" and "~" not in str(root)
-    monkeypatch.setenv("MOCK_AGENTS", "0")  # the environment wins
-    assert prefs.get("mock_agents") is False
-    assert "mock_agents" in prefs.snapshot()["from_env"]
+    monkeypatch.setenv("KEEP_WORKTREES", "0")  # the environment wins
+    assert prefs.get("keep_worktrees") is False
+    assert "keep_worktrees" in prefs.snapshot()["from_env"]
 
 
 @db_test
@@ -89,7 +89,7 @@ def test_parallel_packages_is_a_small_whole_number(no_env, monkeypatch):
 @db_test
 @pytest.mark.parametrize(
     "bad",
-    [{"nope": 1}, {"mock_agents": "yes"}, {"test_command": 3}, {"parallel_packages": 0}, {"parallel_packages": "2"}],
+    [{"nope": 1}, {"keep_worktrees": "yes"}, {"test_command": 3}, {"parallel_packages": 0}, {"parallel_packages": "2"}],
 )
 def test_settings_refuse_bad_values_without_saving(no_env, bad):
     with pytest.raises(prefs.PrefsError):

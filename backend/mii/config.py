@@ -39,9 +39,8 @@ def _flag(name: str, default: str) -> bool:
 @dataclass(frozen=True)
 class Config:
     """What the process needs before the database is up. Everything the user can change at
-    runtime (mock mode, islands folder, test command, keys...) is read by prefs.py instead."""
+    runtime (islands folder, test command, keys...) is read by prefs.py instead."""
 
-    mock_agents: bool  # the starting value; prefs.get("mock_agents") is the live one
     worktree_root: Path  # where per-task worktrees of island repos go
     database_path: Path  # SQLite file
     git_author: str = DEFAULT_GIT_AUTHOR  # author of the Workshop's commits
@@ -70,7 +69,6 @@ def load_config() -> Config:
     # here: agent processes inherit them from the environment if they're set.
     permission = _optional_str("PERMISSION_TIMEOUT")
     return Config(
-        mock_agents=_flag("MOCK_AGENTS", "0"),
         worktree_root=_optional_path("WORKTREE_ROOT") or BACKEND_DIR / ".worktrees",
         database_path=_optional_path("DATABASE_PATH") or BACKEND_DIR / "mii.db",
         git_author=_optional_str("GIT_AUTHOR") or DEFAULT_GIT_AUTHOR,

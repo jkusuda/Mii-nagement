@@ -121,9 +121,9 @@ def weather(kind: str) -> dict:
     return {"type": "weather", "weather": kind}
 
 
-def snapshot(island: dict, mock_agents: bool) -> dict:
-    """The full island (models.island_snapshot) plus whether every resident runs on the mock brain."""
-    return {"type": "snapshot", "island": {**island, "mock_agents": mock_agents}}
+def snapshot(island: dict) -> dict:
+    """The full island (models.island_snapshot)."""
+    return {"type": "snapshot", "island": island}
 
 
 def error(message: str) -> dict:
@@ -229,16 +229,24 @@ class Bubbles:
         self.open[bubble_id] = OpenBubble(
             bubble_id, island_id, agent, kind, text, options, future, task, detail, asked_at
         )
-        await self.bus.emit(island_id, bubble(agent, kind, bubble_id, text, options, task, detail))
         response: str | None = None
         try:
+            # Inside the try: a cancel during this emit (it writes to the database) still closes the bubble.
+            await self.bus.emit(island_id, bubble(agent, kind, bubble_id, text, options, task, detail))
             response = await asyncio.wait_for(future, timeout)
             return response
         except TimeoutError:
             return None
         finally:
-            del self.open[bubble_id]
-            await self.bus.emit(island_id, bubble_resolved(bubble_id, response is not None, response))
+            if self.open.pop(bubble_id, None) is not None:  # else drop_task() already closed it
+                await self.bus.emit(island_id, bubble_resolved(bubble_id, response is not None, response))
+
+    async def drop_task(self, task_id: str) -> None:
+        """The package was taken back: close its bubbles still open (unanswered), so its
+        questions go away even if a resident's ask() hasn't finished stopping yet."""
+        for b in [b for b in self.open.values() if b.task == task_id]:
+            del self.open[b.id]
+            await self.bus.emit(b.island_id, bubble_resolved(b.id, False, None))
 
     def answer(self, bubble_id: str, response: str) -> bool:
         """Deliver an answer. Returns False if the bubble is unknown or already closed."""
