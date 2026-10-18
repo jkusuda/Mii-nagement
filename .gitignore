@@ -37,3 +37,4 @@ backend/.secrets.json   # API keys when there is no OS keychain (prefs.py)
 # --- Web deployment ---
 deploy/server.env
 .app-src/
+.build-tools/

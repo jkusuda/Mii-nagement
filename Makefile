@@ -12,6 +12,7 @@
 #   make test      backend tests + Godot script check
 #   make godot-check   load the game headless and fail on any script error
 #   make app       the macOS app with its own backend, as a .dmg in game/builds/macos
+#   make windows   the Windows installer (everything included) in game/builds/windows
 #
 # Needs: uv (https://docs.astral.sh/uv) and Godot 4. Godot is found on PATH or in
 # /Applications; anywhere else, pass it: `make GODOT=/path/to/godot check`.
@@ -28,7 +29,7 @@ UVICORN_LOOP := $(if $(filter Windows_NT,$(OS)),--loop asyncio:ProactorEventLoop
 # Find Godot: $GODOT, then `godot` on PATH, then the macOS app bundle.
 GODOT ?= $(shell command -v godot 2>/dev/null || ([ -x /Applications/Godot.app/Contents/MacOS/Godot ] && echo /Applications/Godot.app/Contents/MacOS/Godot))
 
-.PHONY: all help up setup server watch game check lint fmt test godot-check check-tools app
+.PHONY: all help up setup server watch game check lint fmt test godot-check check-tools app windows
 
 all: up
 
@@ -89,3 +90,8 @@ godot-check:
 app:
 	@[ -n "$(GODOT)" ] || { echo "Godot not found (set GODOT=/path/to/godot)"; exit 1; }
 	GODOT="$(GODOT)" tools/package_mac.sh
+
+# Run from Git Bash on Windows. tools/package_windows.sh says what goes in.
+windows:
+	@[ -n "$(GODOT)" ] || { echo "Godot not found (set GODOT=/path/to/godot)"; exit 1; }
+	GODOT="$(GODOT)" UV="$(UV)" tools/package_windows.sh

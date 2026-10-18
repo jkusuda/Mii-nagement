@@ -111,7 +111,7 @@ island. The tests bring their own island (`island` fixture in `tests/conftest.py
 
 | Autoload | File | What it does |
 |---|---|---|
-| `Launcher` | `launcher.gd` | only in the packaged Mac app (`make app`): gets uv, installs and starts the backend inside the app on port 8765, stops it on quit |
+| `Launcher` | `launcher.gd` | only in the packaged apps: macOS (`make app`) gets uv, installs and starts the backend inside the app; Windows (`make windows`) starts the bundled one (`python -m mii.desktop`, with the installer's Git and Node on its PATH). Port 8765; stops it on quit |
 | `Net` | `net.gd` | the WebSocket, `Net.island` (the live snapshot), one signal per event, `send_*` commands, `request_json` for HTTP |
 | `Islands` | `islands.gd` | every island (`GET /islands` + their snapshots) and their 3D thumbnails, for the home screen |
 | `Clock` | `clock.gd` | time of day (+ the dev slider), "Day N", a fallback weather roll |

@@ -1,15 +1,19 @@
 extends Node
-## Launcher: in the packaged desktop app (`make app`), starts the backend that ships
-## inside it and stops it on quit. Everywhere else (the editor, `make`, the web
-## export) it does nothing: there the backend is started by hand or lives on a server.
+## Launcher: in the packaged desktop app (`make app` on macOS, `make windows`), starts the
+## backend that ships with it and stops it on quit. Everywhere else (the editor, `make`)
+## it does nothing: there the backend is started by hand.
 ##
-## The app carries the backend's source (Mii-nagement.app/Contents/Resources/backend).
-## On the first launch it downloads uv (checked against its published checksum), and
-## uv installs Python and the dependencies, all into the user data folder: a minute or
-## so, and it needs the internet. Later launches start in a few seconds. Until then Net
-## shows "Reconnecting…" and keeps trying, as with any backend that isn't up yet.
-## (uv isn't shipped inside the app: macOS blocks helper programs that came with a
-## downloaded, un-notarized app, while the app itself is opened once with "Open Anyway".)
+## macOS: the app carries the backend's source (Mii-nagement.app/Contents/Resources/backend).
+## On the first launch it downloads uv (checked against its published checksum), and uv
+## installs Python and the dependencies, all into the user data folder: a minute or so, and
+## it needs the internet. Later launches start in a few seconds. Until then Net shows
+## "Reconnecting…" and keeps trying, as with any backend that isn't up yet. (uv isn't
+## shipped inside the app: macOS blocks helper programs that came with a downloaded,
+## un-notarized app, while the app itself is opened once with "Open Anyway".)
+##
+## Windows: the installer puts everything next to Mii-nagement.exe (tools/package_windows.sh):
+## the backend, a Python with its packages already installed, Git and Node (for the
+## agents' `npx`). So the backend starts at once, with nothing to download or set up.
 ##
 ## Godot concept: this is an autoload listed *before* Net in project.godot, so its
 ## _init() runs first and can set MII_SERVER before Net reads it.
@@ -32,6 +36,9 @@ func _init() -> void:
 	OS.set_environment("DJANGO_DEBUG", "0")  # a shipped app: no debug pages or debug logging
 	OS.set_environment("DATABASE_PATH", data.path_join("mii.db"))
 	OS.set_environment("WORKTREE_ROOT", data.path_join("worktrees"))
+	if OS.get_name() == "Windows":
+		_start_windows(resources, data)
+		return
 	OS.set_environment("UV_PROJECT_ENVIRONMENT", data.path_join("venv"))
 	# Python's .pyc files go here too: written into the app, they'd break its signature.
 	OS.set_environment("PYTHONPYCACHEPREFIX", data.path_join("pycache"))
@@ -42,12 +49,31 @@ func _init() -> void:
 	_thread.start(_start_backend.bind(resources, data))
 
 
-## Contents/Resources of the app bundle when it carries a backend, else "".
+## Where the shipped backend is: Contents/Resources of the macOS app bundle, or the folder
+## of Mii-nagement.exe on Windows. "" when this game didn't come with one.
 func _resources_dir() -> String:
 	if OS.has_feature("editor"):
 		return ""
-	var resources := OS.get_executable_path().get_base_dir().path_join("../Resources").simplify_path()
-	return resources if FileAccess.file_exists(resources.path_join("backend/manage.py")) else ""
+	var here := OS.get_executable_path().get_base_dir()
+	for resources in [here.path_join("../Resources").simplify_path(), here]:
+		if FileAccess.file_exists(resources.path_join("backend/manage.py")):
+			return resources
+	return ""
+
+
+## Windows: start the backend with the Python the installer brought (mii/desktop.py writes
+## its output to backend.log in the user data folder, for when something goes wrong).
+func _start_windows(resources: String, data: String) -> void:
+	var runtime := resources.path_join("runtime")
+	# The user's own git and node come first; ours fill in when they have none.
+	var path := OS.get_environment("PATH")
+	for folder in ["git/cmd", "node"]:
+		path += ";" + runtime.path_join(folder).replace("/", "\\")
+	OS.set_environment("PATH", path)
+	OS.set_environment("PYTHONPATH", resources.path_join("backend"))
+	OS.set_environment("MII_PORT", PORT)
+	OS.set_environment("MII_LOG_FILE", data.path_join("backend.log"))
+	_pid = OS.create_process(runtime.path_join("python/python.exe"), ["-m", "mii.desktop"])
 
 
 ## A Mac app opened from the Finder gets a bare PATH (no Homebrew, no npm tools), so the
@@ -62,7 +88,7 @@ func _login_path() -> String:
 	return OS.get_environment("PATH") + ":/opt/homebrew/bin:/usr/local/bin"
 
 
-## In the thread: get uv, install or update the dependencies, then start the server.
+## macOS, in the thread: get uv, install or update the dependencies, then start the server.
 func _start_backend(resources: String, data: String) -> void:
 	var uv := _get_uv(data)
 	if uv.is_empty():
@@ -110,5 +136,10 @@ func _get_uv(data: String) -> String:
 func _exit_tree() -> void:
 	if _thread:
 		_thread.wait_to_finish()
-	if _pid > 0:
+	if _pid <= 0:
+		return
+	if OS.get_name() == "Windows":
+		# The whole tree: the backend and the agents it started, which would keep running.
+		OS.execute("taskkill", ["/PID", str(_pid), "/T", "/F"])
+	else:
 		OS.kill(_pid)

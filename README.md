@@ -61,6 +61,14 @@ the game with its own backend inside (`tools/package_mac.sh`, `game/launcher.gd`
 not notarized: the first time macOS refuses it, so go to System Settings > Privacy &
 Security > Open Anyway. The website offers it as a download (`deploy/`).
 
+On Windows, `make windows` (from Git Bash) builds `game/builds/windows/Mii-nagement-Setup.exe`:
+an installer with everything included, so nothing else needs installing: the game, the
+backend, a Python with its packages, Git and Node (`tools/package_windows.sh`). It installs
+for the current user (no admin rights), adds Start menu and desktop shortcuts, and uninstalls
+from Settings > Apps, leaving your islands. It isn't code-signed: the first time, Windows
+SmartScreen warns, so choose More info > Run anyway. The backend's log is
+`%APPDATA%\Godot\app_userdata\Mii-nagement\backend.log`.
+
 ## Setup (once, by hand)
 
 You need [uv](https://docs.astral.sh/uv) and [Godot 4](https://godotengine.org/download)
