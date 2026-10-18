@@ -9,13 +9,10 @@
 <meta property="og:title" content="Mii-nagement · Little lives. Real work.">
 <meta property="og:description" content="Your repo is an island. Your AI agents are the residents. Give them a task. Get a real GitHub PR.">
 <meta property="og:image" content="https://mii-nagement.work/island.jpg">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
 <style>
-  /* The look: a sky-and-island hero with the game's own trees, sea and Miis (rendered
+  /* The look (in DreamLife, the game's font): a sky-and-island hero with the game's own trees, sea and Miis (rendered
      from the Godot models), then flat colour bands: cream, green, white, light blue.
-     Chunky rounded Nunito in navy, yellow pill buttons with a hard navy shadow. */
+     Navy text, yellow pill buttons with a hard navy shadow. */
   :root {
     --navy: #153c61;
     --blue: #2f7de1;
@@ -30,10 +27,14 @@
     --white: #ffffff;
     --header: #f3f9fa;
     --bubble: #e3f1fa;
-    --font: "Nunito", ui-rounded, "SF Pro Rounded", system-ui, -apple-system, sans-serif;
+    /* Faint hand-drawn doodles (squiggles, rings, beans), tiled over every section's own colour. */
+    --doodles: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='280' height='280' viewBox='0 0 280 280' fill='none' stroke='%23153c61' stroke-opacity='.07' stroke-width='7' stroke-linecap='round'%3E%3Cpath d='M22 52c14-24 30 22 46-2'/%3E%3Ccircle cx='212' cy='62' r='17'/%3E%3Cpath d='M68 196c-14-28 32-46 50-18 12 22-26 50-50 18z'/%3E%3Cpath d='M160 226l44 10'/%3E%3Ccircle cx='246' cy='182' r='8'/%3E%3Cpath d='M104 118c10-12 22 12 32 0s22 12 32 0'/%3E%3Cpath d='M230 250c-8 14 10 26 22 14'/%3E%3Cpath d='M18 258c0-14 24-14 24 0'/%3E%3Cpath d='M140 20c18-8 28 14 10 24'/%3E%3C/svg%3E");
+    --font: "DreamLife", ui-rounded, "SF Pro Rounded", system-ui, -apple-system, sans-serif;
   }
+  @font-face { font-family: "DreamLife"; src: url("dreamlife.ttf") format("truetype"); font-display: swap; }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
+  html { font-synthesis: none; }
   body { margin: 0; font-family: var(--font); font-weight: 600; font-size: 17px; line-height: 1.5; color: var(--ink); background: var(--white); }
   a { color: var(--navy); }
   img { max-width: 100%; height: auto; display: block; }
@@ -87,10 +88,9 @@
   .hero .lede { max-width: 640px; margin: 14px auto 26px; font-size: 20px; font-weight: 600; color: var(--ink); }
   .ctas { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; }
   .hero .free { margin-top: 14px; font-size: 14px; font-weight: 800; color: var(--navy); }
-  .tag { display: inline-block; margin: 36px auto 14px; background: var(--yellow); color: var(--navy); font-weight: 900; font-size: 17px; padding: 8px 18px; border-radius: 8px; transform: rotate(-1.5deg); box-shadow: 0 3px 0 rgba(21, 60, 97, .25); }
 
   /* The app screenshot in a navy frame, with Miis and speech bubbles around it. */
-  .peek { position: relative; max-width: 1240px; margin: 0 auto; padding: 0 0 70px; }
+  .peek { position: relative; max-width: 1240px; margin: 36px auto 0; padding: 0 0 70px; }
   .frame { position: relative; z-index: 2; max-width: 720px; margin: 0 auto; border: 6px solid var(--navy); border-radius: 22px; overflow: hidden; background: var(--navy); box-shadow: 0 16px 40px rgba(21, 60, 97, .28); }
   .frame img { width: 100%; }
   .mii { position: absolute; z-index: 3; pointer-events: none; filter: drop-shadow(0 10px 8px rgba(0, 0, 0, .25)); }
@@ -133,7 +133,7 @@
 
   /* White: get it. */
   .getit { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
-  .getit h2 { text-align: left; font-size: clamp(32px, 3.6vw, 46px); }
+  .getit h2 { text-align: left; font-size: clamp(36px, 4vw, 52px); }
   .getit .sub { color: var(--ink-soft); font-size: 15px; margin-top: 6px; }
   .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 36px; margin-top: 36px; }
   .step { display: grid; grid-template-columns: 48px 1fr; gap: 14px; align-items: start; }
@@ -143,7 +143,20 @@
   .brains { margin-top: 36px; background: var(--cream); border-radius: 12px; padding: 16px 20px; display: flex; flex-wrap: wrap; gap: 10px 28px; align-items: center; font-weight: 800; color: var(--navy); font-size: 16px; }
   .brains .brain { display: inline-flex; align-items: center; gap: 8px; }
   .brains .brain img { width: 22px; height: 22px; }
-  .firstlaunch { text-align: center; color: var(--ink-soft); font-size: 13px; margin-top: 24px; }
+
+  /* The Mac first-launch popup (a <dialog>, opened when the Mac download starts). */
+  .howto { border: 4px solid var(--navy); border-radius: 22px; padding: 0; max-width: 560px; width: calc(100% - 32px); color: var(--ink); box-shadow: 0 6px 0 var(--navy), 0 20px 50px rgba(21, 60, 97, .35); }
+  .howto::backdrop { background: rgba(21, 60, 97, .45); }
+  .howto .inner { padding: 28px 30px 26px; }
+  .howto h2 { font-size: 34px; text-align: left; }
+  .howto .why { color: var(--ink-soft); font-size: 15px; margin-top: 6px; }
+  .howto ol { list-style: none; padding: 0; margin: 20px 0 0; display: grid; gap: 14px; }
+  .howto li { display: grid; grid-template-columns: 36px 1fr; gap: 12px; align-items: start; font-size: 16px; }
+  .howto li .n { width: 36px; height: 36px; border-radius: 50%; background: var(--yellow); color: var(--navy); display: grid; place-items: center; font-weight: 900; }
+  .howto b { color: var(--navy); font-weight: 900; }
+  .howto code { background: var(--bubble); border-radius: 6px; padding: 2px 6px; font-size: 13px; word-break: break-all; }
+  .howto .alt { margin-top: 18px; font-size: 13px; color: var(--ink-soft); }
+  .howto .close { margin-top: 22px; display: flex; justify-content: flex-end; }
 
   /* Light blue: the team. */
   .band-sky { background: var(--sky); }
@@ -154,9 +167,10 @@
   .person b { display: block; text-align: center; margin-top: 12px; font-weight: 900; color: var(--navy); font-size: 17px; }
 
   footer { background: var(--sky-deep); padding: 26px 0; }
+  body, .site-header, .band-cream, .band-green, .band-sky, footer { background-image: var(--doodles); }
   footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px 30px; align-items: center; }
   footer b { font-weight: 900; color: var(--navy); font-size: 15px; display: block; }
-  footer small { color: var(--ink-soft); font-size: 12px; }
+  footer small { color: var(--ink-soft); font-size: 10px; }
   footer nav { display: flex; gap: 26px; }
   footer nav a { font-weight: 900; color: var(--blue); text-decoration: none; font-size: 15px; }
 
@@ -205,17 +219,16 @@
       <h1>Little lives. <em>Real work.</em></h1>
       <p class="lede">Your repo is an island. Your AI agents are the residents. Give them a task. Get a real GitHub PR.</p>
       <div class="ctas">
-        <a class="btn btn-yellow" href="/download/Mii-nagement.dmg"><img src="brands/apple.svg" alt="" width="20" height="20">Download for Mac</a>
+        <a class="btn btn-yellow" href="/download/Mii-nagement.dmg" data-howto><img src="brands/apple.svg" alt="" width="20" height="20">Download for Mac</a>
         <a class="btn" href="/download/Mii-nagement-windows.zip"><img src="brands/windows.svg" alt="" width="18" height="18">Download for Windows</a>
       </div>
       <p class="free">Don't pay extra: use your own AI subscription or API key.</p>
-      <div class="tag">1 git repository = 1 little island</div>
 
       <div class="peek">
         <div class="bubble left">Can I run this command?<small>You answer. They get to work.</small></div>
         <div class="mii blue"><img src="hero_mii_blue.png" alt="" width="283" height="700"></div>
         <div class="mii red"><img src="hero_mii_red.png" alt="" width="313" height="700"></div>
-        <div class="frame"><img src="island.jpg" alt="The island screen: Sunny Isle with five buildings, a pond, trees and the Bubbles panel" width="1280" height="720"></div>
+        <div class="frame"><img src="island.jpg" alt="Sunny Isle at noon: Carlos, Jun, Kiki and Sydney on the path by the pond, with the Mailbox, Workshop, Lab, Courthouse and Post Office around them" width="1280" height="720"></div>
         <div class="mii green"><img src="hero_mii_green.png" alt="" width="283" height="700"></div>
         <div class="bubble right">Big personalities. Occasional naps.</div>
       </div>
@@ -245,14 +258,14 @@
       <h2>Not just a task queue. A whole little life.</h2>
       <div class="trio">
         <div>
-          <div class="frame"><img src="residents.jpg" alt="The Residents screen: Carlos the Coder, Jun the Planner and Sydney the Reviewer" width="1280" height="720" loading="lazy"></div>
+          <div class="frame"><img src="residents.jpg" alt="The Residents screen: Carlos and Kiki the Coders, Jun the Planner and Sydney the Reviewer" width="1280" height="720" loading="lazy"></div>
           <h3>Meet your very particular people.</h3>
           <p>Planner, Coder, Reviewer. Each with a personality, a mood, and a diary.</p>
         </div>
         <div>
-          <div class="frame"><img src="gazette.jpg" alt="The Sunny Isle Gazette with today's stories and weekly stats" width="1280" height="720" loading="lazy"></div>
-          <h3>Extra, extra! Island news.</h3>
-          <p>The island gazette keeps the day's work and little lives in one place.</p>
+          <div class="frame"><img src="talk.jpg" alt="Talking with Carlos inside the Workshop: he explains, from the code he just read, the choice to make before he starts" width="1280" height="720" loading="lazy"></div>
+          <h3>Pop in for a chat.</h3>
+          <p>Visit a resident at work and ask what they're up to. They answer from the code in front of them.</p>
         </div>
         <div>
           <div class="frame"><img src="archipelago.jpg" alt="The Archipelago: an island in a blue sea, with room for a new island" width="1280" height="720" loading="lazy"></div>
@@ -267,11 +280,11 @@
     <div class="wrap">
       <div class="getit">
         <div>
-          <h2>Your island is waiting.</h2>
-          <p class="sub">Your own AI subscription or API key · Apple Silicon &amp; Intel · Linux from source</p>
+          <h2>Your island is waiting</h2>
+          <p class="sub">Your own AI subscription or API key</p>
         </div>
         <div class="ctas">
-          <a class="btn btn-yellow" href="/download/Mii-nagement.dmg"><img src="brands/apple.svg" alt="" width="20" height="20">Download for Mac</a>
+          <a class="btn btn-yellow" href="/download/Mii-nagement.dmg" data-howto><img src="brands/apple.svg" alt="" width="20" height="20">Download for Mac</a>
           <a class="btn" href="/download/Mii-nagement-windows.zip"><img src="brands/windows.svg" alt="" width="18" height="18">Download for Windows</a>
         </div>
       </div>
@@ -287,7 +300,6 @@
         <span class="brain"><img src="brands/gemini.svg" alt="" width="22" height="22">Gemini CLI</span>
         <span class="brain"><img src="brands/openrouter.svg" alt="" width="22" height="22">OpenRouter</span>
       </div>
-      <p class="firstlaunch">Mac first launch: Privacy &amp; Security → Open Anyway.</p>
     </div>
   </section>
 
@@ -307,13 +319,33 @@
   <div class="wrap">
     <div>
       <b>Mii-nagement · A little more life in your workflow.</b>
-      <small>An independent project. Not affiliated with or endorsed by Nintendo.</small>
+      <small>Not affiliated with Nintendo. This is a fan project.</small>
     </div>
     <nav aria-label="Footer">
-      <a class="ext" href="https://github.com/jkusuda/Mii-nagement/blob/main/README.md">Linux from source</a>
       <a class="ext" href="https://github.com/jkusuda/Mii-nagement">GitHub</a>
     </nav>
   </div>
 </footer>
+
+<dialog class="howto" id="howto" aria-labelledby="howto-title">
+  <div class="inner">
+    <h2 id="howto-title">Your download has started!</h2>
+    <p class="why">Mii-nagement isn't from the App Store yet, so the first time you open it macOS asks you to confirm it.</p>
+    <ol>
+      <li><span class="n">1</span><div>Open <b>Mii-nagement.dmg</b> and drag <b>Mii-nagement</b> into <b>Applications</b>.</div></li>
+      <li><span class="n">2</span><div>Open it. When macOS says it can't check it, click <b>Done</b>.</div></li>
+      <li><span class="n">3</span><div>Go to <b>System Settings → Privacy &amp; Security</b>, scroll down, and click <b>Open Anyway</b>.</div></li>
+      <li><span class="n">4</span><div>Click <b>Open Anyway</b> again and enter your password. From then on it opens like any app.</div></li>
+    </ol>
+    <p class="alt">Prefer Terminal? <code>xattr -dr com.apple.quarantine /Applications/Mii-nagement.app</code></p>
+    <form method="dialog" class="close"><button class="btn btn-yellow btn-small">Got it!</button></form>
+  </div>
+</dialog>
+<script>
+  // The Mac download keeps going (the link's normal click); the popup explains the first launch.
+  const howto = document.getElementById("howto");
+  document.querySelectorAll("[data-howto]").forEach((a) => a.addEventListener("click", () => howto.showModal()));
+  howto.addEventListener("click", (e) => { if (e.target === howto) howto.close(); });
+</script>
 </body>
 </html>
