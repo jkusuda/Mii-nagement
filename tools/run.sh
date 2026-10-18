@@ -73,11 +73,11 @@ SERVER=$!
 PIDS+=("$SERVER")
 
 for _ in $(seq 1 60); do
-  curl -s "localhost:$PORT/health" >/dev/null && break
+  curl -s "127.0.0.1:$PORT/health" >/dev/null && break
   kill -0 "$SERVER" 2>/dev/null || break
   sleep 0.5
 done
-curl -s "localhost:$PORT/health" >/dev/null || { echo "backend did not start"; exit 1; }
+curl -s "127.0.0.1:$PORT/health" >/dev/null || { echo "backend did not start"; exit 1; }
 echo "backend ready at http://localhost:$PORT"
 
 if [ -z "$GODOT" ]; then
@@ -86,7 +86,7 @@ if [ -z "$GODOT" ]; then
   exit 0
 fi
 
-MII_SERVER="localhost:$PORT" "$GODOT" --path game &
+MII_SERVER="127.0.0.1:$PORT" "$GODOT" --path game &
 GAME=$!
 PIDS+=("$GAME")
 
