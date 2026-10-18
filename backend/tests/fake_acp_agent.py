@@ -6,7 +6,12 @@ outside it (which the client must refuse), writes hello.txt, and ends with a
 VERDICT line. `--needs-login` makes session/new fail with "auth required".
 A prompt that says it is the "same session as before" (a resident's later visit)
 gets a short reply saying how many prompts this session has had, and
-"please hang" makes a prompt hang. Each start adds a line to agent.starts.
+"please hang" makes a prompt hang, "please dawdle" makes it take a second.
+Each start adds a line to agent.starts.
+
+Side chats: it offers session/fork (not with `--no-fork`). A fork remembers its parent's
+prompts; a prompt starting with "btw" thinks, asks to run a command, then says how many
+earlier prompts it remembers and the first one, without counting as a prompt of the parent.
 """
 
 import asyncio
@@ -19,13 +24,17 @@ from uuid import uuid4
 from acp import Agent, InitializeResponse, NewSessionResponse, PromptResponse, RequestError, run_agent
 from acp.interfaces import Client
 from acp.schema import (
+    AgentCapabilities,
     AgentMessageChunk,
     AgentThoughtChunk,
     FileEditToolCallContent,
+    ForkSessionResponse,
     PermissionOption,
+    SessionCapabilities,
     SessionConfigOptionSelect,
     SessionConfigSelectGroup,
     SessionConfigSelectOption,
+    SessionForkCapabilities,
     SetSessionConfigOptionResponse,
     TextContentBlock,
     ToolCallProgress,
@@ -38,11 +47,14 @@ from acp.schema import (
 class FakeAgent(Agent):
     _conn: Client
 
-    def __init__(self, needs_login: bool, hang: bool = False, login_at_prompt: bool = False):
+    def __init__(self, needs_login: bool, hang: bool = False, login_at_prompt: bool = False, fork: bool = True):
         self.hang = hang
         self.login_at_prompt = login_at_prompt
         self.needs_login = needs_login
+        self.fork = fork
         self.prompts: dict[str, int] = {}  # session id -> prompts so far
+        self.memory: dict[str, list[str]] = {}  # session id -> the prompts it has seen (a fork copies its parent's)
+        self.closed: list[str] = []
 
     def on_connect(self, conn: Client) -> None:
         self._conn = conn
@@ -51,7 +63,19 @@ class FakeAgent(Agent):
         Path("agent.pid").write_text(str(os.getpid()))  # in the cwd the runner gave us (the worktree)
         with open("agent.starts", "a") as starts:
             starts.write(f"{os.getpid()}\n")
-        return InitializeResponse(protocol_version=protocol_version)
+        sessions = SessionCapabilities(fork=SessionForkCapabilities()) if self.fork else SessionCapabilities()
+        return InitializeResponse(
+            protocol_version=protocol_version, agent_capabilities=AgentCapabilities(session_capabilities=sessions)
+        )
+
+    async def fork_session(self, session_id: str, cwd: str, mcp_servers=None, **kwargs: Any) -> ForkSessionResponse:
+        fork = uuid4().hex
+        self.memory[fork] = list(self.memory.get(session_id, []))
+        return ForkSessionResponse(session_id=fork, config_options=[self.model])
+
+    async def close_session(self, session_id: str, **kwargs: Any) -> None:
+        self.memory.pop(session_id, None)
+        self.closed.append(session_id)
 
     async def new_session(self, cwd: str, mcp_servers=None, **kwargs: Any) -> NewSessionResponse:
         if self.needs_login:
@@ -94,7 +118,6 @@ class FakeAgent(Agent):
         text = " ".join(getattr(block, "text", "") for block in prompt)
         if self.hang or "please hang" in text:
             await asyncio.sleep(120)  # a stuck agent: the runner's caller times out and must end us
-        self.prompts[session_id] = self.prompts.get(session_id, 0) + 1
 
         async def say(line: str) -> None:
             await self._conn.session_update(
@@ -103,6 +126,33 @@ class FakeAgent(Agent):
                     session_update="agent_message_chunk", content=TextContentBlock(type="text", text=line)
                 ),
             )
+
+        if text.startswith("btw"):  # a side chat in a fork: what it remembers, then gone
+            remembered = self.memory.get(session_id, [])
+            await self._conn.session_update(
+                session_id=session_id,
+                update=AgentThoughtChunk(
+                    session_update="agent_thought_chunk", content=TextContentBlock(type="text", text="A side thought.")
+                ),
+            )
+            answer = await self._conn.request_permission(
+                session_id=session_id,
+                tool_call=ToolCallUpdate(tool_call_id="tb1", title="Run `ls`", kind="execute"),
+                options=[
+                    PermissionOption(option_id="allow", name="Allow once", kind="allow_once"),
+                    PermissionOption(option_id="reject", name="Reject", kind="reject_once"),
+                ],
+            )
+            first = remembered[0][:30] if remembered else "nothing"
+            await say(
+                f"I remember {len(remembered)} prompt(s); the first: {first}. "
+                f"ls: {getattr(answer.outcome, 'option_id', answer.outcome.outcome)}."
+            )
+            return PromptResponse(stop_reason="end_turn")
+        self.prompts[session_id] = self.prompts.get(session_id, 0) + 1
+        self.memory.setdefault(session_id, []).append(text)
+        if "please dawdle" in text:
+            await asyncio.sleep(1.0)  # still working when a side chat forks it
 
         if "same session as before" in text:  # a resident's later visit: no re-reading needed
             await say(f"Resumed session {session_id[:6]} (prompt {self.prompts[session_id]}).\nVERDICT: PASS")
@@ -187,6 +237,8 @@ if __name__ == "__main__":
                 needs_login="--needs-login" in sys.argv,
                 hang="--hang" in sys.argv,
                 login_at_prompt="--login-at-prompt" in sys.argv,
-            )
+                fork="--no-fork" not in sys.argv,
+            ),
+            use_unstable_protocol=True,  # session/fork
         )
     )

@@ -312,6 +312,9 @@ class MiiClient(Client):
     def __init__(self, job: AgentJob, workdir: Path, brain: str = ""):
         self.brain = brain  # for the usage pills (usage.py)
         self.cost_seen = 0.0  # the session's running cost we've already counted
+        # Side chats (AcpRunner.side_chat): fork session id -> the client serving that fork, so
+        # its thinking goes to the talk and its permissions follow the talk's read-only job.
+        self.forks: dict[str, MiiClient] = {}
         self.start(job, workdir)
 
     def start(self, job: AgentJob, workdir: Path) -> None:
@@ -329,6 +332,8 @@ class MiiClient(Client):
     # --- progress ----------------------------------------------------------------
 
     async def session_update(self, session_id: str, update: Any, **kwargs: Any) -> None:
+        if session_id in self.forks:
+            return await self.forks[session_id].session_update(session_id, update)
         if isinstance(update, AgentMessageChunk):
             if isinstance(update.content, TextContentBlock):
                 self.text.append(update.content.text)
@@ -380,6 +385,9 @@ class MiiClient(Client):
     async def request_permission(
         self, session_id: str, tool_call: ToolCallUpdate, options: list[PermissionOption], **kwargs: Any
     ) -> RequestPermissionResponse:
+        if session_id in self.forks:
+            return await self.forks[session_id].request_permission(session_id, tool_call, options)
+
         def pick(kind: str) -> str | None:
             return next((o.option_id for o in options if o.kind == kind), None)
 
@@ -436,7 +444,7 @@ class MiiClient(Client):
         self, session_id: str, path: str, content: str, **kwargs: Any
     ) -> WriteTextFileResponse | None:
         full = self._inside(path)
-        if self.job.read_only:
+        if self.job.read_only or session_id in self.forks:  # a side chat never writes
             raise RequestError(-32602, "this step is read-only")
         full.parent.mkdir(parents=True, exist_ok=True)
         full.write_text(content)
@@ -517,7 +525,8 @@ async def spawn_agent(client: Client, command: list[str], *, cwd: Path, env: dic
     proc = await asyncio.create_subprocess_exec(
         program, *command[1:], cwd=str(cwd), env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, **group
     )
-    conn = connect_to_agent(client, proc.stdin, proc.stdout)
+    # session/fork (side_chat) is still in ACP's "unstable" part; Claude Code and Codex offer it.
+    conn = connect_to_agent(client, proc.stdin, proc.stdout, use_unstable_protocol=True)
     try:
         yield conn
     finally:
@@ -644,6 +653,7 @@ def _scratch_worktree(root: Path) -> Path:
 
 
 MODELS_TIMEOUT = 90.0  # seconds: the first `npx -y` download can be slow
+FORK_TIMEOUT = 30.0  # seconds to fork (or close) a session for a side chat; Claude Code takes about 4
 MODELS_CACHE_SECONDS = 600.0
 _models_cache: dict[str, tuple[float, dict]] = {}  # brain -> (when, {"models", "current"})
 
@@ -708,6 +718,7 @@ class LiveAgent:
     gifts: tuple[str, ...]
     read_only: bool
     prompted: bool = False  # False until the first prompt (an agent started early by prepare() has had none)
+    can_fork: bool = False  # the agent offers session/fork (side_chat)
 
     def fits(self, job: AgentJob) -> bool:
         """Can this job use the kept session? Not if the worktree, model or gifts changed."""
@@ -732,6 +743,54 @@ class AcpRunner:
         self.spec = BRAINS[brain]
         self.command = command or self.spec["command"]  # tests pass a fake agent here
         self.live: dict[tuple[str, str], LiveAgent] = {}  # (task id, resident id) -> their kept agent
+        self.working: dict[tuple[str, str], LiveAgent] = {}  # same key -> the agent mid-step (only side_chat reads it)
+
+    def can_side_chat(self, task_id: str, resident_id: str) -> bool:
+        """Is the agent doing this resident's part of the task there to fork (side_chat)?"""
+        agent = self.working.get((task_id, resident_id)) or self.live.get((task_id, resident_id))
+        return agent is not None and agent.can_fork
+
+    async def side_chat(self, job: AgentJob, task_id: str) -> StepResult | None:
+        """Like Claude Code's /btw: answer job.chat with the agent that works on `task_id` for
+        job.resident, mid-step or between steps. Its session is forked: the fork knows everything
+        done so far, answers read-only, then closes, and the work never sees the chat. job.instructions
+        is the whole prompt. None when there's no such agent or it can't fork (ask a fresh one)."""
+        key = (task_id, job.resident.id)
+        agent = self.working.get(key) or self.live.get(key)
+        if agent is None or not agent.can_fork:
+            return None
+        conn = agent.conn
+        try:
+            fork = await asyncio.wait_for(
+                conn.fork_session(session_id=agent.session.session_id, cwd=str(agent.workdir), mcp_servers=[]),
+                FORK_TIMEOUT,
+            )
+        except Exception as e:  # too old an adapter, a busy or broken agent: a fresh agent answers instead
+            log.info("%s: couldn't fork %s's session for a side chat: %s", self.brain, job.resident.id, e)
+            return None
+        client = MiiClient(job, agent.workdir)  # the fork's own: thinking to the talk, never to the package
+        agent.client.forks[fork.session_id] = client
+        try:
+            await self._set_mode(conn, fork, read_only=True)
+            await self._set_model(conn, fork, job)
+            response = await conn.prompt(
+                session_id=fork.session_id, prompt=[TextContentBlock(type="text", text=job.instructions)]
+            )
+            await usage.record(self.brain, turns=1, tokens=response.usage.total_tokens if response.usage else 0)
+            if response.stop_reason != "end_turn":
+                return StepResult("fail", f"{self.brain} stopped early ({response.stop_reason}).")
+            return parse_verdict("".join(client.text), job.summary_chars)
+        except (OSError, ConnectionError) as e:  # the work ended and its agent closed meanwhile
+            log.info("%s: side chat with %s ended early: %s", self.brain, job.resident.id, e)
+            return None
+        finally:
+            for waiting in client.pending:
+                waiting.cancel()
+            with suppress(Exception):
+                await client.thinking.flush()
+            agent.client.forks.pop(fork.session_id, None)
+            with suppress(Exception):
+                await asyncio.wait_for(conn.close_session(session_id=fork.session_id), FORK_TIMEOUT)
 
     async def end_task(self, task_id: str) -> None:
         """The task is over: close every agent kept for it."""
@@ -770,6 +829,8 @@ class AcpRunner:
                 if agent.read_only != job.read_only:
                     await self._set_mode(agent.conn, agent.session, job.read_only)
                     agent.read_only = job.read_only
+            if job.chat is None:
+                self.working[key] = agent  # a talk can fork it while it works (side_chat)
             result, keep = await self._prompt(agent, job)
             return result
         except asyncio.CancelledError:
@@ -795,6 +856,8 @@ class AcpRunner:
             log.warning("%s brain failed: %s", self.brain, e)
             return StepResult("fail", f"The {self.brain} brain crashed: {e}")
         finally:
+            if agent is not None and self.working.get(key) is agent:
+                del self.working[key]
             for waiting in client.pending:
                 waiting.cancel()
             with suppress(Exception):
@@ -812,13 +875,15 @@ class AcpRunner:
             conn = await stack.enter_async_context(
                 spawn_agent(client, self.command, cwd=job.workdir, env=agent_env(self.spec))
             )
-            await conn.initialize(
+            init = await conn.initialize(
                 protocol_version=PROTOCOL_VERSION,
                 client_capabilities=ClientCapabilities(
                     fs=FileSystemCapabilities(read_text_file=True, write_text_file=True), terminal=False
                 ),
                 client_info=Implementation(name="mii-nagement", title="Mii-nagement", version="0.2.0"),
             )
+            sessions = getattr(init.agent_capabilities, "session_capabilities", None)
+            can_fork = getattr(sessions, "fork", None) is not None  # Claude Code and Codex: yes; Gemini: no
             servers, skipped = await asyncio.to_thread(gift_servers, list(_gifts(job)))
             for note in skipped:
                 await job.report(note)
@@ -828,7 +893,9 @@ class AcpRunner:
         except BaseException:
             await stack.aclose()  # ends the process, also on a timeout or cancel
             raise
-        return LiveAgent(stack, conn, client, session, job.workdir, job.resident.model, _gifts(job), job.read_only)
+        return LiveAgent(
+            stack, conn, client, session, job.workdir, job.resident.model, _gifts(job), job.read_only, can_fork=can_fork
+        )
 
     async def _prompt(self, agent: LiveAgent, job: AgentJob) -> tuple[StepResult, bool]:
         """Prompt the session (answering QUESTION lines with ❓ bubbles). Returns the result and

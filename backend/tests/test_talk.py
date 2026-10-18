@@ -7,11 +7,11 @@ from types import SimpleNamespace
 import pytest
 from conftest import FakeClient, ScriptedRunner, db_test, make_job, make_workflow
 
-from mii import talk
+from mii import events, talk
 from mii.agents import StepResult, build_prompt, parse_verdict
 from mii.agents.mock import MockRunner
 from mii.consumers import handle_message
-from mii.models import Island, Resident
+from mii.models import Event, Island, Resident, Step, Task, utcnow
 
 pytestmark = db_test
 
@@ -150,6 +150,162 @@ async def test_real_mode_talk_uses_a_throwaway_worktree(at_work, sandboxes):
     island_row = await Island.objects.aget(pk="sunny")
     branches = sandboxes.for_island(island_row)._git(sandboxes.for_island(island_row).repo_path, "branch")
     assert "talk-" not in branches
+
+
+async def carrying(resident: str, building: str) -> Task:
+    """A package in progress that `resident` is working on at `building`, one step in already."""
+    task = await Task.objects.acreate(
+        id="t_talk1",
+        island_id="sunny",
+        title="Add a dark mode",
+        description="Users want a dark theme toggle in settings.",
+        status="in_progress",
+        building_id=building,
+        agent_id=resident,
+    )
+    await Step.objects.acreate(
+        island_id="sunny",
+        task_id=task.id,
+        building_id="mailbox",
+        building_type="mailbox",
+        resident_id="jun",
+        brain="mock",
+        outcome="pass",
+        summary="Plan: add a toggle in settings.py and a dark palette.",
+        finished_at=utcnow(),
+    )
+    await Event.objects.acreate(
+        island_id="sunny",
+        type="thinking",
+        payload=events.thinking(resident, task.id, "thought", "Now wiring the toggle into the settings page."),
+    )
+    return task
+
+
+async def test_talk_knows_the_package_they_carry(at_work):
+    await carrying("carlos", "workshop")
+    runner = ScriptedRunner()
+    await ask_once(mock_runtime(runner), {"id": "k_40", "resident": "carlos", "message": "How's it going?"})
+    prompt = build_prompt(runner.jobs[0], "SYSTEM")
+    assert "'Add a dark mode'" in prompt and "visit 1 to the Workshop" in prompt
+    assert "Users want a dark theme toggle" in prompt  # the request
+    assert "Jun at the Mailbox: PASS. Plan: add a toggle" in prompt  # the steps so far
+    assert "wiring the toggle into the settings page" in prompt  # what they were just thinking
+    assert "passed on to whoever works on it next" in prompt and "This is not a task" not in prompt
+
+
+async def test_talk_without_a_package_is_a_plain_chat(at_work):
+    runner = ScriptedRunner()
+    await ask_once(mock_runtime(runner), {"id": "k_41", "resident": "carlos", "message": "Hi"})
+    assert "This is not a task" in build_prompt(runner.jobs[0], "SYSTEM")
+
+
+async def test_talk_lines_are_stored_with_the_package(at_work):
+    await carrying("carlos", "workshop")
+    await ask_once(mock_runtime(ScriptedRunner()), {"id": "k_42", "resident": "carlos", "message": "Use CSS vars"})
+    lines = await talk.history("sunny", "workshop")
+    assert [(t["from"], t["task"]) for t in lines] == [("you", "t_talk1"), ("resident", "t_talk1")]
+
+
+async def test_real_mode_talk_reads_the_packages_worktree(at_work, sandboxes):
+    task = await carrying("carlos", "workshop")
+    await Resident.objects.filter(pk="carlos").aupdate(brain="claude-code")
+    island_row = await Island.objects.aget(pk="sunny")
+    package_dir = sandboxes.for_island(island_row).create_worktree(task.id)
+    seen = []
+
+    class Peeks:
+        async def run(self, job):
+            seen.append((job.workdir, job.read_only))
+            return parse_verdict("I'm halfway there.", job.summary_chars)
+
+    runtime = mock_runtime(Peeks())
+    runtime.sandboxes = sandboxes
+    await ask_once(runtime, {"id": "k_43", "resident": "carlos", "message": "Show me"})  # one-off
+    client, _ = await open_one(runtime, "c_9", "carlos", "workshop")  # and a conversation
+    msg = {"id": "k_44", "conversation": "c_9", "resident": "carlos", "message": "And now?"}
+    await talk.talk(runtime, "sunny", msg, client.send_json)
+    await talk.close_conversation(runtime, "c_9")
+    assert seen == [(package_dir, True), (package_dir, True)]  # the work in progress, read-only
+    assert package_dir.exists()  # the talk never removes the package's own worktree
+
+
+async def test_what_you_say_steers_the_packages_later_steps(island):
+    runner = ScriptedRunner()
+    workflow, _ = make_workflow(runner)
+    runtime = SimpleNamespace(workflow=workflow, bus=workflow.bus, bubbles=workflow.bubbles, sandboxes=None)
+    client = FakeClient()
+    workflow.holds.hold("jun")  # as talk_open does: Jun stays at the Mailbox until the talk ends
+    run = asyncio.create_task(workflow.run_task((await workflow.submit("sunny", "Add a dark mode")).id))
+    for _ in range(200):
+        if runner.visited:
+            break
+        await asyncio.sleep(0.01)
+    msg = {"id": "k_45", "resident": "jun", "building": "mailbox", "message": "Keep it to CSS variables, please."}
+    await talk.talk(runtime, "sunny", msg, client.send_json)
+    assert client.sent[-1]["type"] == "talk_reply"
+    workflow.holds.release("jun")
+    task = await asyncio.wait_for(run, 5)
+    assert task.status == "done"
+    work = [j for j in runner.jobs if j.chat is None]  # the package's steps, not the talk
+    assert [j.building.id for j in work] == ["mailbox", "workshop", "lab", "courthouse", "post_office"]
+    assert "Keep it to CSS variables" not in work[0].instructions  # the plan was made before you said it
+    for job in work[1:]:  # every later step, whoever does it
+        assert "Follow any direction they gave:\n- To Jun: Keep it to CSS variables, please." in job.instructions
+
+
+class AtWork(ScriptedRunner):
+    """A runner whose agent for the package can answer side chats (like a forkable ACP agent)."""
+
+    def __init__(self, answers: bool = True):
+        super().__init__()
+        self.answers = answers
+        self.side: list = []  # (job, task id) of each side chat asked
+        self.prepared: list = []
+
+    def can_side_chat(self, task_id, resident_id):
+        return self.answers
+
+    async def side_chat(self, job, task_id):
+        self.side.append((job, task_id))
+        return StepResult("pass", "Halfway through the toggle!") if self.answers else None
+
+    async def prepare(self, job):
+        self.prepared.append(job.task.id)
+
+
+async def test_talk_asks_the_agent_at_work_like_btw(at_work):
+    await carrying("carlos", "workshop")
+    runner = AtWork()
+    sent = await ask_once(mock_runtime(runner), {"id": "k_50", "resident": "carlos", "message": "How's it going?"})
+    assert sent[-1] == talk.talk_reply("k_50", "carlos", "Halfway through the toggle!")
+    [(job, task_id)] = runner.side
+    assert task_id == "t_talk1" and job.read_only and job.chat == "How's it going?"
+    assert job.instructions.startswith("btw: ") and job.instructions.endswith("Owner: How's it going?")
+    assert runner.jobs == []  # no fresh agent was asked
+    last = (await talk.history("sunny", "workshop"))[-1]
+    assert (last["from"], last["task"], last["text"]) == ("resident", "t_talk1", "Halfway through the toggle!")
+
+
+async def test_a_conversation_with_the_agent_at_work_starts_nothing_new(at_work):
+    await carrying("carlos", "workshop")
+    runner = AtWork()
+    runtime = mock_runtime(runner)
+    client, sent = await open_one(runtime, "c_10", "carlos", "workshop")
+    assert sent == [talk.talk_ready("c_10", "carlos")] and runner.prepared == []  # no warm-up
+    msg = {"id": "k_51", "conversation": "c_10", "resident": "carlos", "message": "Any blockers?"}
+    await talk.talk(runtime, "sunny", msg, client.send_json)
+    assert client.sent[-1]["type"] == "talk_reply" and len(runner.side) == 1
+    await talk.close_conversation(runtime, "c_10")
+
+
+async def test_talk_falls_back_to_a_fresh_agent_when_the_side_chat_cannot(at_work):
+    await carrying("carlos", "workshop")
+    runner = AtWork(answers=False)
+    sent = await ask_once(mock_runtime(runner), {"id": "k_52", "resident": "carlos", "message": "Hi"})
+    assert sent[-1]["type"] == "talk_reply" and len(runner.side) == 1
+    [job] = runner.jobs  # the fresh agent, told the package
+    assert "'Add a dark mode'" in build_prompt(job, "SYSTEM")
 
 
 def test_chat_reply_keeps_long_answers():

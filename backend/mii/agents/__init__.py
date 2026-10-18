@@ -258,6 +258,20 @@ async def prepare(runner: AgentRunner, job: AgentJob) -> None:
         await warm(job)
 
 
+def can_side_chat(runner: AgentRunner, task_id: str, resident_id: str) -> bool:
+    """Can a talk ask the agent that does this resident's part of the task itself (side_chat)?"""
+    check = getattr(runner, "can_side_chat", None)  # optional: only ACP agents that can fork
+    return bool(check and check(task_id, resident_id))
+
+
+async def side_chat(runner: AgentRunner, job: AgentJob, task_id: str) -> StepResult | None:
+    """Answer a talk (job.chat; job.instructions is the whole prompt) with the agent working on
+    `task_id` for job.resident, through a fork of its session (acp.AcpRunner.side_chat).
+    None when this runner can't: the caller asks a fresh agent instead."""
+    ask = getattr(runner, "side_chat", None)
+    return await ask(job, task_id) if ask is not None else None
+
+
 class BrainRunner:
     """Sends each job to the runner for its resident's brain."""
 
@@ -278,6 +292,13 @@ class BrainRunner:
         runner = self.runners.get(job.resident.brain)
         if runner is not None:
             await prepare(runner, job)
+
+    def can_side_chat(self, task_id: str, resident_id: str) -> bool:
+        return any(can_side_chat(runner, task_id, resident_id) for runner in self.runners.values())
+
+    async def side_chat(self, job: AgentJob, task_id: str) -> StepResult | None:
+        runner = self.runners.get(job.resident.brain)
+        return await side_chat(runner, job, task_id) if runner is not None else None
 
 
 def make_runner(

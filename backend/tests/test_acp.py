@@ -274,6 +274,77 @@ async def test_a_resident_keeps_one_agent_across_visits_until_the_task_ends(sand
     assert _gone(pid) and runner.live == {}
 
 
+def recorder(lines: list):
+    async def think(kind: str, text: str, **_details) -> None:
+        lines.append((kind, text))
+
+    return think
+
+
+def side_job(thoughts: list):
+    """A talk's job for side_chat: read-only, a chat, and nobody answers its bubbles (talk.py)."""
+
+    async def nobody(*args, **kwargs):
+        return None
+
+    job = make_job("claude-code", ask=nobody, instructions="btw: how's it going?", read_only=True)
+    job.chat = "how's it going?"
+    job.think = recorder(thoughts)
+    return job
+
+
+async def test_a_side_chat_asks_the_agent_at_work_through_a_fork(sandbox):
+    workdir = sandbox.create_worktree("t_test")
+    runner = AcpRunner("claude-code", command=[sys.executable, str(FAKE_AGENT)])
+    work, talk = [], []
+    first = make_job("claude-code", workdir=workdir, sandbox=sandbox, instructions="Add the login page")
+    first.think = recorder(work)
+    await asyncio.wait_for(runner.run(first), 20)
+    assert runner.can_side_chat("t_test", "r") and not runner.can_side_chat("t_test", "someone else")
+
+    result = await asyncio.wait_for(runner.side_chat(side_job(talk), "t_test"), 20)
+
+    assert result.outcome == "pass" and "I remember 1 prompt(s)" in result.summary  # the fork knows the work
+    assert "ls: reject" in result.summary  # its permission requests are refused (read-only, nobody answers)
+    assert ("thought", "A side thought.") in talk and not any("side thought" in t for _, t in work)
+    again = make_job("claude-code", workdir=workdir, sandbox=sandbox, instructions="Fix what the Lab reported")
+    again.attempt = 2
+    second = await asyncio.wait_for(runner.run(again), 20)
+    assert "(prompt 2)" in second.summary  # the work session never saw the chat
+    assert len((workdir / "agent.starts").read_text().split()) == 1  # one agent process throughout
+    await runner.end_task("t_test")
+
+
+async def test_a_side_chat_forks_an_agent_mid_step(sandbox):
+    workdir = sandbox.create_worktree("t_test")
+    runner = AcpRunner("claude-code", command=[sys.executable, str(FAKE_AGENT)])
+    step = asyncio.create_task(
+        runner.run(make_job("claude-code", workdir=workdir, sandbox=sandbox, instructions="please dawdle"))
+    )
+    for _ in range(200):
+        if runner.working:
+            break
+        await asyncio.sleep(0.05)
+    assert runner.can_side_chat("t_test", "r") and not step.done()
+    result = await asyncio.wait_for(runner.side_chat(side_job([]), "t_test"), 20)
+    assert "I remember 1 prompt(s)" in result.summary
+    assert (await asyncio.wait_for(step, 20)).outcome == "pass"  # the step carried on and finished
+    assert runner.working == {}
+    await runner.end_task("t_test")
+
+
+async def test_no_side_chat_without_a_forkable_agent(sandbox):
+    workdir = sandbox.create_worktree("t_test")
+    runner = AcpRunner("claude-code", command=[sys.executable, str(FAKE_AGENT), "--no-fork"])
+    assert await runner.side_chat(side_job([]), "t_test") is None  # nobody at work yet
+    await asyncio.wait_for(runner.run(make_job("claude-code", workdir=workdir, sandbox=sandbox)), 20)
+    assert not runner.can_side_chat("t_test", "r")
+    assert await runner.side_chat(side_job([]), "t_test") is None  # Gemini-like: no session/fork
+    await runner.end_task("t_test")
+    router = BrainRunner({"claude-code": runner, "mock": MockRunner()})
+    assert await router.side_chat(side_job([]), "t_test") is None and not router.can_side_chat("t_test", "r")
+
+
 async def test_a_timeout_on_a_kept_agent_ends_it(sandbox):
     workdir = sandbox.create_worktree("t_test")
     runner = AcpRunner("claude-code", command=[sys.executable, str(FAKE_AGENT)])

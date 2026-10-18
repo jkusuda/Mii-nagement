@@ -39,6 +39,8 @@ NOTES_CHARS = 1500  # a resident's diary (Resident.notes) keeps about this much;
 CHAT_CHARS = 200  # how much of a helper's report is said out loud (the `chat` back)
 PRETEST_RETRIES = 2  # the Workshop's own test run may send the work back to the coder this many times per visit
 TEST_TAIL_LINES = 20  # how much of the test output goes into reports and prompts
+TALK_TURN = "talk_turn"  # Event.type of a line said in a talk (talk.py); the owner's lines steer the package
+DIRECTION_LINES = 10  # the owner's newest talk lines about a package that later steps read
 
 # Mood a resident shows while a bubble of this kind is waiting.
 BUBBLE_MOODS = {
@@ -926,6 +928,8 @@ class WorkflowEngine:
         instructions = handler.instructions(task)
         if feedback:
             instructions = f"{feedback}\n\n{instructions}"
+        if direction := await self._owner_direction(task, names):
+            instructions = f"{direction}\n\n{instructions}"
         if request:
             instructions = f"{names.get(helped, 'A neighbour')} asked for your help: {request}\n\n{instructions}"
         job = AgentJob(
@@ -994,6 +998,22 @@ class WorkflowEngine:
             async for e in chats.order_by("id")
             if e.payload.get("text") != skip
         ]
+
+    async def _owner_direction(self, task: Task, names: dict[str, str]) -> str | None:
+        """What the island owner said in talks about this package (talk.py stores each line with
+        the package), newest DIRECTION_LINES, for the top of every later step's instructions."""
+        lines = [
+            e.payload
+            async for e in Event.objects.filter(
+                island_id=task.island_id, type=TALK_TURN, payload__task=task.id, payload__from="you"
+            ).order_by("-id")[:DIRECTION_LINES]
+        ]
+        if not lines:
+            return None
+        said = [f"- To {names.get(p.get('agent'), p.get('agent'))}: {p.get('text', '')}" for p in reversed(lines)]
+        return "\n".join(
+            ["The island owner talked with the team about this package. Follow any direction they gave:", *said]
+        )
 
     async def _after_step(self, task: Task, resident: Resident, result: StepResult, everyone: list[Resident]) -> None:
         """Deliver the reply's `SAY TO` notes as chat and write its `REMEMBER` lines in the diary."""

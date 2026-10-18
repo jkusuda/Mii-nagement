@@ -508,14 +508,27 @@ The server replies with `error` (bad name or repo, nothing to change), or an
 ### `talk_open` / `talk` / `talk_close`
 Chat with a resident inside a building (the building panel → a resident → Talk). The
 resident's brain answers in character, in that building's role, **read-only**: it
-may read the island's repository but never changes files, raises no bubbles, and
-the conversation never touches a package. You can only talk to a resident
+never changes files and raises no bubbles. You can only talk to a resident
 **inside** a building: one whose `state` is `working` there. Anyone else is out on
 the island, and the answer is `talk_error`.
 
+A resident inside a building is working on a package, so the talk is about it:
+- with a Claude Code or Codex brain, the **agent doing the work answers itself**, like
+  Claude Code's `/btw`: each message goes to a fork of its live session, which knows
+  everything it has read and done so far (not a tool call still running). The work
+  carries on untouched and never sees the chat;
+- otherwise (mock, OpenRouter, Gemini, or the fork fails) a fresh agent answers: it is
+  told the package (title, request, the steps so far, the latest failure, what the
+  resident was just thinking) and, in real mode, reads its working copy (`mii/<task_id>`,
+  with the work in progress);
+- everything you say is kept with the package, and every later step of it (whoever
+  does it) gets your lines on top of its instructions, as the island owner's
+  direction. The package waits while you talk, so the next step already has them.
+
 1. `talk_open` starts a conversation. The resident stays inside until it ends: they
    finish their step, but don't walk out (and the package waits) until `talk_close`.
-   In real mode their agent starts right away, so the first reply is quicker.
+   In real mode, when no working agent can answer, a fresh one starts right away, so
+   the first reply is quicker.
    Answer: `talk_ready` (or `talk_error`).
 2. Each `talk` is one message (`conversation`: the open conversation's id), answered
    with the events above. Messages in one conversation share one agent session.
@@ -531,8 +544,8 @@ the island, and the answer is `talk_error`.
 Ids are the client's (short, letters/digits/`_`/`-`). `history` is the conversation
 so far (the last 10 turns are used). `building` is optional (default: the building
 they're in). A `talk` without a `conversation` is answered one-off. Every message and
-reply is stored per building (never broadcast, not in News):
-`GET /islands/{id}/talks?building=<id>` returns them (docs/http-api.md).
+reply is stored per building, with the package it was about (never broadcast, not in
+News): `GET /islands/{id}/talks?building=<id>` returns them (docs/http-api.md).
 
 ---
 

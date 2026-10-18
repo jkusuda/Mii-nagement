@@ -85,7 +85,7 @@ Grouped by layer; a module only imports from its own layer or the ones below it.
 | engine | `hooks.py` | `SpectatorHook`: copies a few events to the outside spectator feed (outbound only, off by default) | `test_hooks.py` |
 | engine | `metrics.py` | Tiger Data: one row per finished step / task in a TimescaleDB hypertable, `per_day` for Insights; a no-op on SQLite | `test_metrics.py` |
 | agents | `agents/__init__.py` | `AgentJob`, `StepResult`, `build_prompt`, `parse_verdict`, `permission_for`, `make_runner` | `test_acp.py` |
-| agents | `agents/acp.py` | `AcpRunner` (Claude Code, Codex, Gemini over ACP; one kept agent per resident per task), `BRAINS`, `GIFTS` | `test_acp.py` (with `fake_acp_agent.py`) |
+| agents | `agents/acp.py` | `AcpRunner` (Claude Code, Codex, Gemini over ACP; one kept agent per resident per task; `side_chat` forks it for a talk), `BRAINS`, `GIFTS` | `test_acp.py` (with `fake_acp_agent.py`) |
 | agents | `agents/openrouter.py` | `OpenRouterRunner`: a small tool loop over OpenRouter's chat API | `test_openrouter.py` |
 | agents | `agents/mock.py` | `MockRunner`: fake work, random bubbles and outcomes | |
 | domain | `islands.py` | found / change / abandon islands, build mode's `set_map` | `test_islands.py`, `test_island_map.py` |
@@ -93,7 +93,7 @@ Grouped by layer; a module only imports from its own layer or the ones below it.
 | domain | `residents.py` | create / edit / delete residents (the resident creator) | `test_residents.py` |
 | domain | `layout.py` | the workflow graph by hand (`set_layout`), `assign_buildings` | `test_layout.py` |
 | domain | `tasks.py` | a request (`title` or GitHub `issue`) → a queued task; `task_window` (a task's stored events) | `test_tasks.py`, `test_vocab.py` |
-| domain | `talk.py` | a `talk` message: one read-only chat turn with a resident in a building's role (throwaway worktree in real mode), answered to the sender only | `test_talk.py` |
+| domain | `talk.py` | a `talk` message: one read-only chat turn with a resident in a building's role, about the package they carry: the working agent answers through a fork of its session (`AcpRunner.side_chat`, like `/btw`), else a fresh agent with the package's context and working copy; your lines become direction for that package's later steps (`engine.py` `_owner_direction`). Answered to the sender only | `test_talk.py` |
 | domain | `insights.py`, `weather.py`, `personality.py` | stats, island weather, the system prompt | `test_insights.py`, `test_weather.py`, `test_personality.py` |
 | infra | `sandbox.py` | worktrees per task, path checks, `run_shell` (**the safety boundary**) | `test_engine.py` |
 | infra | `repos.py`, `github.py` | git repos on disk; the `gh` CLI (issues, PRs, clone) | `test_islands.py`, `test_github.py` |
