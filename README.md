@@ -36,7 +36,8 @@ isn't notarized: the first time macOS refuses it, open System Settings > Privacy
 Security > Open Anyway.
 
 **On Windows, just the app:** download the installer from the website, or build it with
-`make windows` from Git Bash (`game/builds/windows/Mii-nagement-Setup.exe`). Everything
+`make windows` from Git Bash (`game/builds/windows/Mii-nagement-Setup.exe`; it also uploads
+it as the website's download, `UPLOAD=0` to skip). Everything
 comes with it (the backend, a Python with its packages, Git and Node), so nothing else
 needs installing and the first launch is quick. It installs for the current user (no admin
 rights) and uninstalls from Settings > Apps, leaving your islands. It isn't code-signed: the
@@ -183,8 +184,8 @@ game/      Godot 4 client: the 3D island, UI, residents, bubbles
 docs/      architecture.md (start here), protocol.md (WebSocket), http-api.md (HTTP),
            godot-tour.md (Godot for beginners), mii-customization.md (faces and hair)
 deploy/    the website: Compose, Caddy, landing page, push and Vultr scripts
-tools/     run.sh (`make`), package_mac.sh (`make app`), package_windows.sh (`make windows`),
-           build_mii_parts.py (Mii parts)
+tools/     run.sh (`make`), package_mac.sh (`make app`), package_windows.sh and
+           upload_windows.sh (`make windows`), build_mii_parts.py (Mii parts)
 video/     the demo video (Remotion) and its Godot captures
 .github/   CI (the same checks as `make check`) and the deploy workflow
 CLAUDE.md  working rules for Claude Code sessions (a short read for humans too)

@@ -19,7 +19,7 @@ on the player's computer, so the server has no backend, no agents and no keys.
 ## Deploy (and redeploy after changes)
 
     make app                         # optional, on a Mac: the .dmg behind "Download for Mac"
-    make windows                     # optional, on Windows (Git Bash): the installer behind "Download for Windows"
+    make windows                     # on Windows (Git Bash): builds the installer and uploads it as "Download for Windows"
     deploy/push.sh root@<server ip>
 
 Then open `https://<MII_DOMAIN>`.
@@ -27,8 +27,9 @@ Then open `https://<MII_DOMAIN>`.
 ## Automatic deploys (GitHub Actions)
 
 `.github/workflows/deploy.yml` deploys after CI passes on `main`: the landing page
-(`push.sh`), then the desktop apps, uploaded as the downloads: the Mac app (`make app` on
-a macOS runner) and the Windows installer (`tools/package_windows.sh` on a Windows runner).
+(`push.sh`), then the Mac app (`make app` on a macOS runner), uploaded as the download.
+The Windows installer is not built there: `make windows` on a Windows computer builds it
+and uploads it (`tools/upload_windows.sh`; `make windows UPLOAD=0` only builds).
 Run it by hand from Actions > Deploy > Run workflow. It logs in with the repository
 secret `DEPLOY_SSH_KEY` (its public half is in the server's `/root/.ssh/authorized_keys`,
 comment `github-actions-deploy`) and uses the server's own `server.env`. Pull requests

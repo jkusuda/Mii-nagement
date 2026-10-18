@@ -12,7 +12,8 @@
 #   make test      backend tests + Godot script check
 #   make godot-check   load the game headless and fail on any script error
 #   make app       the macOS app with its own backend, as a .dmg in game/builds/macos
-#   make windows   the Windows installer (everything included) in game/builds/windows
+#   make windows   the Windows installer (everything included) in game/builds/windows,
+#                  uploaded as the website's Windows download (UPLOAD=0 to skip)
 #
 # Needs: uv (https://docs.astral.sh/uv) and Godot 4. Godot is found on PATH or in
 # /Applications; anywhere else, pass it: `make GODOT=/path/to/godot check`.
@@ -23,6 +24,9 @@ BACKEND := backend
 UV := uv
 GDTOOLKIT := uvx --from 'gdtoolkit>=4'
 PORT ?= 8000
+# The website's server (deploy/README.md), where `make windows` uploads the installer.
+DEPLOY_HOST ?= root@104.156.255.24
+UPLOAD ?= 1
 # Windows: --reload makes uvicorn use an event loop that can't start agent processes (tools/run.sh).
 UVICORN_LOOP := $(if $(filter Windows_NT,$(OS)),--loop asyncio:ProactorEventLoop)
 
@@ -34,7 +38,7 @@ GODOT ?= $(shell command -v godot 2>/dev/null || ([ -x /Applications/Godot.app/C
 all: up
 
 help:
-	@sed -n '2,18p' Makefile | sed 's/^#//'
+	@sed -n '2,19p' Makefile | sed 's/^#//'
 
 check-tools:
 	@command -v $(UV) >/dev/null || { echo "uv is missing. macOS: brew install uv   Linux: curl -LsSf https://astral.sh/uv/install.sh | sh   Windows: winget install astral-sh.uv"; exit 1; }
@@ -95,3 +99,4 @@ app:
 windows:
 	@[ -n "$(GODOT)" ] || { echo "Godot not found (set GODOT=/path/to/godot)"; exit 1; }
 	GODOT="$(GODOT)" UV="$(UV)" tools/package_windows.sh
+	@[ "$(UPLOAD)" = 0 ] || tools/upload_windows.sh "$(DEPLOY_HOST)"
