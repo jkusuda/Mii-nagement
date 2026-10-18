@@ -9,8 +9,6 @@ extends PanelContainer
 ## - This week: from the insights endpoint, like the Insights tab.
 ## - Unread: stories newer than the last time you opened News. game.gd shows the
 ##   count on the nav button (`unread_changed`). Remembered in user://news.cfg.
-## - Daily digest: when on, the game opens on News the first time you start it
-##   each day.
 ## - Merge: a shipped story's merge button merges the package's branch into your
 ##   local checkout (POST /islands/{id}/tasks/{task_id}/merge). A conflict queues
 ##   a package for the residents to fix; the result shows in game.gd's toast.
@@ -40,7 +38,6 @@ var _live_events: Array[Dictionary] = []  # this session's events, added on top 
 var _filter := "all"
 var _island_id := ""
 var _last_seen := 0.0
-var _last_opened_day := ""
 var _week := {}  # the insights `island` section
 var _week_values := {}  # field -> value Label
 var _history_request := 0  # only the latest GET .../events reply counts
@@ -71,14 +68,7 @@ func _ready() -> void:
 				_opened()
 	)
 	%GitHubLink.pressed.connect(func(): OS.shell_open(str(%GitHubLink.get_meta("url", ""))))
-	%Digest.button_pressed = _digest_on()
-	%Digest.toggled.connect(func(on: bool): _save("digest", on))
 	_show()
-
-
-## True if the game should open on this tab (daily digest on, first start today).
-func wants_morning_paper() -> bool:
-	return _digest_on() and _last_opened_day != NewsStories.local_day(Time.get_unix_time_from_system())
 
 
 func unread() -> int:
@@ -126,7 +116,6 @@ func _on_week(ok: bool, data: Dictionary, asked: int) -> void:
 
 func _opened() -> void:
 	_mark_seen()
-	_save("opened_day", NewsStories.local_day(Time.get_unix_time_from_system()))
 	if not Net.island.is_empty():
 		_week_request += 1
 		var path := "/islands/%s/insights?range=week" % str(Net.island["id"]).uri_encode()
@@ -350,13 +339,6 @@ func _load_settings() -> void:
 		_save("last_seen", _last_seen)
 		return
 	_last_seen = float(config.get_value("news", "last_seen", Time.get_unix_time_from_system()))
-	_last_opened_day = str(config.get_value("news", "opened_day", ""))
-
-
-func _digest_on() -> bool:
-	var config := ConfigFile.new()
-	config.load(SETTINGS)
-	return bool(config.get_value("news", "digest", true))
 
 
 func _save(key: String, value) -> void:

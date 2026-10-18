@@ -31,7 +31,8 @@ An island is a project: a local git repository (created, cloned, or adopted when
 island is founded). Buildings are workflow steps, roads are handoffs (`always` / `pass` /
 `fail`), and a task is a package that travels the roads. Each resident has a **brain**:
 Claude Code, Codex or Gemini CLI over the Agent Client Protocol (ACP), any OpenRouter
-model, or the free mock brain (the default).
+model, or the free mock brain (for development). There is no default: every resident is
+created with a brain picked in the creator.
 
 ## Where to look
 
@@ -48,7 +49,7 @@ Start from the change you want, open the files in the order given, then run the 
 | the package's route / one step | `engine.py` `WorkflowEngine._run_task` and `_run_step`; the order of events is in protocol.md "How a task flows" | `uv run pytest tests/test_engine.py` |
 | a new building type | `vocab.py` (`STEP_ORDER`, `STEP_NAMES`) → `island_map.py` (a lot in every `SHAPES` entry) → `engine.py` (a handler) → `game/scenes/protocol.gd` → `game/scenes/buildings/` (a scene) + `building_data.gd` + `island_builder.gd` (`BUILDING_SCENES`) → `island_layout.gd` (`SHAPES`) | `make check` |
 | an ACP brain | one entry in `BRAINS` (`agents/acp.py`) and its name in `vocab.ACP_BRAINS`; the game's list is `ResidentData.BRAINS` | `uv run pytest tests/test_acp.py tests/test_vocab.py` |
-| a gift (MCP server) | `GIFTS` in `agents/acp.py`; the game's list is `ResidentData.GIFTS` | `uv run pytest tests/test_acp.py` |
+| a gift (MCP server) | `GIFTS` in `gifts.py`; the game's list is `ResidentData.GIFTS` (gift-shop gifts need neither) | `uv run pytest tests/test_gifts.py` |
 | a setting or an API key | `prefs.py` (`SETTINGS` / `SECRETS`) → `game/scenes/ui/settings_popup.gd` → `.env.example` | `uv run pytest tests/test_prefs.py` |
 | the prompt residents get | `personality.py` (job + sliders) and `agents/__init__.py` (`build_prompt`, `parse_verdict`) | `uv run pytest tests/test_personality.py tests/test_acp.py` |
 | a judge decision (mood, help, flaky...) | `judge.py` (`RuleJudge`, then `JevJudge`) | `uv run pytest tests/test_judge.py` |
@@ -85,9 +86,10 @@ Grouped by layer; a module only imports from its own layer or the ones below it.
 | engine | `hooks.py` | `SpectatorHook`: copies a few events to the outside spectator feed (outbound only, off by default) | `test_hooks.py` |
 | engine | `metrics.py` | Tiger Data: one row per finished step / task in a TimescaleDB hypertable, `per_day` for Insights; a no-op on SQLite | `test_metrics.py` |
 | agents | `agents/__init__.py` | `AgentJob`, `StepResult`, `build_prompt`, `parse_verdict`, `permission_for`, `make_runner` | `test_acp.py` |
-| agents | `agents/acp.py` | `AcpRunner` (Claude Code, Codex, Gemini over ACP; one kept agent per resident per task), `BRAINS`, `GIFTS` | `test_acp.py` (with `fake_acp_agent.py`) |
+| agents | `agents/acp.py` | `AcpRunner` (Claude Code, Codex, Gemini over ACP; one kept agent per resident per task), `BRAINS`, `KEY_FOR_KIND` | `test_acp.py` (with `fake_acp_agent.py`) |
 | agents | `agents/openrouter.py` | `OpenRouterRunner`: a small tool loop over OpenRouter's chat API | `test_openrouter.py` |
 | agents | `agents/mock.py` | `MockRunner`: fake work, random bubbles and outcomes | |
+| agents | `gifts.py` | gifts (MCP servers): the built-in `GIFTS`, the gift shop (MCP Registry search, added gifts), `gift_servers` | `test_gifts.py` |
 | domain | `islands.py` | found / change / abandon islands, build mode's `set_map` | `test_islands.py`, `test_island_map.py` |
 | domain | `island_map.py` | map shapes, `validate_map`, `build_roads` (pure functions) | `test_island_map.py` |
 | domain | `residents.py` | create / edit / delete residents (the resident creator) | `test_residents.py` |
@@ -128,7 +130,7 @@ Bubbles sidebar, and every screen (`show_screen()` shows one).
 | `scenes/plants/` | `apple_tree.tscn`, `bush.tscn`, `swaying_plant.gd` |
 | `scenes/build/` | `build_mode.gd`: the Build tool (land, lots, plants, steps, pond, season) |
 | `scenes/home/` | the Archipelago (`home.gd`), `sea_view.gd`, `island_plate.gd`, `island_dropdown.gd`, `island_creator.gd` |
-| `scenes/residents/` | Residents tab, resident cards, the resident creator, `resident_data.gd` (jobs, brains, gifts, vibes) |
+| `scenes/residents/` | Residents tab, resident cards, the resident creator, the gift shop, `resident_data.gd` (jobs, brains, gifts, house keys, vibes) |
 | `scenes/mii/` | the 3D Mii (`mii.gd`), its parts (`mii_parts.gd`), the creator's preview stage |
 | `scenes/news/`, `scenes/insights/` | the News tab (`news_stories.gd` writes the stories) and the Insights tab |
 | `scenes/ui/` | sidebar, bubble cards, the answer popup, building panel, the talk popup (`talk_popup.gd` + `talk_room.gd`; the bubble types its text in via `visible_characters`, a click skips), settings, toasts, `ui.gd` (`UI.label`) |
@@ -164,6 +166,7 @@ Bubbles sidebar, and every screen (`show_screen()` shows one).
 | `PUT /islands/{id}/layout` | `build/build_mode.gd` |
 | `GET/PUT /settings`, `GET /health`, `GET /brains/detail`, `GET /models` | `ui/settings_popup.gd` |
 | `GET /brains/detail`, `GET /gifts`, `GET /brains/{brain}/models` | `residents/resident_creator.gd` |
+| `GET /gifts/search`, `POST /gifts`, `PUT` / `DELETE /gifts/{id}` | `residents/gift_shop.gd` |
 
 ## One task, end to end
 
@@ -249,19 +252,23 @@ Bubbles sidebar, and every screen (`show_screen()` shows one).
 
 The task's worktree branches off the island's `branch` (a local branch, else
 `origin/<branch>`, else HEAD), and the PR is opened against it. The resident's
-gifts go to `session/new` as MCP servers (`GIFTS` in `agents/acp.py`; a gift
+gifts go to `session/new` as MCP servers (`gifts.py`: the built-in `GIFTS` plus
+those added from the gift shop, the MCP Registry; a gift
 that can't run here is skipped with an `activity` note), the agent's usage
 updates become `notebook` events, and permission requests are decided by the
 resident's house keys tightened by the island's house rules
 (`agents.permission_for`: `shell` makes every command ask, `install_packages`
-makes commands that look like an install ask). The OpenRouter brain applies
-the same keys and rules to its `run_command` tool.
+makes commands that look like an install ask). Each gift's MCP tool calls (ACP
+kind `other`, matched to the gift by name) follow that gift's key (`gifts.key_for`:
+Browser, GitHub and Docs follow `fetch`; Terminal and Database `execute`; gift-shop
+gifts `tools`), and a gift whose key is `no` isn't handed over at all. The OpenRouter brain applies the same keys and
+rules to its own tools (`read`, `edit`, `execute`).
 
 ## Brains
 
 | `Resident.brain` | Runs | How we start it | Pays with |
 |---|---|---|---|
-| `mock` | MockRunner | n/a | free (the default) |
+| `mock` | MockRunner | n/a | free (development and tests) |
 | `claude-code` | Claude Code over ACP | `npx -y @agentclientprotocol/claude-agent-acp` | Claude Pro/Max login, or `ANTHROPIC_API_KEY` |
 | `codex` | Codex over ACP | `npx -y @agentclientprotocol/codex-acp` (bundles Codex) | ChatGPT login (`codex login`), or `OPENAI_API_KEY` |
 | `gemini` | Gemini CLI over ACP | `gemini --experimental-acp` | Google login, or `GEMINI_API_KEY` |

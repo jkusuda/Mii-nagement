@@ -74,7 +74,7 @@ The client should rebuild its view from scratch when it gets one.
         "brain": "gemini", "model": null, "color": "#F4A261",
         "catchphrase": "Let's map it out!",
         "bluntness": 0.3, "caution": 0.7, "chattiness": 0.6, "creativity": 0.5,
-        "keys": {"read": "yes", "edit": "ask", "execute": "ask", "fetch": "no"},
+        "keys": {"master": "no", "read": "yes", "edit": "ask", "execute": "ask", "fetch": "no", "tools": "ask"},
         "gifts": [],
         "state": "idle", "building": "mailbox", "mood": "happy", "notebook": null,
         "activity": "Reading auth.py",
@@ -127,17 +127,23 @@ The client should rebuild its view from scratch when it gets one.
 - `residents[].bluntness / caution / chattiness / creativity`: personality
   sliders, 0.0-1.0 (see `backend/mii/personality.py`).
 - `residents[].keys`: house keys, what the resident may do without asking.
-  Keys `read`, `edit`, `execute`, `fetch` (ACP tool kinds), each `yes`, `ask`,
-  or `no`. The ACP runner honours them: `yes` answers the agent's own
+  Keys `read`, `edit`, `execute`, `fetch` (ACP tool kinds) and `tools` (the
+  gifts' MCP tools, which agents report as kind `other`), each `yes`, `ask`,
+  or `no` (defaults: `DEFAULT_KEYS` in `models.py`; the snapshot always sends
+  every key). The ACP runner honours them; OpenRouter honours `read`, `edit`
+  and `execute` for its own tools; mock residents honour them too. `yes` answers the agent's own
   "allow once" option, `ask` shows a ✋ bubble, `no` rejects. `master` (`yes`
   or `no`, default `no`) is the resident's own master key: `yes` opens every
   door, whatever the other keys, the island's house rules or the tool kind say,
   and every bubble of theirs answers itself (✋ granted, ✅ approved, ❓ "carry
   on"), like the `master_key` setting but for this one resident.
 - `residents[].gifts`: ids of extra MCP servers (`browser`, `github`, `docs`,
-  `database`, `terminal`, `godot`, `video`) the resident brings to every ACP session (the `GIFTS`
-  table in `backend/mii/agents/acp.py`). `GET /gifts` says which ones work on
-  this machine. The `openrouter` brain has no MCP client, so it ignores them.
+  `database`, `terminal`, plus any added from the gift shop) the resident brings
+  to every ACP session (`backend/mii/gifts.py`). `GET /gifts` lists them all and
+  says which ones work on this machine. Each gift's tools follow one house key
+  (`key`): `browser`, `github` and `docs` follow `fetch`, `database` and
+  `terminal` follow `execute`, gift-shop gifts follow `tools`. A gift whose key
+  is `no` stays home (the agent never sees it); with `ask` each call is a ✋ bubble. The `openrouter` brain has no MCP client, so it ignores them.
 - `residents[].appearance`: how the resident's Mii looks. Only the game reads it
   (`MiiParts` in `game/scenes/mii/mii_parts.gd`): `skin` and `hair_color` are
   `#RRGGBB`; `hair` (`-1` = bald, the last few are hats), `eyes`, `brows`,
@@ -422,10 +428,11 @@ every client.
   }
 }
 ```
-`name` is required (1-20 characters). Every other field is optional and gets a
-default. `brain` is one of `mock`, `claude-code`, `codex`, `gemini`, `openrouter`.
-Unknown `job`, `brain`, key values, or gifts, and an `appearance` that isn't a
-small flat object, are rejected with `error`.
+`name` (1-20 characters) and `brain` (one of `mock`, `claude-code`, `codex`,
+`gemini`, `openrouter`) are required: a resident is never created without a brain.
+Every other field is optional and gets a default. A missing or unknown `brain`, an
+unknown `job`, key value or gift, and an `appearance` that isn't a small flat object
+are rejected with `error`.
 
 A new resident takes over the buildings of their job that nobody works at yet.
 To put them to work outright, add `"buildings": ["workshop", "lab"]` (building

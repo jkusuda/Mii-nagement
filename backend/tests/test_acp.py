@@ -11,13 +11,10 @@ from conftest import RecordingAsk, RecordingReport, make_job
 from mii.agents import BrainRunner, StepResult, make_runner, parse_verdict, permission_for
 from mii.agents.acp import (
     BRAINS,
-    GIFTS,
     AcpRunner,
     MiiClient,
     available_brains,
-    available_gifts,
     describe_command,
-    gift_servers,
 )
 from mii.agents.mock import MockRunner
 
@@ -157,26 +154,11 @@ async def test_acp_runner_hands_over_gifts_and_fills_the_notebook(sandbox, monke
     runner = AcpRunner("claude-code", command=[sys.executable, str(FAKE_AGENT)])
     job = make_job("claude-code", workdir=workdir, sandbox=sandbox)
     job.resident.gifts = ["docs", "browser"]
+    job.resident.keys = {"fetch": "ask"}  # both follow "Use the internet": with "no" they'd stay home
     job.notebook = fill
     result = await asyncio.wait_for(runner.run(job), 20)
     assert result.outcome == "pass" and "gifts: docs,browser" in result.summary
     assert notebook == [0.25]  # the fake agent reported 250 of 1000 tokens used
-
-
-def test_gifts_table_and_what_is_missing(monkeypatch):
-    import shutil
-
-    assert set(GIFTS) == {"browser", "github", "docs", "database", "terminal", "godot", "video"}
-    monkeypatch.setattr(shutil, "which", lambda name: None)
-    assert all(not g["ok"] and "install" in g["hint"] for g in available_gifts().values())
-    servers, skipped = gift_servers(["docs", "jetpack"])
-    assert servers == [] and len(skipped) == 2 and "Docs" in skipped[0]
-    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
-    monkeypatch.setattr("mii.prefs.extra_env", lambda name: None)
-    assert available_gifts()["docs"]["ok"] is True
-    assert "DATABASE_URL" in available_gifts()["database"]["hint"]
-    [docs], _ = gift_servers(["docs"])
-    assert docs.name == "docs" and docs.command == "/usr/bin/npx" and docs.args[-1] == "@upstash/context7-mcp"
 
 
 def test_house_rules_tighten_house_keys():
@@ -208,7 +190,7 @@ def test_a_residents_own_master_key_opens_every_door():
     job.rules = {"shell": True, "install_packages": True}
     assert permission_for(job, "execute", "pip install requests") == "yes"
     assert permission_for(job, "fetch", "x") == "yes" and permission_for(job, "edit", "x") == "yes"
-    assert permission_for(job, "other", "x") == "yes"  # tool kinds outside the four keys too
+    assert permission_for(job, "tools", "x") == "yes"  # gifts' tools too
     job.resident.keys["master"] = "no"
     assert permission_for(job, "fetch", "x") == "no"
 

@@ -124,8 +124,8 @@ broadcasts a `resident` event. Offline, the game adds the resident locally so
 the screens still work.
 
 The backend half is done: `AcpRunner` honours `keys` (auto-answers permission
-requests) and `gifts` (handed to `session/new` as MCP servers from the `GIFTS`
-table; `GET /gifts` says which run on this machine), and `buildings` on
+requests) and `gifts` (handed to `session/new` as MCP servers, `gifts.py`;
+`GET /gifts` says which run on this machine; the gift shop adds more from the MCP Registry), and `buildings` on
 `create_resident` / `update_resident` makes a resident the worker at those
 buildings (protocol.md). Still to do in the game: a "works at" picker and
 greying out unavailable gifts.

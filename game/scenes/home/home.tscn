@@ -1,10 +1,9 @@
-[gd_scene load_steps=9 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://scenes/home/home.gd" id="1_home"]
 [ext_resource type="Texture2D" path="res://assets/icons/sun.svg" id="2_sun"]
 [ext_resource type="Texture2D" path="res://assets/icons/map.svg" id="3_map"]
 [ext_resource type="Texture2D" path="res://assets/icons/plus.svg" id="4_plus"]
-[ext_resource type="Texture2D" path="res://assets/icons/user.svg" id="5_user"]
 [ext_resource type="Texture2D" path="res://assets/icons/settings.svg" id="6_settings"]
 [ext_resource type="Script" path="res://scenes/ui/dashed_button.gd" id="7_dashed"]
 [ext_resource type="Script" path="res://scenes/home/sea_view.gd" id="8_sea"]
@@ -247,15 +246,6 @@ tooltip_text = "Found a new island"
 theme_type_variation = &"NavButton"
 text = "New island"
 icon = ExtResource("4_plus")
-
-[node name="Caretaker" type="Button" parent="Margin/Columns/Left/NavRow/NavTray/Buttons"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(180, 50)
-layout_mode = 2
-theme_type_variation = &"NavButton"
-text = "Log in"
-text_overrun_behavior = 3
-icon = ExtResource("5_user")
 
 [node name="Settings" type="Button" parent="Margin/Columns/Left/NavRow/NavTray/Buttons"]
 unique_name_in_owner = true

@@ -213,7 +213,7 @@ isn't a git repo) come back as a 400 with the reason, shown in the creator.
 ## Settings
 
 `GET /settings` shows the effective settings (`mock_agents`, `islands_root`,
-`test_command`, `openrouter_model`, `keep_worktrees`, `database_url`, `godot_path`,
+`test_command`, `openrouter_model`, `keep_worktrees`, `database_url`,
 `judge`), which ones `.env` locks, and which API keys are set. `PUT /settings` saves
 settings to the database and API keys (`openrouter_api_key`, `typesafe_api_key`,
 `anthropic_api_key`, `openai_api_key`, `gemini_api_key`) to the OS keychain: macOS Keychain, Windows Credential

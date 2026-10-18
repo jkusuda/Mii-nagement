@@ -102,16 +102,18 @@ def test_found_refuses_a_non_empty_folder(island, tmp_path):
 async def test_new_residents_move_into_their_islands_buildings(island):
     found = sync_to_async(islands.create_island)
     new = await found({"name": "Fern Harbor"})
-    coder = await residents.create_resident(new.id, {"name": "Pip", "job": "coder"})
+    coder = await residents.create_resident(new.id, {"name": "Pip", "job": "coder", "brain": "mock"})
     assert coder.building_id == "fern_harbor_workshop"
     works = {b.type: b.resident_id async for b in Building.objects.filter(island_id=new.id)}
     assert works["workshop"] == coder.id and works["lab"] == coder.id and works["mailbox"] is None
     # A second coder doesn't take over.
-    await residents.create_resident(new.id, {"name": "Juniper", "job": "coder"})
+    await residents.create_resident(new.id, {"name": "Juniper", "job": "coder", "brain": "mock"})
     assert (await Building.objects.aget(pk="fern_harbor_workshop")).resident_id == coder.id
     # A reviewer on an island without a courthouse still gets a home.
     quick = await found({"name": "Quick", "plan": "quick_fixes"})
-    assert (await residents.create_resident(quick.id, {"name": "Bea", "job": "reviewer"})).building_id is not None
+    assert (
+        await residents.create_resident(quick.id, {"name": "Bea", "job": "reviewer", "brain": "mock"})
+    ).building_id is not None
 
 
 def test_ensure_repo_gives_the_seed_island_a_repo(island, repos_in_tmp):

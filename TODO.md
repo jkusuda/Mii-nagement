@@ -94,8 +94,8 @@ Backend design: [docs/architecture.md](docs/architecture.md).
       hop on `proud`, slump on `frustrated`; vibes (sleepy, bored, lonely, excited, relaxed) read off the snapshot
 - [ ] A free backend "social ticker" so every client and News see the same ambient chats
 - [ ] Two accounts on one island (see architecture.md "Two people, one island"); LAN co-pilot works today
-- [x] Gifts for animation and video work: `godot` (godot-mcp-runtime, needs `GODOT_PATH`), `video` (ffmpeg-mcp);
-      project skill `.claude/skills/godot-animation`
+- [x] Gift shop: search the MCP Registry and add more MCP servers as gifts (`gifts.py`, `gift_shop.gd`);
+      a `tools` house key for their tool calls, and the master key in the resident creator
 - [x] Friendship meter between residents who hand off to each other (`Friendship` table,
       `friendships` in the snapshot, `friendship` event; resident cards show the best friend)
 - [x] Cancel a task (`cancel_task` / `POST .../cancel`), create one over the socket

@@ -165,7 +165,7 @@ a pond, plants, a season, and each building's lot and facing.
 - `news_screen.gd` listens to every event (`Net.event_received`) even while
   hidden, so the News button's badge can count stories you haven't seen. It
   saves when you last looked in `user://news.cfg` (a per-user folder Godot
-  gives every game), along with the Daily digest setting.
+  gives every game).
 
 ### 11. `islands.gd` and `scenes/home/`: the Archipelago
 - The game opens on the Archipelago (`home.tscn`): one card per island with a

@@ -49,9 +49,12 @@ const PART_TABS := [
 	["hair", "Hair", 0], ["eyes", "Eyes", 0], ["brows", "Brows", 1], ["nose", "Nose", 4], ["mouth", "Mouth", 2]
 ]
 const ABOUT_ICON := preload("res://assets/icons/user.svg")
+const SHOP_ICON := preload("res://assets/icons/plus.svg")  # the "Find more" tile
+const ADDED_GIFT_ICON := preload("res://assets/icons/sprout.svg")  # gifts added from the gift shop
 const LOOK_ICON := preload("res://assets/icons/smile.svg")
 const INK := Color("292E50")  # the theme's dark text colour
 const PART_COLUMNS := 14
+const GIFT_ROWS_SHOWN := 2  # gift tile rows on show; more scroll
 
 var _data := ResidentData.blank()
 var _editing := false
@@ -66,6 +69,10 @@ var _works_at_box := VBoxContainer.new()
 var _live := true  # false while drafting a resident for a new island (not on Net.island yet)
 var _move_away := Button.new()
 var _key_pickers := {}
+var _master_picker: OptionButton
+var _key_note := Label.new()  # which keys the picked gifts follow, and any gift a "No" keeps home
+var _shop_button := Button.new()  # "Find more" in the Gifts header: opens the gift shop
+var _gift_grid: GridContainer  # the gift tiles, inside a ScrollContainer (_build_gifts)
 var _brain_ids: Array = ResidentData.BRAINS.keys()
 var _part_tiles := {}  # kind -> Array of tile buttons, index = style (hair: index 0 is "none")
 var _part_grids := {}  # kind -> GridContainer
@@ -144,14 +151,14 @@ func _load_widgets() -> void:
 	%CatchphraseEdit.text = str(_data["catchphrase"])
 	_show_model_picker()
 	_job_buttons.get(_data["job"], _job_buttons["coder"]).button_pressed = true
-	%BrainPicker.select(maxi(_brain_ids.find(_data["brain"]), 0))
+	%BrainPicker.select(_brain_ids.find(_data["brain"]))  # -1 = nothing picked yet
+	if _data["brain"] == "":
+		%BrainPicker.text = "Pick a brain"
 	for trait_name in _sliders:
 		_sliders[trait_name].set_value_no_signal(float(_data[trait_name]))
 	for gift in _gift_buttons:
 		_gift_buttons[gift].set_pressed_no_signal(gift in _data["gifts"])
-	for key in _key_pickers:
-		var choices: Array = ResidentData.KEY_CHOICES.keys()
-		_key_pickers[key].select(choices.find(_data["keys"].get(key, "ask")))
+	_show_keys()
 	for kind in _part_tiles:
 		# Hair's tile 0 is "None" (style -1), so its tiles are shifted by one.
 		var index := int(_data["appearance"][kind]) + (1 if kind == "hair" else 0)
@@ -228,6 +235,12 @@ func _on_move_in() -> void:
 	if str(_data["name"]).strip_edges() == "":
 		%NameEdit.grab_focus()
 		%NameEdit.placeholder_text = "Everyone needs a name!"
+		return
+	if str(_data["brain"]) == "":
+		_show_page(false)  # the brain picker is on the first page
+		%BrainPicker.grab_focus()
+		%FooterLabel.text = "Pick a brain first: it does the thinking."
+		%FooterLabel.add_theme_color_override("font_color", Color("C0392B"))
 		return
 	# A new resident has no id yet: the backend picks it (and their home building).
 	var data := _data.duplicate(true)
@@ -416,6 +429,7 @@ func _build_brains() -> void:
 			# A model id belongs to one brain: a new brain starts on its default.
 			_data["model"] = null
 			_show_model_picker()
+			_refresh()  # clears a "Pick a brain first" warning
 	)
 
 	# The brain's models, next to the brain picker (every brain but mock).
@@ -437,11 +451,11 @@ func _build_brains() -> void:
 	%BrainPicker.add_sibling(_model_picker)
 
 
-## Show the model picker for the picked brain (none for mock), loading that brain's
+## Show the model picker for the picked brain (none for mock or no brain yet), loading that brain's
 ## models from GET /brains/{brain}/models the first time.
 func _show_model_picker() -> void:
 	var brain := str(_data["brain"])
-	_model_picker.visible = brain != "mock"
+	_model_picker.visible = brain not in ["mock", ""]
 	if not _model_picker.visible:
 		return
 	if _models.has(brain):
@@ -525,52 +539,165 @@ func _build_sliders() -> void:
 		_sliders[t[0]] = slider
 
 
+## The gift tiles scroll GIFT_ROWS_SHOWN rows at a time, so gifts added from the gift shop
+## never push the house keys (and Save) off the screen. "Find more" sits in the header.
 func _build_gifts() -> void:
+	_gift_grid = %Gifts
+	# Godot concept: a ScrollContainer scrolls its one child when it's taller than the box.
+	# The grid from the scene moves into one here, in the same spot.
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	var gap: int = _gift_grid.get_theme_constant("v_separation")
+	scroll.custom_minimum_size.y = GIFT_ROWS_SHOWN * 56 + (GIFT_ROWS_SHOWN - 1) * gap
+	_gift_grid.add_sibling(scroll)
+	_gift_grid.reparent(scroll)
+	_gift_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	for g in ResidentData.GIFTS:
-		var tile := Button.new()
-		tile.text = g[1]
-		tile.icon = g[2]
-		tile.toggle_mode = true
-		tile.theme_type_variation = &"GiftTile"
-		tile.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		tile.vertical_icon_alignment = VERTICAL_ALIGNMENT_TOP
-		tile.custom_minimum_size = Vector2(0, 56)
-		tile.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		tile.focus_mode = Control.FOCUS_NONE
-		tile.tooltip_text = "Hand over the %s MCP server" % g[1]
-		tile.toggled.connect(
-			func(on: bool):
-				if on and g[0] not in _data["gifts"]:
-					_data["gifts"].append(g[0])
-				elif not on:
-					_data["gifts"].erase(g[0])
-				_show_gift(g[0])
-		)
-		%Gifts.add_child(tile)
-		_gift_buttons[g[0]] = tile
+		_add_gift_tile(g[0], g[1], g[2])
+
+	_shop_button.text = "Find more"
+	_shop_button.icon = SHOP_ICON
+	_shop_button.theme_type_variation = &"OutlineButton"
+	_shop_button.add_theme_constant_override("icon_max_width", 14)
+	_shop_button.add_theme_font_size_override("font_size", 12)
+	_shop_button.custom_minimum_size.y = 28
+	_shop_button.size_flags_horizontal = Control.SIZE_EXPAND | Control.SIZE_SHRINK_END
+	_shop_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_shop_button.focus_mode = Control.FOCUS_NONE
+	_shop_button.tooltip_text = "The gift shop: search the MCP Registry for more tools"
+	_shop_button.pressed.connect(func(): GiftShop.open(self, _gift_info, _on_shop_changed))
+	scroll.get_parent().get_node("GiftsHeader").add_child(_shop_button)
 
 
+## One toggle tile per gift. Added gifts (from the gift shop) get a sprout.
+func _add_gift_tile(gift: String, label: String, icon: Texture2D) -> void:
+	var tile := Button.new()
+	tile.text = label if label.length() <= 9 else label.left(8) + "…"  # registry titles can be long
+	tile.icon = icon
+	tile.toggle_mode = true
+	tile.theme_type_variation = &"GiftTile"
+	tile.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	tile.vertical_icon_alignment = VERTICAL_ALIGNMENT_TOP
+	tile.custom_minimum_size = Vector2(0, 56)
+	tile.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tile.focus_mode = Control.FOCUS_NONE
+	tile.tooltip_text = "Hand over the %s MCP server" % label
+	# A gift that can't run here is disabled: keep its name readable, just greyed.
+	tile.add_theme_color_override("font_disabled_color", Color("A3A7BC"))
+	tile.add_theme_color_override("icon_disabled_color", Color("A3A7BC"))
+	tile.set_pressed_no_signal(gift in _data["gifts"])
+	tile.toggled.connect(
+		func(on: bool):
+			if on and gift not in _data["gifts"]:
+				_data["gifts"].append(gift)
+				_unlock_key_for(gift)
+			elif not on:
+				_data["gifts"].erase(gift)
+			_show_gift(gift)
+			_show_key_note()
+	)
+	_gift_grid.add_child(tile)
+	_gift_buttons[gift] = tile
+
+
+## The master key first (Yes / No), then one Yes / Ask me / No picker per house key.
+## While the master key is on, the other pickers are greyed out: they don't count.
 func _build_keys() -> void:
+	var master_label := Label.new()
+	master_label.text = "Master key"
+	master_label.theme_type_variation = &"BodyText"
+	master_label.tooltip_text = ResidentData.MASTER_KEY_HINT
+	master_label.mouse_filter = Control.MOUSE_FILTER_PASS  # so the tooltip shows
+	master_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_master_picker = _key_picker()
+	_master_picker.add_item("No")
+	_master_picker.add_item("Yes")
+	_master_picker.tooltip_text = ResidentData.MASTER_KEY_HINT
+	_master_picker.item_selected.connect(
+		func(index: int):
+			_data["keys"]["master"] = "yes" if index == 1 else "no"
+			_show_keys()
+	)
+	%Keys.add_child(master_label)
+	%Keys.add_child(_master_picker)
+
 	var choices: Array = ResidentData.KEY_CHOICES.keys()
 	for k in ResidentData.HOUSE_KEYS:
 		var label := Label.new()
 		label.text = k[1]
 		label.theme_type_variation = &"BodyText"
-		label.tooltip_text = "ACP tool kinds: %s" % k[2]
-		label.mouse_filter = Control.MOUSE_FILTER_PASS  # so the tooltip shows
+		label.tooltip_text = "Covers %s" % k[2]
+		label.mouse_filter = Control.MOUSE_FILTER_PASS
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		var picker := OptionButton.new()
-		picker.theme_type_variation = &"OutlineButton"
-		picker.add_theme_icon_override("arrow", ARROW)
-		picker.add_theme_constant_override("h_separation", 6)
-		picker.custom_minimum_size = Vector2(96, 30)
-		picker.focus_mode = Control.FOCUS_NONE
+		var picker := _key_picker()
 		for choice in choices:
 			picker.add_item(ResidentData.KEY_CHOICES[choice])
-		picker.item_selected.connect(func(index: int): _data["keys"][k[0]] = choices[index])
+		picker.item_selected.connect(
+			func(index: int):
+				_data["keys"][k[0]] = choices[index]
+				_show_key_note()
+		)
 		%Keys.add_child(label)
 		%Keys.add_child(picker)
 		_key_pickers[k[0]] = picker
+	_key_note.theme_type_variation = &"LabelMuted"
+	_key_note.add_theme_font_size_override("font_size", 11)
+	_key_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_key_note.custom_minimum_size.x = 1  # wrap to the panel's width instead of widening it
+	%Keys.add_sibling(_key_note)
+
+
+func _key_picker() -> OptionButton:
+	var picker := OptionButton.new()
+	picker.theme_type_variation = &"OutlineButton"
+	picker.add_theme_icon_override("arrow", ARROW)
+	picker.add_theme_constant_override("h_separation", 6)
+	picker.custom_minimum_size = Vector2(96, 30)
+	picker.focus_mode = Control.FOCUS_NONE
+	return picker
+
+
+## Copy the keys into the pickers; with the master key on, the rest are greyed out.
+func _show_keys() -> void:
+	var master: bool = _data["keys"].get("master", "no") == "yes"
+	_master_picker.select(1 if master else 0)
+	var choices: Array = ResidentData.KEY_CHOICES.keys()
+	for key in _key_pickers:
+		var picker: OptionButton = _key_pickers[key]
+		picker.select(choices.find(_data["keys"].get(key, "ask")))
+		picker.disabled = master
+		picker.tooltip_text = "The master key opens this door anyway" if master else ""
+	_show_key_note()
+
+
+## Giving a gift whose house key is "No" would do nothing (it stays home), so it
+## turns that key to "Ask me". The note under the keys says so.
+func _unlock_key_for(gift: String) -> void:
+	var key := str(_gift_info.get(gift, {}).get("key", ""))
+	if key != "" and _data["keys"].get(key, "ask") == "no":
+		_data["keys"][key] = "ask"
+		_show_keys()
+
+
+## Under the keys: which key each picked gift follows, in red when a "No" keeps it home.
+func _show_key_note() -> void:
+	var master: bool = _data["keys"].get("master", "no") == "yes"
+	var lines := []
+	var home := []
+	for k in ResidentData.HOUSE_KEYS:
+		var names := []
+		for gift in _data["gifts"]:
+			if str(_gift_info.get(gift, {}).get("key", "")) == k[0]:
+				names.append(str(_gift_info[gift].get("label", gift)))
+		if names.is_empty():
+			continue
+		if not master and _data["keys"].get(k[0], "ask") == "no":
+			home.append("%s stay%s home: “%s” is No." % [" and ".join(names), "" if names.size() > 1 else "s", k[1]])
+		else:
+			lines.append("%s follow%s “%s”." % [" and ".join(names), "" if names.size() > 1 else "s", k[1]])
+	_key_note.text = " ".join(home + lines)
+	_key_note.visible = _key_note.text != ""
+	_key_note.add_theme_color_override("font_color", Color("C0392B") if home else Color("8A8FA8"))
 
 
 ## Ask the backend which brains can run here (GET /brains/detail), grey out
@@ -592,18 +719,37 @@ func _check_brains() -> void:
 	)
 
 
-## Ask the backend which gifts can run here (GET /gifts) and grey out the rest,
-## with why in the tooltip ("install `npx` first").
+## Ask the backend which gifts exist and which run here (GET /gifts): add tiles
+## for gifts from the gift shop, and grey out what can't run ("install `npx` first").
 func _check_gifts() -> void:
 	Net.request_json(
 		"/gifts",
 		func(ok: bool, gifts: Dictionary):
 			if not ok:
 				return  # backend offline: leave every gift selectable
-			_gift_info = gifts
-			for gift in _gift_buttons:
-				_show_gift(gift)
+			_show_gift_info(gifts)
 	)
+
+
+## The gift shop changed what's on the shelf (it sends the new GET /gifts answer).
+func _on_shop_changed(gifts: Dictionary) -> void:
+	_show_gift_info(gifts)
+
+
+func _show_gift_info(gifts: Dictionary) -> void:
+	_gift_info = gifts
+	# Gifts that left the shelf: drop their tile, and take them back from this resident.
+	for gift in _gift_buttons.keys():
+		if not gifts.has(gift) and not ResidentData.GIFTS.any(func(g): return g[0] == gift):
+			_gift_buttons[gift].queue_free()
+			_gift_buttons.erase(gift)
+			_data["gifts"].erase(gift)
+	for gift in gifts:
+		if not _gift_buttons.has(gift):
+			_add_gift_tile(gift, str(gifts[gift].get("label", gift)), ADDED_GIFT_ICON)
+	for gift in _gift_buttons:
+		_show_gift(gift)
+	_show_key_note()
 
 
 ## A gift that can't run here is greyed out, unless the resident already has
@@ -615,8 +761,12 @@ func _show_gift(gift: String) -> void:
 	var tile: Button = _gift_buttons[gift]
 	var ready: bool = info.get("ok", false)
 	tile.disabled = not ready and not tile.button_pressed
+	var key_name := ""
+	for k in ResidentData.HOUSE_KEYS:
+		if k[0] == str(info.get("key", "")):
+			key_name = k[1]
 	tile.tooltip_text = (
-		"%s: %s" % [info.get("label", gift), info.get("hint", "")]
+		"%s: %s\nFollows the “%s” house key." % [info.get("label", gift), info.get("hint", ""), key_name]
 		if ready
 		else "Can't hand this over yet: %s" % info.get("hint", "not set up")
 	)

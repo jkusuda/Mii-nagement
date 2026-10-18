@@ -99,7 +99,7 @@ async def test_cancel_and_delete_endpoints(island, fake_runtime):
     assert (await client.post("/islands/sunny/tasks/t_nope/merge")).status_code == 404
 
     assert (await client.delete("/islands/sunny/residents/carlos")).status_code == 409  # works at the workshop
-    mo = await residents.create_resident("sunny", {"name": "Mo", "job": "coder"})
+    mo = await residents.create_resident("sunny", {"name": "Mo", "job": "coder", "brain": "mock"})
     assert (await client.delete(f"/islands/sunny/residents/{mo.id}")).json() == {"deleted": mo.id}
     assert (await client.delete(f"/islands/sunny/residents/{mo.id}")).status_code == 404
 
@@ -138,7 +138,7 @@ async def test_events_history_endpoint(island, fake_runtime):
 
 async def test_gifts_endpoint():
     data = (await AsyncClient().get("/gifts")).json()
-    assert set(data) == {"browser", "github", "docs", "database", "terminal", "godot", "video"}
+    assert set(data) == {"browser", "github", "docs", "database", "terminal"}
     assert {"ok", "label", "hint"} <= set(data["docs"]) and isinstance(data["docs"]["ok"], bool)
 
 
@@ -236,7 +236,7 @@ async def test_meta_lists_the_vocabulary():
         and data["traits"]["caution"]["high"]
     )
     assert "openrouter" in data["brains"] and "mock" in data["brains"]
-    assert set(data["gifts"]) == {"browser", "github", "docs", "database", "terminal", "godot", "video"}
+    assert set(data["gifts"]) == {"browser", "github", "docs", "database", "terminal"}
     assert data["keys"]["values"] == ["yes", "ask", "no"] and data["keys"]["defaults"]["read"] == "yes"
     assert len(data["plans"]["classic"]["steps"]) == 5 and data["building_types"] == [
         "mailbox",

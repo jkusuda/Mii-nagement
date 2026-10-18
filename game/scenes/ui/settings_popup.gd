@@ -44,7 +44,6 @@ const TEXTS := {
 	"test_command": ["Lab test command", "e.g. uv run pytest", "What the Lab runs. Empty: the reviewer decides."],
 	"openrouter_model":
 	["Default OpenRouter model", "e.g. anthropic/claude-sonnet-4.5", "For OpenRouter residents without their own."],
-	"godot_path": ["Godot for the Godot gift", "the Godot 4 app or binary", "Residents with the Godot gift run this."],
 }
 ## [secret, label]. Must match SECRETS in backend/mii/prefs.py.
 const SECRETS := [
@@ -56,7 +55,7 @@ const SECRETS := [
 ]
 
 var _texts := {}  # setting -> LineEdit
-var _browse := {}  # setting -> its Browse button (islands_root, godot_path)
+var _browse := {}  # setting -> its Browse button (islands_root)
 var _packages := 3
 var _packages_label := Label.new()
 var _packages_buttons: Array[Button] = []  # [-, +]
@@ -366,7 +365,6 @@ func _brains_card() -> Control:
 	gap.custom_minimum_size.y = 4
 	box.add_child(gap)
 	box.add_child(_text_field("openrouter_model"))
-	box.add_child(_text_field("godot_path", true))
 	return parts[0]
 
 
@@ -628,12 +626,11 @@ func _show_packages() -> void:
 # --- Browse --------------------------------------------------------------------
 
 
-## Pick a folder (where new islands go) or the Godot app with the system's file picker.
+## Pick a folder (where new islands go) with the system's file picker.
 func _browse_for(key: String) -> void:
 	_dialog_for = key
-	var folder := key == "islands_root"
-	_dialog.file_mode = FileDialog.FILE_MODE_OPEN_DIR if folder else FileDialog.FILE_MODE_OPEN_FILE
-	_dialog.title = "Where should new islands go?" if folder else "Find Godot 4"
+	_dialog.file_mode = FileDialog.FILE_MODE_OPEN_DIR
+	_dialog.title = "Where should new islands go?"
 	var current: String = _texts[key].text.strip_edges()
 	if current and DirAccess.dir_exists_absolute(current):
 		_dialog.current_dir = current
@@ -643,9 +640,6 @@ func _browse_for(key: String) -> void:
 
 
 func _on_picked(path: String) -> void:
-	# On macOS the file picker hands back an app bundle (Godot.app); the program is inside it.
-	if _dialog_for == "godot_path" and path.ends_with(".app"):
-		path = path.path_join("Contents/MacOS").path_join(path.get_file().get_basename())
 	_texts[_dialog_for].text = path
 
 

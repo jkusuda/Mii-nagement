@@ -37,7 +37,6 @@ SETTINGS = {
     "openrouter_model": ("OPENROUTER_MODEL", "anthropic/claude-sonnet-4.5", str),
     "keep_worktrees": ("KEEP_WORKTREES", False, bool),
     "database_url": ("DATABASE_URL", None, str),  # for the `database` gift (agents/acp.py GIFTS)
-    "godot_path": ("GODOT_PATH", None, str),  # for the `godot` gift: the Godot 4 executable
     "judge": ("JUDGE", "auto", str),  # auto | off | jev | gemini (judge.py, runtime.reload)
     "judge_model": ("JUDGE_MODEL", "gemini-2.5-flash", str),  # the Gemini judge's model
     "spectator_url": ("SPECTATOR_URL", None, str),  # the spectator feed's ingest URL (hooks.py); None = off
@@ -155,6 +154,27 @@ def secret(name: str) -> str | None:
         raise PrefsError(f"unknown secret: {name}")
     if _env(SECRETS[name]) is not None:
         return _env(SECRETS[name])
+    return _keychain_get(name)
+
+
+def set_secret(name: str, value: str | None) -> None:
+    """Store (or with None, delete) an API key in the keychain."""
+    if name not in SECRETS:
+        raise PrefsError(f"unknown secret: {name}")
+    _keychain_set(name, value)
+
+
+def gift_env(gift: str, env_name: str) -> str | None:
+    """A value an added gift's MCP server needs (gifts.py): the environment, else the keychain."""
+    return _env(env_name) or _keychain_get(f"gift.{gift}.{env_name}")
+
+
+def set_gift_env(gift: str, env_name: str, value: str | None) -> None:
+    """Store (or with None, delete) a value for an added gift. Kept in the keychain: they are often API keys."""
+    _keychain_set(f"gift.{gift}.{env_name}", value)
+
+
+def _keychain_get(name: str) -> str | None:
     try:
         value = keyring.get_password(SERVICE, name)
     except keyring.errors.KeyringError:
@@ -162,10 +182,7 @@ def secret(name: str) -> str | None:
     return value or None
 
 
-def set_secret(name: str, value: str | None) -> None:
-    """Store (or with None, delete) an API key in the keychain."""
-    if name not in SECRETS:
-        raise PrefsError(f"unknown secret: {name}")
+def _keychain_set(name: str, value: str | None) -> None:
     value = (value or "").strip() or None
     try:
         if value is None:
