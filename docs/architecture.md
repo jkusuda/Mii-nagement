@@ -52,7 +52,7 @@ Start from the change you want, open the files in the order given, then run the 
 | a gift (MCP server) | `GIFTS` in `gifts.py`; the game's list is `ResidentData.GIFTS` (gift-shop gifts need neither) | `uv run pytest tests/test_gifts.py` |
 | a setting or an API key | `prefs.py` (`SETTINGS` / `SECRETS`) → `game/scenes/ui/settings_popup.gd` → `.env.example` | `uv run pytest tests/test_prefs.py` |
 | the prompt residents get | `personality.py` (job + sliders) and `agents/__init__.py` (`build_prompt`, `parse_verdict`) | `uv run pytest tests/test_personality.py tests/test_acp.py` |
-| a judge decision (mood, help, flaky...) | `judge.py` (`RuleJudge`, then `JevJudge`) | `uv run pytest tests/test_judge.py` |
+| a judge decision (mood, help, tip...) | `judge.py` (`RuleJudge`, then `JevJudge`) | `uv run pytest tests/test_judge.py` |
 | island map rules (land, lots, doors) | `island_map.py` `validate_map` **and** `game/scenes/island/island_layout.gd` `problem()`: keep them in step | `uv run pytest tests/test_island_map.py` + `make godot-check` |
 | founding an island, repos | `islands.py` (`create_island`) → `repos.py` (git) → `github.py` (`gh`) | `uv run pytest tests/test_islands.py` |
 | a screen or popup | `game/scenes/game.gd` (`show_screen`, the nav) → the screen's folder below; build UI in code with `UI.label` and the theme in `ui/theme.tres` | `make godot-check`, then play it |
@@ -160,6 +160,7 @@ Bubbles sidebar, and every screen (`show_screen()` shows one).
 | `DELETE /islands/{id}` | `home/island_dropdown.gd` |
 | `POST /islands/{id}/tasks` | `ui/package_form.gd` |
 | `GET /islands/{id}/tasks/{task}` | `ui/building_panel.gd` (a package's thinking history) |
+| `GET /islands/{id}/tasks?status=done`, `POST .../tasks/{task}/merge-pr` | `ui/open_prs.gd` (the Post Office's open pull requests and their Merge button) |
 | `GET /islands/{id}/talks` | `ui/talk_popup.gd` (what was said at that building before) |
 | `GET /usage` | `ui/bubbles_sidebar.gd` (today's use per brain) |
 | `GET /islands/{id}/events`, `GET .../insights?range=week`, `POST .../tasks/{task}/merge` | `news/news_screen.gd` |
@@ -212,13 +213,13 @@ Bubbles sidebar, and every screen (`show_screen()` shows one).
      read-only mode, pick the resident's model if offered, send personality +
      instructions + history as one prompt. The process and session are then
      kept (`AcpRunner.live`, by task + resident): their next visit (a retry, a
-     help visit, a Workshop pre-check retry) prompts the same session with a
+     help visit) prompts the same session with a
      short "same session as before" header and no diary, so the agent skips
      start-up and re-reading the repo. A changed worktree, model or gifts, or a
      dead process, starts a fresh one. While it runs: tool calls become
      `activity` events; permission requests are decided by the resident's house
      keys (`yes` = allow, `no` = reject, `ask` = a ✋ bubble whose buttons are
-     the agent's own options; no answer = reject); file reads/writes are served only inside the worktree.
+     the agent's own options); file reads/writes are served only inside the worktree.
      Claude Code's subagents (its Agent tool, ACP kind `think`) count as `read`; the
      fresh-session prompt carries the brain's `tip` (`BRAINS`), which asks Claude Code to
      run independent parts as parallel subagents. Their tool calls ask like any other, so
@@ -233,20 +234,16 @@ Bubbles sidebar, and every screen (`show_screen()` shows one).
    - **OpenRouterRunner**: the same contract over OpenRouter's chat API with
      built-in tools.
    Some handlers do more: the **Workshop** commits the worktree after the
-   coder and, with a test command (the island's `test_command`, else the
-   `TEST_COMMAND` setting), runs the tests itself before the
-   handoff: a failure goes back to the coder in the same step with the output
-   on top (`PRETEST_RETRIES`, 2, at most; the last attempt is left to the Lab),
-   the **Lab** runs that command itself and uses the exit code, the
-   **Courthouse** prepends `git diff --stat` and, once the reviewer passes it on
+   coder; the **Lab** is the resident's own call (they work out how this project's
+   tests run, run them and give the verdict); the **Courthouse** prepends `git diff --stat` and, once the reviewer passes it on
    an island with a GitHub repo, asks you with a ✅ `ready` bubble ("Approve &
    merge" / "Send back"; skipped when the `merge_pr` house rule is off, which
    approves it). Send back fails the step with your note. The **Post Office**
    turns the reply into a PR title/body, opens the PR, and merges it with
-   `gh pr merge` if you approved (squash, else merge, else rebase). Unanswered:
-   the PR stays open.
+   `gh pr merge` if you approved (squash, else merge, else rebase). Unanswered
+   (only with a `PERMISSION_TIMEOUT`): the PR stays open for the Post Office's Merge button.
 4. The outcome picks the next road, except that red tests at the Lab go straight
-   back to the Workshop the package last came through, with the test output on top
+   back to the Workshop the package last came through, with the Lab's report on top
    of the coder's instructions. A task stops (`failed`, with a "Gave up at the
    <building>: <last failure>" `activity`) before a fourth visit to one building
    (`MAX_VISITS`) or a 21st step (`MAX_STEPS`). A `Step` row is saved for insights (`Step.helped` marks a help visit). When
@@ -311,7 +308,6 @@ on any error and warns once. `GET /health` says which judge is active. The judge
 |---|---|---|---|
 | mood | after every step | reads the resident, building, outcome and reply | happy / frustrated, tired on timeout |
 | verdict | the reply had no `VERDICT` line | "did the agent finish?" < 0.4 → fail | pass (as before) |
-| flaky | the Lab's `TEST_COMMAND` failed | "flaky or environmental?" ≥ 0.7 → run once more (`Step.flaky`) | never re-run |
 | tip | `GET .../insights` | picks among the tips whose rule applies | the first rule that applies |
 | needs help | a package is back at a work building (never the Lab or Courthouse) and not stuck | "would a different teammate taking this turn unblock it?" ≥ 0.6 | from the third visit (the owner retries once first) |
 | helper | help is needed | picks among the free neighbours (or nobody) | same job as the building, else the best friend |
@@ -320,9 +316,8 @@ on any error and warns once. `GET /health` says which judge is active. The judge
 work building (Mailbox, Workshop, Post Office) after a failed check, the owner gets one
 retry of their own, then the judge may hand the next visit to a free neighbour (idle or
 asleep). A package that is **stuck** (sent back with the same failure, compared without
-case, numbers or extra spaces, as the one this building had to fix last time, including
-the Workshop's own pre-check) gets the neighbour without asking the judge, so a red test
-that survived the coder's in-step retries is helped on the second visit: same building, same worktree, the check's report on top of the instructions, their
+case, numbers or extra spaces, as the one this building had to fix last time) gets the
+neighbour without asking the judge: same building, same worktree, the check's report on top of the instructions, their
 outcome picks the road and the Workshop commits their work as usual. The Lab and the
 Courthouse are never taken over: their tests and review are the owner's call. The other
 way is explicit: a resident writes `HELP: <what I'm stuck on>` in a failing reply and a
@@ -357,9 +352,12 @@ game message, so protocol.md doesn't list it.
   plain names, path-checked, git-ignored), never anywhere else on disk.
 - Permission requests become bubbles; file requests are path-checked. Shell
   commands are gated by a bubble, not path-restricted.
-- Every step has a timeout, and a package can visit at most 20 buildings (3 visits to one building).
+- Every step has a time limit (`STEP_TIMEOUT`), which stands still while a bubble waits for
+  you: bubbles wait until you answer (`engine.StepClock`; `BUBBLE_TIMEOUT` /
+  `PERMISSION_TIMEOUT` set a timeout instead). A package can visit at most 20 buildings
+  (3 visits to one building).
 - The OpenRouter, TypeSafe and spectator keys and the server's own secrets are never passed
-  to agent processes or test commands (`config.PRIVATE_ENV`). API keys live in the OS
+  to agent processes or the commands they run (`config.PRIVATE_ENV`). API keys live in the OS
   keychain (or an owner-only file where there is none), never in the database.
 - Web pages can't drive the backend: `asgi.py` answers 403 to any request with an `Origin`
   header (browsers send one; the game and curl don't) and to Host names other than
@@ -382,7 +380,7 @@ game message, so protocol.md doesn't list it.
 | `Road` | from, to, condition |
 | `Task` | title, status, where the package is, who carries it, `issue_number`, `branch`, `pr_url`, `merged_at`, `created_at` / `finished_at` |
 | `Attachment` | a file sent with a task: name (made safe) and bytes; written to `.mii-attachments/` in the task's worktree when it starts |
-| `Step` | one building visit: task, building, resident, brain, outcome, timed out?, bubbles raised, `flaky` (tests passed on the re-run), `helped` (a help visit: who asked), start/finish time |
+| `Step` | one building visit: task, building, resident, brain, outcome, timed out?, bubbles raised, `helped` (a help visit: who asked), start/finish time |
 | `Event` | every event sent to the game (history: News, a task's events) |
 | `Friendship` | the friendship meter: one row per pair of residents (`a` < `b`), `handoffs`, `score` |
 | `Setting` | user settings saved from the game (never secrets: those live in the OS keychain) |

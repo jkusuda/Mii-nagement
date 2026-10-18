@@ -191,9 +191,11 @@ func _line_up(snap: bool) -> void:
 			var state := str(group[i].get("state", "idle"))
 			var door := _door(building)
 			if state in ["working", "sleeping"] and door != Vector3.INF:
-				if snap:
-					walker.place(door)  # already at work or asleep: straight inside
-				walker.enter(_into(building, walker.global_position, door), state)
+				if snap:  # already at work or asleep (a rebuilt island): straight inside, no animation
+					walker.place(door)
+					walker.enter([], state, true)
+				else:
+					walker.enter(_into(building, walker.global_position, door), state)
 				continue
 			var spot := free_spot(walker, _slot(building, i))
 			if snap:

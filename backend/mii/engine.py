@@ -25,20 +25,16 @@ from mii import events, github, metrics, weather
 from mii.agents import AgentJob, AgentRunner, StepResult, end_task
 from mii.judge import HelpRequest, RuleJudge
 from mii.models import Attachment, Building, Event, Friendship, Island, Resident, Road, Step, Task, utcnow
-from mii.sandbox import Sandbox, SandboxError, Sandboxes, run_shell
+from mii.sandbox import Sandbox, SandboxError, Sandboxes
 from mii.vocab import CHECK_STEPS, DEFAULT_GIT_AUTHOR, SEND_BACK
 
 log = logging.getLogger(__name__)
 
 MAX_STEPS = 20  # safety net against packages bouncing forever
 MAX_VISITS = 3  # visits to one building per task; one more and the task fails ("gave up at the Workshop: ...")
-FLAKY_RERUN_AT = 0.7  # the judge's "this failure looks flaky" probability that earns the tests one more run
 MAX_HELPS = 2  # help visits per task (a stuck resident gets a neighbour's hand this many times)
-RERUN_MIN_LEFT = 10.0  # seconds of step budget a test run (a flaky re-run, the Workshop pre-check) needs
 NOTES_CHARS = 1500  # a resident's diary (Resident.notes) keeps about this much; the oldest lines go first
 CHAT_CHARS = 200  # how much of a helper's report is said out loud (the `chat` back)
-PRETEST_RETRIES = 2  # the Workshop's own test run may send the work back to the coder this many times per visit
-TEST_TAIL_LINES = 20  # how much of the test output goes into reports and prompts
 TALK_TURN = "talk_turn"  # Event.type of a line said in a talk (talk.py); the owner's lines steer the package
 DIRECTION_LINES = 10  # the owner's newest talk lines about a package that later steps read
 
@@ -92,8 +88,8 @@ class IslandGraph:
 # --- Building handlers (one class per building type) ------------------------------
 # A handler says what the resident should do there, and by default hands the work
 # to the runner. Override `run` for steps that do more than talk to an agent; `engine`
-# gives them the test command, the git author, the step timeout, the judge, set_pr_url()
-# and approve() / approved(). Every prompt ends with the VERDICT rule (agents.build_prompt).
+# gives them the git author, the step timeout, the judge, set_pr_url() and approve() / approved().
+# Every prompt ends with the VERDICT rule (agents.build_prompt).
 
 
 class BuildingHandler:
@@ -121,13 +117,7 @@ class Mailbox(BuildingHandler):
 
 
 class Workshop(BuildingHandler):
-    """The coder implements the plan in the task's worktree, then the engine commits it.
-
-    With a test command (the island's, else TEST_COMMAND), the engine then runs the tests
-    itself before the handoff. A failure goes straight back to the coder in this same step
-    (PRETEST_RETRIES times at most), so a red test doesn't cost a whole Workshop -> Lab -> Workshop trip. The last
-    attempt is left for the Lab to test.
-    """
+    """The coder implements the plan in the task's worktree, then the engine commits it."""
 
     role = "This is where the code gets written. You implement plans and fix what was sent back."
 
@@ -139,35 +129,6 @@ class Workshop(BuildingHandler):
         )
 
     async def run(self, job: AgentJob, runner: AgentRunner, engine: "WorkflowEngine") -> StepResult:
-        started = time.monotonic()
-        result = await self._code(job, runner, engine)
-        asked, failing = job.instructions, None
-        command = engine.test_command_for(job.island)
-        for retry in range(1, PRETEST_RETRIES + 1):
-            if result.outcome != "pass" or not (command and job.workdir):
-                break
-            # The check fits in what's left of the step budget (_run_step's wait_for is the hard
-            # cap); with too little left the Lab tests it instead, and the commit stands.
-            left = engine.step_timeout - (time.monotonic() - started)
-            if left <= RERUN_MIN_LEFT:
-                break
-            await job.report(f"Checking before the handoff: {command}")
-            code, output = await run_shell(command, job.workdir, timeout=left - 1.0)
-            if code == 0:
-                result.summary += " The tests pass."
-                break
-            failing = _tail(output) or f"exit {code}"
-            await job.report(f"The tests fail (exit {code}); back to the code ({retry}/{PRETEST_RETRIES})")
-            job.instructions = (
-                f"Your change is committed, but the tests fail (exit {code}). Fix that before you hand it on:\n"
-                f"{failing}\n\n{asked}"
-            )
-            result = await self._code(job, runner, engine)
-        job.instructions = asked
-        result.test_output = failing  # the last failure seen here: the engine compares it with the Lab's
-        return result
-
-    async def _code(self, job: AgentJob, runner: AgentRunner, engine: "WorkflowEngine") -> StepResult:
         """One turn of the coder, then commit what changed."""
         result = await runner.run(job)
         if job.sandbox and job.workdir:
@@ -181,42 +142,13 @@ class Workshop(BuildingHandler):
 
 
 class Lab(BuildingHandler):
-    """Tests run here. Pass goes on to review; fail goes back to the workshop.
-
-    With a test command (the island's, else TEST_COMMAND; real mode) the engine runs it itself and the
-    exit code decides. Otherwise the resident is asked to run the tests.
-    """
+    """Tests run here: the resident runs the project's tests. Pass goes on to review; fail goes
+    back to the workshop."""
 
     role = "This is where the tests run. You check that changes work and say what broke."
 
     def instructions(self, task: Task) -> str:
         return f"Run the project's tests for: {task.title}"
-
-    async def run(self, job: AgentJob, runner: AgentRunner, engine: "WorkflowEngine") -> StepResult:
-        command = engine.test_command_for(job.island)
-        if not (command and job.workdir):
-            return await runner.run(job)
-        await job.report(f"Running: {command}")
-        started = time.monotonic()
-        code, output = await run_shell(command, job.workdir, timeout=engine.step_timeout)
-        tail = _tail(output)
-        if code == 0:
-            return StepResult("pass", f"Tests passed.\n{tail}".strip())
-        # A failure that looks flaky (timeouts, ports, ordering...) gets one more run before it
-        # bounces the package back to the Workshop. The judge decides; the rules never re-run.
-        # The re-run fits in what is left of the step budget (_run_step's wait_for is the hard cap).
-        left = engine.step_timeout - (time.monotonic() - started)
-        if left > RERUN_MIN_LEFT:
-            stat = await asyncio.to_thread(job.sandbox.diff_stat, job.task.id) if job.sandbox else ""
-            if await engine.judge.flaky(output, stat) >= FLAKY_RERUN_AT:
-                await job.report("That failure looks flaky; running the tests once more")
-                code, output = await run_shell(command, job.workdir, timeout=left - 1.0)
-                tail = _tail(output)
-                if code == 0:
-                    return StepResult(
-                        "pass", f"Tests passed on the second run (the first looked flaky).\n{tail}".strip(), flaky=True
-                    )
-        return StepResult("fail", f"Tests failed (exit {code}).\n{tail}".strip(), test_output=tail or f"exit {code}")
 
 
 class Courthouse(BuildingHandler):
@@ -281,7 +213,8 @@ class PostOffice(BuildingHandler):
         if not island.repo:
             result.summary += " No GitHub repo linked to this island, so no PR was opened."
             return result
-        title, body = split_pr_text(result.summary, fallback_title=job.task.title)
+        # The whole reply: the trimmed summary keeps only its end, which would lose the title.
+        title, body = split_pr_text(result.text or result.summary, fallback_title=job.task.title)
         await job.report("Opening the pull request")
         try:
             url = await asyncio.to_thread(
@@ -343,11 +276,6 @@ def master_key_answer(options: list[str] | None) -> str:
     return (options or [MASTER_KEY_ANSWER])[0]
 
 
-def _tail(output: str) -> str:
-    """The last TEST_TAIL_LINES lines of a command's output."""
-    return "\n".join(output.splitlines()[-TEST_TAIL_LINES:])
-
-
 def _normal(report: str) -> str:
     """A failure report for comparing: lower case, numbers (timings, line numbers, ids) and
     extra whitespace dropped, so "failed in 0.31s" and "failed in 0.29s" match."""
@@ -379,6 +307,48 @@ def split_pr_text(text: str, fallback_title: str) -> tuple[str, str]:
 
 
 # --- The engine ---------------------------------------------------------------------
+
+
+class StepClock:
+    """A step's time budget (`step_timeout`) that stands still while a bubble waits for you,
+    so a question can wait as long as you need without the agent running out of time."""
+
+    def __init__(self, budget: float):
+        self.budget = budget
+        self._start = time.monotonic()
+        self._paused_for = 0.0  # seconds spent waiting on bubbles, all told
+        self._paused_at = 0.0
+        self._waiting = 0  # bubbles open right now (a resident may have several ✋ at once)
+
+    def pause(self) -> None:
+        if self._waiting == 0:
+            self._paused_at = time.monotonic()
+        self._waiting += 1
+
+    def resume(self) -> None:
+        self._waiting -= 1
+        if self._waiting == 0:
+            self._paused_for += time.monotonic() - self._paused_at
+
+    def left(self) -> float:
+        now = self._paused_at if self._waiting else time.monotonic()
+        return self.budget - (now - self._start - self._paused_for)
+
+    async def run(self, coro):
+        """Await `coro` within the budget. Raises TimeoutError (and cancels it) when time runs out."""
+        work = asyncio.ensure_future(coro)
+        try:
+            while not work.done():
+                if not self._waiting and self.left() <= 0:
+                    raise TimeoutError
+                # While a bubble is open the clock stands still: look again in a second.
+                await asyncio.wait([work], timeout=1.0 if self._waiting else max(self.left(), 0.01))
+            return work.result()
+        finally:
+            if not work.done():  # out of time, or this step was cancelled: stop the work too
+                work.cancel()
+                with suppress(asyncio.CancelledError, Exception):
+                    await work
 
 
 class TalkHolds:
@@ -434,14 +404,13 @@ class WorkflowEngine:
         *,
         sandboxes: Sandboxes | None = None,  # None (tests): no git at all
         walk_seconds: float = 2.0,
-        bubble_timeout: float = 30.0,
+        bubble_timeout: float | None = None,  # None = wait until you answer
         permission_timeout: float | None = None,  # None = bubble_timeout
         sleep_after: float = 45.0,
         step_timeout: float = 600.0,
-        test_command: str | None = None,
         keep_worktrees: bool = False,
         git_author: str = DEFAULT_GIT_AUTHOR,
-        judge: RuleJudge | None = None,  # RuleJudge (default) or JevJudge: moods, verdicts, flaky runs, help
+        judge: RuleJudge | None = None,  # RuleJudge (default) or JevJudge: moods, verdicts, help
         parallel: int = 1,  # packages one island works on at once (the `parallel_packages` setting)
         master_key: bool = False,  # residents never ask: every bubble answers itself (master_key_answer)
     ):
@@ -455,7 +424,6 @@ class WorkflowEngine:
         self.sleep_after = sleep_after
         self.step_timeout = step_timeout
         self.holds = TalkHolds()  # residents you're talking to stay inside until you're done
-        self.test_command = test_command
         self.keep_worktrees = keep_worktrees
         self.git_author = git_author
         self.judge = judge or RuleJudge()
@@ -498,10 +466,6 @@ class WorkflowEngine:
         await self.queue.put(task.id)
         return task
 
-    def test_command_for(self, island: Island | None) -> str | None:
-        """What the Lab runs on this island: its own test command, else the TEST_COMMAND setting."""
-        return (island.test_command if island else "") or self.test_command
-
     async def cancel(self, task_id: str) -> Task:
         """Cancel a queued task, or stop the one running (its resident drops the package).
 
@@ -522,6 +486,24 @@ class WorkflowEngine:
             await asyncio.wait([run])
             return await self._get(Task, task_id)
         raise ValueError(f"task {task_id} is already {task.status}")
+
+    async def merge_pr(self, task_id: str) -> tuple[Task, str]:
+        """Merge a delivered package's open pull request on GitHub (the Post Office's Merge button).
+
+        Returns (the task, how it was merged: squash / merge / rebase, or "already" when
+        someone merged it on GitHub meanwhile). Raises KeyError for an unknown task,
+        ValueError when it has no open PR, and github.GitHubError when `gh` refuses.
+        """
+        task = await self._get(Task, task_id)
+        if task.status != "done" or not task.pr_url or task.merged_at:
+            raise ValueError("this package has no open pull request")
+        if await asyncio.to_thread(github.pr_merged_at, task.pr_url):
+            method = "already"
+        else:
+            method = await asyncio.to_thread(github.merge_pull_request, task.pr_url)
+        task = await self._update(Task, task_id, merged_at=utcnow())
+        await self._emit(task, events.task(task))
+        return task, method
 
     async def merge_locally(self, task_id: str) -> tuple[str, list[str], Task | None]:
         """Merge a finished task's branch into the island folder's checked-out branch.
@@ -863,9 +845,7 @@ class WorkflowEngine:
             )
             previous, outcome = resident, result.outcome
             if outcome == "fail":
-                last_failure = result.test_output or result.summary
-            if result.test_output and outcome == "pass":  # the Workshop's own pre-check failed on the way
-                seen_failure[building_id] = _normal(result.test_output)
+                last_failure = result.summary
 
             # 5. "HELP: ..." in a failed reply: a free neighbour redoes this building (MAX_HELPS per task).
             if result.outcome == "fail" and result.help_request and not helped and helps < MAX_HELPS:
@@ -876,10 +856,10 @@ class WorkflowEngine:
 
             # 6. Follow the road that matches the outcome. Fast path: red tests at the Lab go straight
             #    back to the Workshop that made the change (skipping anything in between), with the
-            #    test output on top of the coder's instructions.
-            if building.type == "lab" and outcome == "fail" and result.test_output and coder:
+            #    Lab's report on top of the coder's instructions.
+            if building.type == "lab" and outcome == "fail" and coder:
                 building_id = coder
-                feedback = f"The Lab's tests fail. Fix this first:\n{result.test_output}"
+                feedback = f"The Lab's tests fail. Fix this first:\n{result.summary}"
                 continue
             building_id = graph.next_building(building_id, outcome)
 
@@ -931,6 +911,7 @@ class WorkflowEngine:
             helped=helped,
         )
         bubbles_raised = 0
+        clock = StepClock(self.step_timeout)
 
         async def ask(kind: str, text: str, options: list[str] | None = None, detail: str | None = None) -> str | None:
             nonlocal bubbles_raised
@@ -942,10 +923,17 @@ class WorkflowEngine:
                     task.island_id, resident.id, kind, text, 0, options, task.id, detail, auto
                 )
             bubbles_raised += 1
-            # Permission and review bubbles are you approving something: they can wait longer.
+            # No timeout (the default): the bubble waits until you answer, and the step's clock
+            # stands still meanwhile. BUBBLE_TIMEOUT / PERMISSION_TIMEOUT set one.
             timeout = self.permission_timeout if kind in ("permission", "ready") else self.bubble_timeout
             await self._set_mood(resident, BUBBLE_MOODS.get(kind, "confused"))
-            answer = await self.bubbles.ask(task.island_id, resident.id, kind, text, timeout, options, task.id, detail)
+            clock.pause()
+            try:
+                answer = await self.bubbles.ask(
+                    task.island_id, resident.id, kind, text, timeout, options, task.id, detail
+                )
+            finally:
+                clock.resume()
             await self._set_mood(resident, "focused")
             return answer
 
@@ -987,7 +975,7 @@ class WorkflowEngine:
         )
         timed_out = False
         try:
-            result = await asyncio.wait_for(handler.run(job, runner, self), timeout=self.step_timeout)
+            result = await clock.run(handler.run(job, runner, self))
         except TimeoutError:
             timed_out = True
             result = StepResult("fail", f"{resident.name} ran out of time.")
@@ -1003,7 +991,6 @@ class WorkflowEngine:
             summary=result.summary,
             timed_out=timed_out,
             bubbles_raised=bubbles_raised,
-            flaky=result.flaky,
             finished_at=utcnow(),
         )
         await metrics.record_step(step)

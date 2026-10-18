@@ -78,6 +78,13 @@ async def test_brain_runner_picks_by_resident_brain():
     assert result.outcome == "fail" and "clippy" in result.summary
 
 
+def test_parse_verdict_keeps_the_whole_reply_next_to_the_trimmed_summary():
+    reply = "Add a dark mode toggle\n\n" + "A long description. " * 40 + "\nVERDICT: PASS"
+    result = parse_verdict(reply, summary_chars=100)
+    assert result.summary.startswith("…") and len(result.summary) == 101
+    assert result.text.startswith("Add a dark mode toggle") and "VERDICT" not in result.text
+
+
 def test_parse_verdict_uses_the_last_verdict_line():
     assert parse_verdict("Looks good.\nVERDICT: PASS").outcome == "pass"
     assert parse_verdict("Hmm.\nVERDICT: PASS\nActually no.\nverdict: fail").outcome == "fail"

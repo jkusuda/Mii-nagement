@@ -45,8 +45,6 @@ class Island(models.Model):
     # House rules (vocab.RULES), True = ask me first: merge_pr (Courthouse approval),
     # install_packages and shell (tighten the residents' house keys).
     rules = models.JSONField(default=dict)
-    # What the Lab runs in this island's repo (e.g. `uv run pytest`). "" = the TEST_COMMAND setting.
-    test_command = models.CharField(max_length=500, blank=True, default="")
     created_at = models.DateTimeField(default=utcnow)  # "Day 1" in the game
     # Land tiles, pond, plants, season: see island_map.py. {} = the classic island.
     map = models.JSONField(default=dict)
@@ -149,7 +147,6 @@ class Step(models.Model):
     summary = models.TextField(blank=True, default="")  # what the resident reported (plan, commit, review...)
     timed_out = models.BooleanField(default=False)
     bubbles_raised = models.IntegerField(default=0)
-    flaky = models.BooleanField(default=False)  # the Lab's tests failed, then passed on their one re-run
     helped = models.CharField(max_length=64, null=True, blank=True)  # a help visit: the resident this step helped
     started_at = models.DateTimeField(default=utcnow)
     finished_at = models.DateTimeField(null=True, blank=True)
@@ -250,7 +247,6 @@ def island_to_dict(i: Island) -> dict:
         "branch": i.branch,
         "plan": i.plan,
         "rules": i.rules,
-        "test_command": i.test_command,
         "created_at": i.created_at.isoformat(),
     }
 
@@ -267,6 +263,7 @@ def task_to_dict(t: Task) -> dict:
         "building": t.building_id,
         "agent": t.agent_id,
         "pr_url": t.pr_url,
+        "merged": t.merged_at is not None,  # its pull request was merged on GitHub
         "issue": t.issue_number,
     }
 
@@ -293,7 +290,6 @@ def step_to_dict(s: Step) -> dict:
         "summary": s.summary,
         "timed_out": s.timed_out,
         "bubbles_raised": s.bubbles_raised,
-        "flaky": s.flaky,
         "helped": s.helped,
         "started_at": s.started_at.isoformat(),
         "finished_at": s.finished_at.isoformat() if s.finished_at else None,

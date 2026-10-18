@@ -128,13 +128,25 @@ func _set_status(text: String) -> void:
 
 ## A Mac app opened from the Finder gets a bare PATH (no Homebrew, no npm tools), so the
 ## backend wouldn't find git, gh or the agent CLIs. Ask the user's login shell for theirs.
+## Whatever the shell says, the usual places for per-user tools are added too (the Claude
+## Code installer puts `claude` in ~/.local/bin). The shell's answer stays in launcher-path.log.
 func _login_path(data: String) -> String:
 	var shell := OS.get_environment("SHELL") if OS.has_environment("SHELL") else "/bin/zsh"
-	var result := _run(data, "'%s' -ilc 'echo $PATH'" % shell, SHELL_TIMEOUT_MS)
-	var lines: PackedStringArray = str(result["output"]).strip_edges().split("\n")
-	if result["code"] == 0 and lines and lines[-1].contains("/"):
-		return lines[-1]
-	return OS.get_environment("PATH") + ":/opt/homebrew/bin:/usr/local/bin"
+	# Only stdout: an interactive shell without a terminal may print warnings on stderr.
+	var query := "'%s' -ilc 'echo $PATH' 2>/dev/null </dev/null" % shell
+	var result := _run(data, query, SHELL_TIMEOUT_MS, "launcher-path.log")
+	var path := ""
+	for line in str(result["output"]).split("\n"):
+		if line.contains("/usr/bin"):
+			path = line.strip_edges()  # the last line that looks like a PATH
+	if path.is_empty():
+		path = OS.get_environment("PATH")
+	var home := OS.get_environment("HOME")
+	var known := [home + "/.local/bin", "/opt/homebrew/bin", "/usr/local/bin", home + "/.npm-global/bin"]
+	for folder in known:
+		if not (":%s:" % path).contains(":%s:" % folder):
+			path += ":" + folder
+	return path
 
 
 ## uv in the user data folder, downloaded the first time. Returns "" or what went wrong.
@@ -165,8 +177,8 @@ func _get_uv(data: String) -> String:
 ## when it was stopped (quitting, or still running after `timeout_ms`).
 ## OS.execute() can't be interrupted, so the script runs as its own process (its output
 ## goes to a file) and this checks on it every 100 ms.
-func _run(data: String, script: String, timeout_ms := -1) -> Dictionary:
-	var log_path := data.path_join("launcher.log")
+func _run(data: String, script: String, timeout_ms := -1, log_name := "launcher.log") -> Dictionary:
+	var log_path := data.path_join(log_name)
 	var pid := OS.create_process("/bin/sh", ["-c", "%s > '%s' 2>&1" % [script, log_path]])
 	_helper_pid = pid
 	var started := Time.get_ticks_msec()

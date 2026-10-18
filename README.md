@@ -95,7 +95,7 @@ The game opens on the **Archipelago**: every island in one sea, plus everything
 - **Build**: drag buildings around (the paths follow), add or remove land, plant trees,
   pick which workflow steps the island has, size the pond, choose the season.
 - **News** (stories from what happened, merge a shipped package), **Insights** (stats).
-- **Settings**: islands folder, test command, packages at once, the master key, API keys.
+- **Settings**: islands folder, packages at once, the master key, API keys.
 - Scroll or pinch to zoom the island, click and drag to pan.
 
 ### Where the code comes from
@@ -113,9 +113,8 @@ The island creator's **Code** row has three choices:
 
 ### What a package does
 
-The **Mailbox** plans, the **Workshop** codes and commits (and runs the test command
-before handing off, if there is one), the **Lab** runs the tests (exit code = pass or
-fail), the **Courthouse** reviews (and, on an island linked to GitHub, asks you to
+The **Mailbox** plans, the **Workshop** codes and commits, the **Lab** runs the
+project's tests (the resident there works out how), the **Courthouse** reviews (and, on an island linked to GitHub, asks you to
 approve & merge), and the **Post Office** opens the PR (and merges it when approved). A failure goes back down the `fail`
 road. A task gives up after 3 visits to one building or 20 steps.
 

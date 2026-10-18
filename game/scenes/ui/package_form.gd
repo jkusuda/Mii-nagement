@@ -76,6 +76,14 @@ func reset() -> void:
 	_title.grab_focus.call_deferred()
 
 
+## Start from an earlier package (News' "Try again" on a failed one): its title, details
+## and GitHub issue number (null when it had none), ready to change and send again.
+func fill(title: String, details: String, issue: Variant) -> void:
+	_title.text = title
+	_details.text = details
+	_issue.text = str(int(issue)) if issue != null else ""
+
+
 func submit() -> void:
 	if _busy:
 		return

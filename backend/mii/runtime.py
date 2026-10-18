@@ -68,11 +68,10 @@ class Runtime:
             openrouter_api_key=await sync_to_async(prefs.secret)("openrouter_api_key"),  # keychain: off the loop
             openrouter_model=settings["openrouter_model"],
         )
-        self.workflow.test_command = settings["test_command"]
         self.workflow.keep_worktrees = settings["keep_worktrees"]
         self.workflow.parallel = settings["parallel_packages"]
         self.workflow.master_key = settings["master_key"]
-        # The judge (moods, missing verdicts, flaky re-runs, tips, help).
+        # The judge (moods, missing verdicts, tips, help).
         await self.judge.aclose()
         self.judge = await self._pick_judge(str(settings.get("judge") or "auto").lower(), settings["judge_model"])
         self.workflow.judge = self.judge

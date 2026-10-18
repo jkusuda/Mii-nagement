@@ -44,7 +44,6 @@ The client should rebuild its view from scratch when it gets one.
     "branch": "main",
     "plan": "classic",
     "rules": {"merge_pr": true, "install_packages": true, "shell": false},
-    "test_command": "",
     "created_at": "2026-10-04T09:12:00+00:00",
     "map": {
       "version": 1, "shape": "classic",
@@ -78,7 +77,7 @@ The client should rebuild its view from scratch when it gets one.
       {"id": "b_3f2a", "agent": "carlos", "kind": "confused", "text": "Which test file?", "asked_at": "2026-10-16T09:39:12+00:00"}
     ],
     "tasks": [
-      {"id": "t_12", "title": "Fix login typo", "status": "in_progress", "building": "lab", "agent": "carlos", "pr_url": null, "issue": 42}
+      {"id": "t_12", "title": "Fix login typo", "status": "in_progress", "building": "lab", "agent": "carlos", "pr_url": null, "merged": false, "issue": 42}
     ],
     "friendships": [
       {"a": "carlos", "b": "jun", "handoffs": 7, "score": 0.679}
@@ -101,8 +100,6 @@ The client should rebuild its view from scratch when it gets one.
   makes the Courthouse ask you (a `ready` bubble, "Approve & merge" / "Send
   back") before the Post Office merges the PR it opens; off, it merges without
   asking.
-  `test_command`: what the Lab runs in this island's repo (e.g. `uv run pytest`);
-  `""` means the `test_command` setting (`PUT /settings`) is used.
 - `created_at`: when the island was founded (ISO-8601 UTC). The game counts
   days from it ("Day 1" is the founding day, in the player's local time).
   `server_time`: the server's clock when the snapshot was made, for the same sum.
@@ -212,7 +209,8 @@ A bubble was answered (by any client) or timed out. Remove it.
 ```json
 {"type": "bubble_resolved", "id": "b_3f2a", "answered": true, "response": "Use tests/test_login.py"}
 ```
-`answered` is `false` (and `response` `null`) when the bubble timed out. The
+`answered` is `false` (and `response` `null`) when nobody answered: the package was taken
+back, or the bubble timed out (only with a `BUBBLE_TIMEOUT` / `PERMISSION_TIMEOUT`). The
 insights endpoint counts answers and answer times from these.
 With the `master_key` setting on, every `bubble` is followed right away by its
 `bubble_resolved`, answered by the backend: the first option that isn't a refusal,
@@ -282,9 +280,10 @@ A `tool` event may carry three more fields, for the dropdown's summary and its
 A task package's status changed. Lets the client show who is carrying a package.
 `pr_url` is set once the post office opens a pull request.
 ```json
-{"type": "task", "id": "t_12", "title": "Fix login typo", "status": "in_progress", "building": "lab", "agent": "carlos", "pr_url": null, "issue": 42}
+{"type": "task", "id": "t_12", "title": "Fix login typo", "status": "in_progress", "building": "lab", "agent": "carlos", "pr_url": null, "merged": false, "issue": 42}
 ```
 `issue` is the GitHub issue number the package came from, or `null`.
+`merged` is true once its pull request was merged on GitHub (by the Courthouse's approval or the Post Office's Merge button).
 
 ### `resident`
 A resident was created or edited (by any client). Add it, or replace the
@@ -326,7 +325,7 @@ shapes are the snapshot's.
 The island's header changed (renamed, a repo linked, branch or house rules
 edited, by any client). Same fields as the top of the snapshot: replace them.
 ```json
-{"type": "island", "island": {"id": "sunny", "name": "Sunnier Isle", "repo": "me/sunny", "path": "/home/you/Documents/Mii-nagement/sunny", "branch": "main", "plan": "classic", "rules": {"merge_pr": true, "install_packages": true, "shell": false}, "test_command": "", "created_at": "2026-10-04T09:12:00+00:00"}}
+{"type": "island", "island": {"id": "sunny", "name": "Sunnier Isle", "repo": "me/sunny", "path": "/home/you/Documents/Mii-nagement/sunny", "branch": "main", "plan": "classic", "rules": {"merge_pr": true, "install_packages": true, "shell": false}, "created_at": "2026-10-04T09:12:00+00:00"}}
 ```
 ### `chat`
 One resident said something to another: a request for help, the helper's reply, or a
@@ -493,7 +492,7 @@ Build mode: replace the island's buildings and roads. Send the whole layout.
 
 ### `update_island`
 Rename the island, link (or change) its GitHub repo, or edit its branch, house
-rules or `test_command` after founding. Only the fields sent change. Linking a repo also points
+rules after founding. Only the fields sent change. Linking a repo also points
 the island repository's `origin` at it, so the post office can push.
 ```json
 {"type": "update_island", "island": {"name": "Sunnier Isle", "repo": "me/sunny", "rules": {"shell": true}}}
@@ -603,8 +602,8 @@ For each building the package visits:
 2. `move` + `agent_state: walking`: only if that resident isn't already there.
 3. `agent_state: working`
 4. While working: any number of `activity` events, and optional `bubble`s (each
-   waits for `answer_bubble` or a timeout, then `bubble_resolved`). A step that
-   runs past the step timeout is stopped and counts as `fail`.
+   waits for `answer_bubble`, then `bubble_resolved`). A step that runs past the step
+   time limit is stopped and counts as `fail`; time spent waiting on a bubble doesn't count.
 5. `mood`
 5b. A free neighbour may take a visit instead of the building's owner, at most twice per
    task: when the package keeps coming back to a work building after a failed check (the
@@ -619,7 +618,7 @@ For each building the package visits:
    - otherwise an `always` road;
    - no matching road means the task is finished (`task: done`, or `failed` if the
      last outcome was `fail`).
-   - red tests at the Lab (`TEST_COMMAND` failed) go straight back to the Workshop
+   - a failed Lab step goes straight back to the Workshop
      the package last came through, whatever the roads say.
    - a package that would visit one building a fourth time, or a 21st step, stops:
      one `activity` ("Gave up at the Workshop: <last failure>") and `task: failed`.

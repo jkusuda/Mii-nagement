@@ -7,6 +7,8 @@ extends Control
 ##   "▸ Details" on a package shows the whole issue and every step so far.
 ## - Other buildings: the packages at that stage, the residents there and what
 ##   they're doing right now (their latest `activity`), and where packages go next.
+## - Post Office, also: delivered packages whose pull request is still open, each with
+##   a Merge button (merged on GitHub by the backend, POST .../tasks/{id}/merge-pr).
 ##
 ## Everything comes from Net.island and redraws on Net.island_changed, so it
 ## stays live while open. game.gd opens it and zooms the camera in.
@@ -67,6 +69,7 @@ var _details_open := {}
 var _details := {}
 var _details_seen := {}
 var _action := Button.new()
+var _prs := OpenPrs.new()  # Post Office: open pull requests to merge, above the list
 
 
 func _init() -> void:
@@ -135,6 +138,7 @@ func open(type: String, compose := false) -> void:
 		_show_form()
 	else:
 		_show_list()
+	_prs.show_for_post_office(type == "post_office", _card_row, _icon_tile)
 
 	# Godot concept: a Tween animates properties over time. Here: fade in and
 	# grow from 96% to full size, from the card's middle.
@@ -145,6 +149,11 @@ func open(type: String, compose := false) -> void:
 	var tween := create_tween().set_parallel().set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tween.tween_property(self, "modulate:a", 1.0, 0.18)
 	tween.tween_property(_card, "scale", Vector2.ONE, 0.25)
+
+
+## Fill the Mailbox's form from an earlier package (PackageForm.fill), once it's open on it.
+func fill_form(title: String, details: String, issue: Variant) -> void:
+	_form.fill(title, details, issue)
 
 
 func close() -> void:
@@ -812,7 +821,12 @@ func _build_body() -> Control:
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_list.add_theme_constant_override("separation", 10)
-	_scroll.add_child(_list)
+	var stack := VBoxContainer.new()  # the open PRs (Post Office only), then the list
+	stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	stack.add_theme_constant_override("separation", 10)
+	stack.add_child(_prs)
+	stack.add_child(_list)
+	_scroll.add_child(stack)
 	body.add_child(_scroll)
 	_form.custom_minimum_size.y = LIST_HEIGHT
 	body.add_child(_form)

@@ -105,16 +105,12 @@ def per_day(tasks: list[Task], start: datetime, days: int) -> list[dict]:
 
 
 def lab_stats(steps: list[Step]) -> dict:
-    """Test runs at the Lab: pass rate, and "flaky" = tasks whose tests failed once and then passed
-    (including the Lab's own re-run when the judge called a failure flaky: Step.flaky)."""
+    """Test runs at the Lab: pass rate, and "flaky" = tasks whose tests failed once and then passed."""
     runs = [s for s in steps if s.building_type == "lab" and s.outcome]
     by_task: dict[str, list[Step]] = defaultdict(list)
     for s in runs:
         by_task[s.task_id].append(s)
-    flaky = sum(
-        any(s.flaky for s in visits) or ("fail" in [s.outcome for s in visits] and visits[-1].outcome == "pass")
-        for visits in by_task.values()
-    )
+    flaky = sum("fail" in [s.outcome for s in visits] and visits[-1].outcome == "pass" for visits in by_task.values())
     return {"tests_pass_rate": _rate(runs, "pass") if runs else None, "flaky_tests": flaky}
 
 

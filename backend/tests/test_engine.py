@@ -74,6 +74,27 @@ async def test_a_cancelled_task_does_not_start(island):
     assert (await workflow.run_task(task.id)).status == "cancelled"
 
 
+async def test_an_open_bubble_stops_the_step_clock(island):
+    class AsksAtTheWorkshop:
+        async def run(self, job):
+            if job.building.type == "workshop":
+                await job.ask("confused", "Which file?")
+            return StepResult("pass", "ok")
+
+    # A 0.3 s step budget, and nobody answers for 0.8 s: the wait doesn't count.
+    workflow, _ = make_workflow(AsksAtTheWorkshop(), step_timeout=0.3, bubble_timeout=None)
+    run = asyncio.create_task(workflow.run_task((await workflow.submit("sunny", "Ask me")).id))
+    for _ in range(100):
+        if workflow.bubbles.open:
+            break
+        await asyncio.sleep(0.01)
+    await asyncio.sleep(0.8)
+    assert workflow.bubbles.answer(next(iter(workflow.bubbles.open)), "hello.py")
+    task = await run
+    assert task.status == "done"
+    assert not await Step.objects.filter(task_id=task.id, timed_out=True).aexists()
+
+
 async def test_every_step_is_recorded_for_insights(island):
     workflow, _ = make_workflow(ScriptedRunner(courthouse=["fail", "pass"]))
     task = await workflow.run_task((await workflow.submit("sunny", "Fix the thing")).id)
@@ -269,10 +290,8 @@ class WritingRunner:
         return StepResult("pass", "ok")
 
 
-async def test_lab_runs_the_test_command_and_workshop_commits(island, sandbox, sandboxes):
-    workflow, client = make_workflow(
-        WritingRunner(), sandboxes=sandboxes, test_command="test -f feature.py", keep_worktrees=True
-    )
+async def test_workshop_commits_the_coders_change(island, sandbox, sandboxes):
+    workflow, _ = make_workflow(WritingRunner(), sandboxes=sandboxes, keep_worktrees=True)
     task = await workflow.run_task((await workflow.submit("sunny", "Add feature")).id)
 
     assert task.status == "done" and task.branch == "mii/" + task.id and task.finished_at is not None
@@ -280,9 +299,6 @@ async def test_lab_runs_the_test_command_and_workshop_commits(island, sandbox, s
     assert workdir.exists()  # keep_worktrees
     log = sandbox._git(workdir, "log", "--oneline")
     assert "Add feature" in log and "init" in log
-    assert any(e["text"] == "Running: test -f feature.py" for e in client.of_type("activity"))
-    steps = [s async for s in Step.objects.filter(task_id=task.id, building_type="lab")]
-    assert steps[0].outcome == "pass"
 
 
 async def test_attachments_land_in_the_worktree_and_are_never_committed(island, sandbox, sandboxes):
@@ -304,77 +320,13 @@ async def test_the_prompt_lists_the_attachments(island):
     assert "- .mii-attachments/a.txt" in build_prompt(runner.jobs[0], "")
 
 
-async def test_lab_fails_on_a_failing_test_command_and_worktree_is_removed(island, sandbox, sandboxes):
-    workflow, _ = make_workflow(WritingRunner(), sandboxes=sandboxes, test_command="exit 3")
+async def test_a_failed_task_removes_its_worktree(island, sandbox, sandboxes):
+    workflow, _ = make_workflow(ScriptedRunner(lab=["fail"] * 100), sandboxes=sandboxes)
     task = await workflow.run_task((await workflow.submit("sunny", "Broken")).id)
     assert task.status == "failed"
     lab = await Step.objects.filter(task_id=task.id, building_type="lab").afirst()
     assert lab.outcome == "fail"
     assert not sandbox.worktree_path(task.id).exists()
-
-
-async def test_an_islands_own_test_command_wins_over_the_setting(island, sandbox, sandboxes):
-    await Island.objects.filter(pk="sunny").aupdate(test_command="true")
-    workflow, client = make_workflow(WritingRunner(), sandboxes=sandboxes, test_command="exit 3")
-    task = await workflow.run_task((await workflow.submit("sunny", "Own tests")).id)
-    assert task.status == "done"
-    assert "Running: true" in [e["text"] for e in client.of_type("activity")]
-
-
-class FixOnSecondTryRunner:
-    """A coder whose first change breaks the tests and whose second fixes them."""
-
-    def __init__(self):
-        self.jobs: list = []
-        self.workshop_instructions: list[str] = []
-
-    async def run(self, job) -> StepResult:
-        self.jobs.append(job)
-        if job.building.type == "workshop":
-            self.workshop_instructions.append(job.instructions)
-            name = "fixed.py" if len(self.workshop_instructions) > 1 else "feature.py"
-            (job.workdir / name).write_text("x = 1\n")
-        return StepResult("pass", "ok")
-
-
-async def test_workshop_runs_the_tests_before_the_handoff_and_retries_in_the_same_step(island, sandbox, sandboxes):
-    runner = FixOnSecondTryRunner()
-    workflow, client = make_workflow(runner, sandboxes=sandboxes, test_command="test -f fixed.py")
-    task = await workflow.run_task((await workflow.submit("sunny", "Add feature")).id)
-
-    assert task.status == "done"
-    # The Lab runs TEST_COMMAND itself (no agent), so it is not in the runner's jobs.
-    assert [j.building.type for j in runner.jobs] == ["mailbox", "workshop", "workshop", "courthouse", "post_office"]
-    assert await Step.objects.filter(task_id=task.id, building_type="workshop").acount() == 1  # one visit, two turns
-    assert "the tests fail" in runner.workshop_instructions[1] and "Implement:" in runner.workshop_instructions[1]
-    assert "the tests fail" not in runner.workshop_instructions[0]
-    texts = [e["text"] for e in client.of_type("activity")]
-    assert "Checking before the handoff: test -f fixed.py" in texts
-    workshop = await Step.objects.aget(task_id=task.id, building_type="workshop")
-    assert workshop.summary.endswith("The tests pass.")
-
-
-async def test_workshop_pre_check_retries_are_capped(island, sandbox, sandboxes):
-    runner = ScriptedRunner()
-    workflow, _ = make_workflow(runner, sandboxes=sandboxes, test_command="exit 1")
-    task = await workflow.run_task((await workflow.submit("sunny", "Never green")).id)
-    # The first Workshop visit: one turn + PRETEST_RETRIES (2) more, then the Lab gets it anyway.
-    assert runner.visited[:4] == ["mailbox", "workshop", "workshop", "workshop"]
-    steps = [s.building_type async for s in Step.objects.filter(task_id=task.id).order_by("id")]
-    assert steps[:3] == ["mailbox", "workshop", "lab"]
-
-
-async def test_workshop_skips_its_pre_check_without_enough_step_budget(island, sandbox, sandboxes):
-    from mii import engine
-
-    runner = FixOnSecondTryRunner()
-    # A budget smaller than a test run needs: the commit stands and the Lab tests it.
-    workflow, client = make_workflow(
-        runner, sandboxes=sandboxes, test_command="test -f feature.py", step_timeout=engine.RERUN_MIN_LEFT
-    )
-    task = await workflow.run_task((await workflow.submit("sunny", "Add feature")).id)
-    assert task.status == "done"
-    assert "Checking before the handoff: test -f feature.py" not in [e["text"] for e in client.of_type("activity")]
 
 
 async def test_red_tests_at_the_lab_go_straight_back_to_the_coder(island, sandbox, sandboxes):
@@ -384,23 +336,19 @@ async def test_red_tests_at_the_lab_go_straight_back_to_the_coder(island, sandbo
     await Road.objects.filter(island_id="sunny", from_building_id="lab", condition="fail").aupdate(
         to_building_id="mailbox"
     )
-    runner = ScriptedRunner()
-    # Green at the Workshop's pre-check, red at the Lab's first run, green after that.
-    command = (
-        'n=$(cat .runs 2>/dev/null || echo 0); echo $((n + 1)) > .runs; [ "$n" -ne 1 ] || { echo "E  boom"; exit 1; }'
-    )
-    workflow, _ = make_workflow(runner, sandboxes=sandboxes, test_command=command)
+    runner = ScriptedRunner(lab=["fail", "pass"])
+    workflow, _ = make_workflow(runner, sandboxes=sandboxes)
     task = await workflow.run_task((await workflow.submit("sunny", "Add feature")).id)
 
     assert task.status == "done"
     types = [s.building_type async for s in Step.objects.filter(task_id=task.id).order_by("id")]
     assert types == ["mailbox", "workshop", "lab", "workshop", "lab", "courthouse", "post_office"]
     second = [j for j in runner.jobs if j.building.type == "workshop"][1]
-    assert second.instructions.startswith("The Lab's tests fail. Fix this first:\nE  boom")
+    assert second.instructions.startswith("The Lab's tests fail. Fix this first:\nscripted")
 
 
 async def test_post_office_skips_the_pr_without_a_repo(island, sandbox, sandboxes):
-    workflow, _ = make_workflow(WritingRunner(), sandboxes=sandboxes, test_command="true")
+    workflow, _ = make_workflow(WritingRunner(), sandboxes=sandboxes)
     task = await workflow.run_task((await workflow.submit("sunny", "Add feature")).id)
     assert task.status == "done" and task.pr_url is None
 
@@ -426,9 +374,10 @@ async def test_tasks_branch_off_the_islands_branch(island, sandbox, sandboxes):
     subprocess.run([*git, "checkout", "-q", first], check=True)  # HEAD is back on the first branch
     await Island.objects.filter(pk="sunny").aupdate(branch="develop")
 
-    workflow, _ = make_workflow(WritingRunner(), sandboxes=sandboxes, test_command="test -f dev.txt")
+    workflow, _ = make_workflow(WritingRunner(), sandboxes=sandboxes, keep_worktrees=True)
     task = await workflow.run_task((await workflow.submit("sunny", "From develop")).id)
-    assert task.status == "done"  # dev.txt exists only on develop
+    assert task.status == "done"
+    assert (sandbox.worktree_path(task.id) / "dev.txt").exists()  # dev.txt exists only on develop
     assert sandbox.resolve_branch("nope") == "HEAD" and sandbox.resolve_branch("develop") == "develop"
 
 
@@ -464,7 +413,7 @@ async def _answer_ready(workflow, answers: list[str]):
 async def test_courthouse_approval_merges_at_the_post_office(island, sandbox, sandboxes, monkeypatch):
     gh = FakeGitHub(monkeypatch)
     await Island.objects.filter(pk="sunny").aupdate(repo="o/r", rules={"merge_pr": True})
-    workflow, _ = make_workflow(WritingRunner(), sandboxes=sandboxes, test_command="true")
+    workflow, _ = make_workflow(WritingRunner(), sandboxes=sandboxes)
     task = await workflow.submit("sunny", "Add feature")
     answering = asyncio.create_task(_answer_ready(workflow, ["Send back: also test IPv6", "Approve & merge"]))
     task = await workflow.run_task(task.id)
@@ -483,13 +432,13 @@ async def test_unanswered_review_leaves_the_pr_open_and_rule_off_merges_without_
 ):
     gh = FakeGitHub(monkeypatch)
     await Island.objects.filter(pk="sunny").aupdate(repo="o/r", rules={"merge_pr": True})
-    workflow, client = make_workflow(WritingRunner(), sandboxes=sandboxes, test_command="true")
+    workflow, client = make_workflow(WritingRunner(), sandboxes=sandboxes)
     task = await workflow.run_task((await workflow.submit("sunny", "Nobody looks")).id)
     assert task.status == "done" and task.pr_url and gh.merged == []  # bubble timed out
     assert [e["kind"] for e in client.of_type("bubble")] == ["ready"]
 
     await Island.objects.filter(pk="sunny").aupdate(rules={"merge_pr": False})
-    workflow, client = make_workflow(WritingRunner(), sandboxes=sandboxes, test_command="true")
+    workflow, client = make_workflow(WritingRunner(), sandboxes=sandboxes)
     task = await workflow.run_task((await workflow.submit("sunny", "Trusted")).id)
     assert gh.merged == [task.pr_url] and client.of_type("bubble") == []
 
@@ -737,18 +686,6 @@ async def test_the_same_failure_twice_calls_for_help_whatever_the_judge_says(isl
     assert bool([e for e in client.of_type("chat") if "same problem" in e["text"]]) is helped
 
 
-async def test_a_stuck_test_failure_gets_help_on_the_second_visit(island, sandboxes):
-    # The coder's pre-check and the Lab see the same red test: a neighbour takes visit 2, not visit 3.
-    runner = ScriptedRunner()
-    workflow, client = make_workflow(
-        runner, sandboxes=sandboxes, test_command='echo "AssertionError in test_login"; exit 1'
-    )
-    task = await workflow.run_task((await workflow.submit("sunny", "Fix login")).id)
-    steps = [s async for s in Step.objects.filter(task_id=task.id, building_type="workshop").order_by("id")]
-    assert [s.resident_id for s in steps[:2]] == ["carlos", "jun"] and steps[1].helped == "carlos"
-    assert "came back to the Workshop again with the same problem" in client.of_type("chat")[0]["text"]
-
-
 async def test_help_say_and_remember_lines(island):
     runner = LineRunner(
         workshop=["Stuck.\nHELP: the auth tests hang\nSAY TO Sydney: heads up\nREMEMBER: tests are slow\nVERDICT: FAIL"]
@@ -837,38 +774,6 @@ async def test_taking_a_package_back_closes_its_questions(island):
     assert len(client.of_type("bubble_resolved")) == 1
 
 
-class FlakyJudge:
-    """A judge that calls every Lab failure flaky (the rules otherwise)."""
-
-    name = "rules"
-
-    def __getattr__(self, name):
-        from mii.judge import RuleJudge
-
-        return getattr(RuleJudge(), name)
-
-    async def flaky(self, output, stat):
-        return 1.0
-
-
-async def test_lab_reruns_a_flaky_test_once(island, sandboxes):
-    from mii.insights import island_insights
-
-    # Passes at the Workshop's pre-check, fails at the Lab's first run, passes on its re-run.
-    workflow, client = make_workflow(
-        ScriptedRunner(),
-        sandboxes=sandboxes,
-        judge=FlakyJudge(),
-        test_command='n=$(cat .runs 2>/dev/null || echo 0); echo $((n + 1)) > .runs; test "$n" -ne 1',
-    )
-    task = await workflow.run_task((await workflow.submit("sunny", "Flaky")).id)
-    assert task.status == "done"
-    lab = await Step.objects.aget(task_id=task.id, building_type="lab")
-    assert lab.outcome == "pass" and lab.flaky is True and "second run" in lab.summary
-    assert any("looks flaky" in e["text"] for e in client.of_type("activity"))
-    assert (await island_insights("sunny"))["island"]["flaky_tests"] == 1
-
-
 async def test_mock_runner_sometimes_asks_for_help_or_chats():
     from conftest import make_job
 
@@ -882,18 +787,6 @@ async def test_mock_runner_sometimes_asks_for_help_or_chats():
         said += bool(result.says)
         remembered += bool(result.remember)
     assert asked and said and remembered
-
-
-async def test_lab_skips_the_flaky_rerun_when_the_step_budget_is_spent(island, sandboxes):
-    # The first run eats the whole budget (a hang): no second run, and the step fails cleanly.
-    workflow, client = make_workflow(
-        ScriptedRunner(), sandboxes=sandboxes, judge=FlakyJudge(), test_command="sleep 30", step_timeout=1.5
-    )
-    task = await workflow.run_task((await workflow.submit("sunny", "Hangs")).id)
-    assert task.status == "failed"
-    lab = await Step.objects.filter(task_id=task.id, building_type="lab").afirst()
-    assert lab.outcome == "fail" and lab.flaky is False
-    assert not any("looks flaky" in e["text"] for e in client.of_type("activity"))
 
 
 class CountingWriter(WritingRunner):
@@ -910,7 +803,7 @@ class CountingWriter(WritingRunner):
 
 
 async def test_merge_locally_merges_or_queues_a_conflict_fix(island, sandbox, sandboxes):
-    workflow, _ = make_workflow(CountingWriter(), sandboxes=sandboxes, test_command="true")
+    workflow, _ = make_workflow(CountingWriter(), sandboxes=sandboxes)
     repo = sandbox.repo_path
     git = ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t"]
 

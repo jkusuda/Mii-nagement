@@ -74,7 +74,6 @@ var _folder_edit: LineEdit  # the path, for "folder" mode
 var _folder_row: HBoxContainer  # _folder_edit + the Browse button
 var _folder_dialog: FileDialog  # the folder picker behind Browse
 var _mode_hint: Label  # one line about the chosen mode
-var _test_edit: LineEdit  # what the Lab runs in this island's repo ("" = the default in Settings)
 var _branch := "main"
 var _typing_branch := false  # "Other…" picked: the text box shows, whatever is typed
 var _plan := "classic"  # the plan card that matches _steps ("" = a custom mix)
@@ -127,7 +126,6 @@ func open() -> void:
 	_repo_mode = "new"
 	_repo = ""
 	_folder_edit.text = ""
-	_test_edit.text = ""
 	_branch = "main"
 	_typing_branch = false
 	_plan = "classic"
@@ -294,16 +292,6 @@ func _build_repo_modes() -> void:
 	for i in nodes.size():
 		right.add_child(nodes[i])
 		right.move_child(nodes[i], at + i)
-
-	# Under the branch: this island's test command, for every kind of code.
-	var test_label := Label.new()
-	test_label.theme_type_variation = &"FieldLabel"
-	test_label.text = "Test command"
-	_test_edit = LineEdit.new()
-	_test_edit.placeholder_text = "e.g. uv run pytest, npm test (empty: the default in Settings)"
-	_test_edit.clear_button_enabled = true
-	right.add_child(test_label)
-	right.add_child(_test_edit)
 
 
 ## Open the folder picker, starting where the field already points.
@@ -782,7 +770,6 @@ func _found() -> void:
 		"steps": _steps,
 		"season": _season,
 		"rules": _rules,
-		"test_command": _test_edit.text.strip_edges(),
 	}
 	match _repo_mode:
 		"github":  # the backend clones it (can take a while; Net.request_json has no timeout)

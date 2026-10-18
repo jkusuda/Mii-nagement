@@ -120,6 +120,7 @@ func _ready() -> void:
 	%News.pressed.connect(func(): show_screen("island" if screen == "news" else "news"))
 	news.unread_changed.connect(_show_unread)
 	news.notice.connect(toast.show_message)
+	news.retry_requested.connect(_retry_package)
 	_show_unread(news.unread())
 	%BackButton.pressed.connect(_go_back)
 
@@ -201,6 +202,8 @@ func show_screen(which: String) -> void:
 	if which != "island":
 		build_mode.cancel()  # leaving the island throws away unsaved edits
 	screen = which
+	if which != "creator":
+		_drafting = false  # a drafted resident was saved or cancelled
 	if which != "island":
 		building_panel.close()
 		talk_popup.close()
@@ -213,6 +216,9 @@ func show_screen(which: String) -> void:
 	insights.visible = which == "insights"
 	news.visible = which == "news"
 	%Sidebar.visible = which != "creator"
+	# A resident drafted for an island that doesn't exist yet: no island to switch or send to.
+	%IslandSelector.visible = not _drafting
+	%SendPackage.visible = not _drafting
 	# Highlight the nav button of the open screen (the creator belongs to Residents).
 	_style_build_button()
 	%Residents.theme_type_variation = &"NavButtonActive" if which in ["residents", "creator"] else &"NavButton"
@@ -296,8 +302,12 @@ func _on_card_action(resident: Dictionary) -> void:
 	var bubble = resident.get("bubble")
 	if bubble and bubble.has("id"):
 		%Sidebar.open_reply(str(bubble["id"]))
-	else:
-		show_screen("island")
+		return
+	# Visit: back to the island, the camera zoomed all the way in on them.
+	show_screen("island")
+	var walker: IslandResident = %Island3D.get_node("Residents").walker(str(resident.get("id", "")))
+	if walker:
+		rig.focus_on(walker.global_position, CameraRig.MAX_ZOOM)
 
 
 ## Redraw everything that comes from Net.island (after any backend event).
@@ -357,6 +367,21 @@ func _go_back() -> void:
 			show_screen("home")
 		_:
 			show_screen("island")
+
+
+## News' "Try again" on a failed package: its issue, back in the Mailbox's form.
+func _retry_package(task_id: String) -> void:
+	if Net.island.is_empty():
+		return
+	Net.request_json(
+		"/islands/%s/tasks/%s" % [str(Net.island["id"]).uri_encode(), task_id.uri_encode()],
+		func(ok: bool, data: Dictionary):
+			if not ok:
+				toast.show_message("Couldn't open that package: %s" % data["error"])
+				return
+			open_building("mailbox", true)
+			building_panel.fill_form(str(data.get("title", "")), str(data.get("description", "")), data.get("issue"))
+	)
 
 
 ## Open a building's panel ("mailbox", "lab", ...) and glide the camera to it.

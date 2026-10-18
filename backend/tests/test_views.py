@@ -235,7 +235,7 @@ async def test_settings_endpoint_saves_and_hides_secrets(fake_runtime, monkeypat
     monkeypatch.setattr(keyring, "delete_password", lambda service, name: store.pop(name))
     for env_name in prefs.SECRETS.values():
         monkeypatch.delenv(env_name, raising=False)
-    monkeypatch.delenv("TEST_COMMAND", raising=False)
+    monkeypatch.delenv("OPENROUTER_MODEL", raising=False)  # the environment would lock the setting
     client = AsyncClient()
 
     before = (await client.get("/settings")).json()
@@ -243,12 +243,12 @@ async def test_settings_endpoint_saves_and_hides_secrets(fake_runtime, monkeypat
 
     saved = await client.put(
         "/settings",
-        data=json.dumps({"settings": {"test_command": "make test"}, "secrets": {"openrouter_api_key": "sk-or-1"}}),
+        data=json.dumps({"settings": {"openrouter_model": "x/model"}, "secrets": {"openrouter_api_key": "sk-or-1"}}),
         content_type="application/json",
     )
     assert saved.status_code == 200 and saved.json() == {"reloaded": True}  # the runtime re-read its settings
     after = (await client.get("/settings")).json()
-    assert after["settings"]["test_command"] == "make test" and after["secrets"]["openrouter_api_key"] is True
+    assert after["settings"]["openrouter_model"] == "x/model" and after["secrets"]["openrouter_api_key"] is True
     assert "sk-or-1" not in json.dumps(after)
 
     bad = await client.put(
@@ -405,3 +405,21 @@ async def test_websocket_without_islands_stays_open(fake_runtime, monkeypatch):
         assert await communicator.receive_nothing()
         await communicator.send_input({"type": "websocket.disconnect", "code": 1000})
         await communicator.wait()
+
+
+async def test_merge_pr_merges_an_open_pull_request_once(island, fake_runtime, monkeypatch):
+    from mii import github
+    from mii.models import Task
+
+    url = "https://github.com/me/sunny/pull/7"
+    await Task.objects.acreate(id="t_pr", island_id="sunny", title="Dark mode", status="done", pr_url=url)
+    merged = []
+    monkeypatch.setattr(github, "pr_merged_at", lambda _url: None)
+    monkeypatch.setattr(github, "merge_pull_request", lambda pr: merged.append(pr) or "squash")
+    client = AsyncClient()
+
+    response = await client.post("/islands/sunny/tasks/t_pr/merge-pr")
+    assert response.status_code == 200 and response.json()["method"] == "squash" and merged == [url]
+    assert response.json()["task"]["merged"] is True
+    assert (await client.post("/islands/sunny/tasks/t_pr/merge-pr")).status_code == 409  # nothing open any more
+    assert (await client.post("/islands/sunny/tasks/nope/merge-pr")).status_code == 404

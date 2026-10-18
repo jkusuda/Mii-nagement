@@ -1,7 +1,7 @@
 """Preferences: user settings in the database, API keys in the OS keychain.
 
 Three layers, first one wins:
-  1. the environment (a root .env, for developers): TEST_COMMAND, OPENROUTER_API_KEY, ...
+  1. the environment (a root .env, for developers): OPENROUTER_API_KEY, KEEP_WORKTREES, ...
   2. what the user saved through PUT /settings: the `Setting` table for ordinary
      values, the OS keychain (macOS Keychain, Windows Credential Manager, Linux
      Secret Service) for API keys. No keychain available = an owner-only file.
@@ -33,7 +33,6 @@ SECRETS_FILE = BACKEND_DIR / ".secrets.json"  # fallback when there is no keycha
 # setting -> (environment variable, default, type)
 SETTINGS = {
     "islands_root": ("ISLANDS_ROOT", None, "path"),
-    "test_command": ("TEST_COMMAND", None, str),
     "openrouter_model": ("OPENROUTER_MODEL", DEFAULT_MODEL, str),
     "keep_worktrees": ("KEEP_WORKTREES", False, bool),
     "database_url": ("DATABASE_URL", None, str),  # for the `database` gift (gifts.py GIFTS)

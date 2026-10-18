@@ -58,6 +58,13 @@ var appearance: Dictionary = MiiParts.DEFAULT.duplicate():
 		if is_node_ready():
 			_apply()
 
+## Eyes shut and no blinking: a resident asleep out on the island (island_resident.gd).
+var asleep := false:
+	set(value):
+		asleep = value
+		_blink_time = -1.0
+		_material.set_shader_parameter("blink", 1.0 if value else 0.0)
+
 var _material := ShaderMaterial.new()
 var _player: AnimationPlayer
 var _hair: MeshInstance3D
@@ -112,6 +119,8 @@ func play(what: String) -> void:
 
 ## Blink every few seconds: the shader squashes the eyes while `blink` goes 0 -> 1 -> 0.
 func _process(delta: float) -> void:
+	if asleep:
+		return
 	if _blink_time >= 0.0:
 		_blink_time += delta
 		var t := _blink_time / 0.15

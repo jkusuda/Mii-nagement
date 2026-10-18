@@ -68,14 +68,6 @@ def test_quick_fixes_plan_is_smaller(island):
     assert Road.objects.filter(island_id=new.id).count() == 2
 
 
-def test_each_island_has_its_own_test_command(island):
-    new = islands.create_island({"name": "Tested", "test_command": "  npm test  "})
-    assert new.test_command == "npm test" and islands.create_island({"name": "Plain"}).test_command == ""
-    assert islands.update_island(new.id, {"test_command": "cargo test"}).test_command == "cargo test"
-    with pytest.raises(islands.IslandError, match="one line"):
-        islands.update_island(new.id, {"test_command": "a\nb"})
-
-
 def test_found_in_a_chosen_folder_or_adopt_an_existing_repo(island, tmp_path):
     chosen = islands.create_island({"name": "Rocky Cove", "folder": tmp_path / "repos"})
     assert Path(chosen.repo_path) == (tmp_path / "repos" / "rocky_cove").resolve()

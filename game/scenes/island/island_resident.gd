@@ -120,6 +120,7 @@ func walk(points: Array[Vector3], hurry := false) -> void:
 	var speed := RUN_SPEED if run else WALK_SPEED
 	_stop_working()
 	zz.visible = false
+	mii.asleep = false
 	is_walking = true
 	_dest = points[-1]
 	mii.play("run" if run else "walk")
@@ -164,14 +165,21 @@ func route_length(points: Array[Vector3]) -> float:
 
 ## Go inside a building to work or sleep (`new_state`): walk through `points`
 ## (the last one is the door), then shrink away through the door. Safe to call
-## again while already inside (say, from working to sleeping).
-func enter(points: Array[Vector3], new_state := "working") -> void:
+## again while already inside (say, from working to sleeping). `instant`: already
+## in there (the island was just rebuilt), so no walk and no shrinking.
+func enter(points: Array[Vector3], new_state := "working", instant := false) -> void:
 	state = new_state
 	if inside:
 		zz.visible = state == "sleeping"
 		return
 	zz.visible = false
 	_stop_working()
+	if instant:
+		inside = true
+		mii.scale = Vector3.ONE * MII_SCALE * 0.15  # as small as after the shrink, for when they come out
+		_set_shown(false)
+		zz.visible = state == "sleeping"
+		return
 	if route_length(points) < 0.05:
 		inside = true
 	else:
@@ -231,6 +239,7 @@ func settle(route: Array[Vector3], new_state: String, look_at_point: Vector3) ->
 			return  # sent somewhere else meanwhile: that walk decides how they end up
 	state = new_state
 	zz.visible = state == "sleeping"
+	mii.asleep = state == "sleeping"  # no building to sleep in (a new resident): asleep where they stand
 	_stop_working()
 	match state:
 		"working":

@@ -27,13 +27,12 @@ if TYPE_CHECKING:
 @dataclass
 class StepResult:
     outcome: str  # "pass" | "fail"
-    summary: str = ""
+    summary: str = ""  # the reply, trimmed to its last summary_chars for notes and events
+    text: str = ""  # the whole reply (without the VERDICT/HELP/SAY TO/REMEMBER lines): the PR text
     explicit: bool = True  # False = the agent's reply had no VERDICT line, so the judge may decide
-    flaky: bool = False  # the Lab's tests failed, then passed on their one re-run
     help_request: str | None = None  # a `HELP: ...` line: what the resident is stuck on
     says: list[tuple[str, str]] = field(default_factory=list)  # `SAY TO <Name>: ...` lines: (name, message)
     remember: list[str] = field(default_factory=list)  # `REMEMBER: ...` lines for the resident's diary
-    test_output: str | None = None  # failing TEST_COMMAND output the engine saw itself (Lab, Workshop pre-check)
 
 
 # ask(kind, text, options, detail) shows a bubble and waits. `detail` is extra context the
@@ -183,12 +182,12 @@ def parse_verdict(text: str, summary_chars: int = 400) -> StepResult:
     summary = text
     for pattern in (HELP_PATTERN, SAY_PATTERN, REMEMBER_PATTERN, VERDICT_PATTERN):
         summary = pattern.sub("", summary)
-    summary = summary.strip()
-    if len(summary) > summary_chars:
-        summary = "…" + summary[-summary_chars:]
+    full = summary.strip()
+    summary = "…" + full[-summary_chars:] if len(full) > summary_chars else full
     return StepResult(
         outcome,
         summary,
+        text=full,
         explicit=bool(verdicts),
         help_request=helps[-1].strip() if helps else None,
         says=says,

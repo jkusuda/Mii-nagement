@@ -33,7 +33,6 @@ async def test_rule_judge_is_the_old_behaviour():
     assert await rules.mood(job.resident, job.building, StepResult("fail"), 1, False, 0) == "frustrated"
     assert await rules.mood(job.resident, job.building, StepResult("fail"), 1, True, 0) == "tired"
     assert (await rules.verdict(job, StepResult("pass", "x", explicit=False))).outcome == "pass"
-    assert await rules.flaky("Error: timeout", "") == 0.0
     assert await rules.tip({}, {"bouncy": "first", "steady": "second"}) == "first"
 
 
@@ -91,9 +90,6 @@ async def test_jev_judge_asks_typesafe_and_reads_the_answers():
     result = await j.verdict(job, StepResult("pass", "I gave up.", explicit=False))
     assert result.outcome == "fail" and result.explicit is False and "judge" in result.summary
 
-    j, _ = jev({"flaky": {"type": "noul", "noul": 0.93}})
-    assert await j.flaky("Error: connection refused on port 5432", "1 file changed") == 0.93
-
     j, seen = jev({"tip": {"type": "choice", "choice": "lab"}})
     assert await j.tip({"tasks_done": 3}, {"bouncy": "A", "lab": "B", "steady": "C"}) == "B"
     assert (
@@ -119,7 +115,7 @@ async def test_jev_judge_falls_back_to_the_rules(caplog):
     with caplog.at_level(logging.WARNING, logger="mii.judge"):
         j, _ = jev(status=500)
         assert await j.mood(job.resident, job.building, StepResult("pass"), 1, False, 0) == "happy"
-        assert await j.flaky("boom", "") == 0.0
+        assert await j.needs_help(job.building, 2, "boom") is False
         j2, _ = jev(raise_error=httpx.ConnectTimeout("slow"))
         assert (await j2.verdict(job, StepResult("pass", "?", explicit=False))).outcome == "pass"
         j3, _ = jev({"mood": {"type": "choice", "choice": "ecstatic"}})  # not one of ours
@@ -138,8 +134,8 @@ async def test_jev_judge_falls_back_to_the_rules(caplog):
     # ... one per judge instance (j, j2, j4); the second failure of the same judge is only logged at DEBUG
     j5, _ = jev(status=500)
     caplog.clear()
-    await j5.flaky("a", "")
-    await j5.flaky("b", "")
+    await j5.needs_help(job.building, 2, "a")
+    await j5.needs_help(job.building, 2, "b")
     assert sum(1 for r in caplog.records if r.levelno == logging.WARNING) == 1
 
 
@@ -179,10 +175,6 @@ async def test_gemini_judge_asks_with_a_schema_and_reads_the_answers():
     assert call["config"]["response_schema"]["properties"]["mood"]["enum"] == list(judge.MOODS)
     assert "Shipped it!" in call["contents"]
 
-    j, models = gemini({"flaky": 1.7})  # out of range: clamped
-    assert await j.flaky("Error: connection refused", "") == 1.0
-    assert models.calls[0]["config"]["response_schema"]["properties"]["flaky"] == {"type": "NUMBER"}
-
     jun, sydney = resident("jun", "planner"), resident("sydney", "reviewer")
     j, _ = gemini({"helper": "sydney"})
     assert await j.pick_helper(request(resident("carlos", "coder")), [jun, sydney]) is sydney
@@ -200,7 +192,7 @@ async def test_gemini_judge_falls_back_to_the_rules(caplog, monkeypatch):
         caplog.clear()
         with caplog.at_level(logging.WARNING, logger="mii.judge"):
             assert await j.mood(job.resident, job.building, StepResult("fail"), 1, False, 0) == "frustrated"
-            assert await j.flaky("boom", "") == 0.0
+            assert await j.needs_help(job.building, 2, "boom") is False
         warnings = [r for r in caplog.records if r.levelno == logging.WARNING and "Gemini is unavailable" in r.message]
         assert len(warnings) == 1  # once per judge, not once per call
         assert "g-key" not in caplog.text

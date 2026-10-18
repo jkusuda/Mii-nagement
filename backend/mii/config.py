@@ -20,7 +20,7 @@ REPO_ROOT = BACKEND_DIR.parent
 load_dotenv(REPO_ROOT / ".env")
 
 DEV_SECRET_KEY = "mii-nagement-local-dev-key"
-# The backend's own keys and server secrets. Agent processes and test commands never get
+# The backend's own keys and server secrets. Agent processes and their commands never get
 # them (agents/acp.py agent_env, prefs.secrets_env, sandbox.run_shell).
 PRIVATE_ENV = {"OPENROUTER_API_KEY", "TYPESAFE_API_KEY", "SPECTATOR_SECRET", "DJANGO_SECRET_KEY", "MII_DATABASE_URL"}
 # Outside any project on purpose: agent CLIs also read the instruction files (CLAUDE.md,
@@ -46,7 +46,7 @@ def _flag(name: str, default: str) -> bool:
 @dataclass(frozen=True)
 class Config:
     """What the process needs before the database is up. Everything the user can change at
-    runtime (islands folder, test command, keys...) is read by prefs.py instead."""
+    runtime (islands folder, keys...) is read by prefs.py instead."""
 
     worktree_root: Path  # where per-task worktrees of island repos go
     database_path: Path  # SQLite file
@@ -61,8 +61,8 @@ class Config:
 
     # Pacing (seconds)
     walk_seconds: float = 2.0  # how long a walk between buildings takes (lets the game animate)
-    bubble_timeout: float = 30.0  # how long a resident waits for your answer
-    permission_timeout: float | None = None  # same, for ✋ permission bubbles (None = bubble_timeout)
+    bubble_timeout: float | None = None  # how long a resident waits for your answer (None = until you answer)
+    permission_timeout: float | None = None  # same, for ✋ permission and ✅ approval bubbles (None = bubble_timeout)
     sleep_after: float = 45.0  # idle this long -> residents fall asleep
     step_timeout: float = 600.0  # an agent taking longer than this gets stopped
 
@@ -70,13 +70,14 @@ class Config:
 def load_config() -> Config:
     # Agent API keys (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY) aren't read
     # here: agent processes inherit them from the environment if they're set.
+    bubble = _optional_str("BUBBLE_TIMEOUT")
     permission = _optional_str("PERMISSION_TIMEOUT")
     return Config(
         worktree_root=_optional_path("WORKTREE_ROOT") or DEFAULT_WORKTREE_ROOT,
         database_path=_optional_path("DATABASE_PATH") or BACKEND_DIR / "mii.db",
         git_author=_optional_str("GIT_AUTHOR") or DEFAULT_GIT_AUTHOR,
         walk_seconds=float(os.getenv("WALK_SECONDS", "2.0")),
-        bubble_timeout=float(os.getenv("BUBBLE_TIMEOUT", "30")),
+        bubble_timeout=float(bubble) if bubble else None,
         permission_timeout=float(permission) if permission else None,
         sleep_after=float(os.getenv("SLEEP_AFTER", "45")),
         step_timeout=float(os.getenv("STEP_TIMEOUT", "600")),

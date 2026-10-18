@@ -19,6 +19,8 @@ extends PanelContainer
 signal unread_changed(count: int)
 ## A one-line result to show the player (game.gd puts it in the toast).
 signal notice(message: String)
+## "Try again" on a failed package: game.gd reopens its issue in the Mailbox's form.
+signal retry_requested(task_id: String)
 
 const SETTINGS := "user://news.cfg"
 const MAX_FEED := 40
@@ -32,6 +34,7 @@ const WEEK := [
 ]
 const WEEKDAYS := ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 const MERGE_ICON := preload("res://assets/icons/git-pull-request.svg")
+const MAIL_ICON := preload("res://assets/icons/mail.svg")
 
 var _desk := NewsStories.new()
 var _live_events: Array[Dictionary] = []  # this session's events, added on top of the history
@@ -217,7 +220,9 @@ func _story_row(story: Dictionary) -> Control:
 	tag.add_theme_color_override("font_color", story["color"])
 
 	var parts: Array[Control] = [time, avatar, text, tag]
-	if story.has("task"):
+	if story.get("failed"):
+		parts.append(_retry_button(story))
+	elif story.has("task"):
 		parts.append(_merge_button(story))
 	for part in parts:
 		part.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -252,6 +257,19 @@ func _merge_button(story: Dictionary) -> Button:
 				{}
 			)
 	)
+	return button
+
+
+## A failed package: open its original issue in the Mailbox's "Send a new issue" form, to resend.
+func _retry_button(story: Dictionary) -> Button:
+	var button := Button.new()
+	button.text = "Try again"
+	button.icon = MAIL_ICON
+	button.theme_type_variation = &"OutlineButton"
+	button.add_theme_font_size_override("font_size", 12)
+	button.focus_mode = Control.FOCUS_NONE
+	button.tooltip_text = "Open “%s” in the Mailbox to change it and send it again" % story.get("title", "the package")
+	button.pressed.connect(func(): retry_requested.emit(str(story["task"])))
 	return button
 
 

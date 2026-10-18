@@ -72,7 +72,7 @@ def create_island(data: dict) -> Island:
 
     Fields: name (required), repo ("owner/name" on GitHub), branch (default: the repo's
     own, else main), shape (a SHAPES key), steps (see STEP_ORDER) or plan (a PLANS key),
-    season, rules ({rule: bool}), test_command (what the Lab runs; "" = the setting),
+    season, rules ({rule: bool}),
     folder (where the repo goes; default: default_folder()),
     existing_repo (adopt this git folder instead of creating or cloning one).
     """
@@ -95,7 +95,6 @@ def create_island(data: dict) -> Island:
     if season not in SEASONS:
         raise IslandError(f"season must be one of {', '.join(SEASONS)}")
     rules = _clean_rules(data.get("rules", {}))
-    test_command = _clean_test_command(data.get("test_command"))
 
     folder = Path(str(data["folder"])).expanduser().resolve() if data.get("folder") else default_folder()
     # Locally, founding an island again under its old name picks its repository back up. On the
@@ -118,7 +117,6 @@ def create_island(data: dict) -> Island:
             branch=branch,
             plan=plan_name(steps),
             rules={rule: bool(rules.get(rule, False)) for rule in RULES},
-            test_command=test_command,
             map=default_map(shape, season),
         )
         _create_buildings(island_id, default_buildings(shape, steps))
@@ -220,7 +218,7 @@ def _rehome_residents(island_id: str) -> None:
 
 
 def update_island(island_id: str, data: dict) -> Island:
-    """Rename an island, or link / change its GitHub repo, branch, house rules or test command. Sync (git).
+    """Rename an island, or link / change its GitHub repo, branch or house rules. Sync (git).
 
     Only the fields sent change. Linking a repo also points the repository's `origin` at
     it, so the post office can push. Raises Island.DoesNotExist or IslandError.
@@ -238,10 +236,8 @@ def update_island(island_id: str, data: dict) -> Island:
         island.branch, changes = branch, [*changes, "branch"]
     if "rules" in data:
         island.rules, changes = {**island.rules, **_clean_rules(data.get("rules"))}, [*changes, "rules"]
-    if "test_command" in data:
-        island.test_command, changes = _clean_test_command(data.get("test_command")), [*changes, "test_command"]
     if not changes:
-        raise IslandError("nothing to change: send name, repo, branch, rules or test_command")
+        raise IslandError("nothing to change: send name, repo, branch or rules")
     if island.repo and "repo" in changes and repos.is_git_repo(island.repo_path):
         repos.link_remote(Path(island.repo_path), island.repo)
     island.save(update_fields=changes)
@@ -284,13 +280,6 @@ def _clean_repo(value: object) -> str | None:
     if repo and not REPO.match(repo):
         raise IslandError(f"repo must look like owner/name, got {repo}")
     return repo
-
-
-def _clean_test_command(value: object) -> str:
-    command = str(value or "").strip()
-    if len(command) > 500 or "\n" in command:
-        raise IslandError("test_command must be one line of at most 500 characters")
-    return command
 
 
 def _clean_rules(value: object) -> dict:

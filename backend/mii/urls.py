@@ -23,6 +23,7 @@ urlpatterns = [
     path("islands/<str:island_id>/tasks/<str:task_id>", views.get_task),
     path("islands/<str:island_id>/tasks/<str:task_id>/cancel", views.cancel_task),
     path("islands/<str:island_id>/tasks/<str:task_id>/merge", views.merge_task),
+    path("islands/<str:island_id>/tasks/<str:task_id>/merge-pr", views.merge_pr),
     path("islands/<str:island_id>/issues", views.island_issues),
     path("islands/<str:island_id>/insights", views.get_insights),
     path("islands/<str:island_id>/events", views.get_events),

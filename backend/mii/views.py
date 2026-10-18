@@ -432,6 +432,21 @@ async def merge_task(request: HttpRequest, island_id: str, task_id: str) -> Json
     )
 
 
+@csrf_exempt
+@require_POST
+async def merge_pr(request: HttpRequest, island_id: str, task_id: str) -> JsonResponse:
+    """Merge a delivered package's open pull request on GitHub (the Post Office's Merge button)."""
+    if await Task.objects.filter(pk=task_id, island_id=island_id).afirst() is None:
+        return _error(f"no task {task_id!r} on island {island_id!r}", 404)
+    try:
+        task, method = await get_runtime().workflow.merge_pr(task_id)
+    except ValueError as e:
+        return _error(str(e), 409)
+    except github.GitHubError as e:
+        return _error(str(e), 502)
+    return JsonResponse({"merged": True, "method": method, "task": task_to_dict(task)})
+
+
 async def _steps_by_task(task_ids: list[str]) -> dict[str, list[Step]]:
     """task id -> its Step rows, oldest first."""
     steps: dict[str, list[Step]] = {}

@@ -16,7 +16,6 @@ are the safety story; a probability is not). It decides flavour and small calls:
 
     mood         how a resident feels right after a step (the `mood` event)
     verdict      pass or fail when an agent forgot its VERDICT line
-    flaky        does a Lab failure look flaky, so the tests get one more run
     tip          which Insights tip fits the numbers
     needs_help   is a package bouncing back enough that a neighbour should take the next turn
     pick_helper  which free neighbour should come
@@ -105,9 +104,6 @@ class RuleJudge:
         """No VERDICT line: the rules trust the agent (a pass)."""
         return result
 
-    async def flaky(self, test_output: str, diff_stat: str) -> float:
-        return 0.0
-
     async def tip(self, stats: dict, candidates: dict[str, str]) -> str:
         """The first candidate: insights.tip_candidates lists them best rule first."""
         return next(iter(candidates.values()))
@@ -186,15 +182,6 @@ class AskingJudge(RuleJudge):
         return replace(
             result, outcome=outcome, summary=f"{result.summary} (no verdict line; the judge said {outcome})".strip()
         )
-
-    async def flaky(self, test_output, diff_stat):
-        state = {"test_output": _tail(test_output), "changes": _tail(diff_stat)}
-        question = _noul(
-            "Is this test failure flaky or environmental (timeouts, network, ports, ordering, "
-            "missing tools) rather than caused by the code changes?"
-        )
-        value = _noul_of(await self._ask(state, {"flaky": question}), "flaky")
-        return value if value is not None else await super().flaky(test_output, diff_stat)
 
     async def tip(self, stats, candidates):
         if len(candidates) <= 1:

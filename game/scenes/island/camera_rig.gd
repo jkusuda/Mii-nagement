@@ -17,7 +17,7 @@ signal clicked(screen_position: Vector2)
 signal hovered(screen_position: Vector2)
 
 const MIN_ZOOM := 0.6
-const MAX_ZOOM := 2.0
+const MAX_ZOOM := 2.5
 const ZOOM_STEP := 0.1
 const SMOOTHING := 12.0  # higher = snappier, lower = floatier
 const PAN_LIMIT := Vector2(14.0, 10.0)  # how far (x, z) you can drag from the start

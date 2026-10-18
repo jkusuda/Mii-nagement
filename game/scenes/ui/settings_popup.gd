@@ -39,12 +39,6 @@ const FOOTER_HINT := "Changes start with each island's next package."
 ## SETTINGS in backend/mii/prefs.py.
 const TEXTS := {
 	"islands_root": ["Where new islands go", "Documents/Mii-nagement", "Each new island gets its own git repo here."],
-	"test_command":
-	[
-		"Default Lab test command",
-		"e.g. uv run pytest",
-		"For islands without their own. Empty: the reviewer decides.",
-	],
 	"openrouter_model":
 	["Default OpenRouter model", "e.g. anthropic/claude-sonnet-4.5", "For OpenRouter residents without their own."],
 }
@@ -233,7 +227,6 @@ func _island_card() -> Control:
 	var parts := _card("Island work", "for every island")
 	var box: VBoxContainer = parts[1]
 	box.add_child(_text_field("islands_root", true))
-	box.add_child(_text_field("test_command"))
 
 	# Packages at once: a − 3 + stepper.
 	var stepper := HBoxContainer.new()

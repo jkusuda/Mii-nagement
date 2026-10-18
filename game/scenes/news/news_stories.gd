@@ -73,13 +73,17 @@ func _story_for(e: Dictionary) -> Dictionary:
 						story["pr_url"] = str(e["pr_url"])
 					return story
 				"failed":
-					return _make(
+					var failed := _make(
 						str(e.get("agent", "")),
 						"“%s” didn't make it this time." % title,
 						"Failed",
 						Color("C0392B"),
 						"packages"
 					)
+					failed["title"] = title
+					failed["task"] = id
+					failed["failed"] = true  # News offers "Try again" (the issue, back in the Mailbox form)
+					return failed
 		"handoff":
 			var title := str(_titles.get(str(e.get("task", "")), "the package"))
 			var giver := _name(str(e.get("from", "")))

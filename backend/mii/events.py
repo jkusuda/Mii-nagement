@@ -213,14 +213,15 @@ class Bubbles:
         agent: str,
         kind: str,
         text: str,
-        timeout: float,
+        timeout: float | None,
         options: list[str] | None = None,
         task: str | None = None,
         detail: str | None = None,
         auto: str | None = None,
     ) -> str | None:
-        """Show a bubble. Returns your answer, or None if nobody answered in time.
-        `auto`: the answer is already decided (the master key); the bubble shows and closes at once."""
+        """Show a bubble. Returns your answer, or None if nobody answered within `timeout`
+        seconds (None = wait until someone does). `auto`: the answer is already decided (the
+        master key); the bubble shows and closes at once."""
         bubble_id = "b_" + uuid.uuid4().hex[:6]
         future = asyncio.get_running_loop().create_future()
         if auto is not None:

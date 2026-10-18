@@ -20,7 +20,7 @@ _database: str | None = None  # "sqlite" | "postgres" | "timescale", set by dete
 
 INSERT = (
     "INSERT INTO metrics (time, island_id, kind, task_id, building_type, resident_id, brain, outcome, "
-    "seconds, flaky, timed_out) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+    "seconds, timed_out) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
 )
 PER_DAY = (
     "SELECT day, sum(n) FROM metrics_daily WHERE island_id = %s AND kind = 'task' AND outcome = 'done' "
@@ -66,7 +66,7 @@ async def record_step(step: Step) -> None:
     if enabled():
         await _record(
             (step.finished_at, step.island_id, "step", step.task_id, step.building_type, step.resident_id,
-             step.brain, step.outcome, step.seconds, step.flaky, step.timed_out)
+             step.brain, step.outcome, step.seconds, step.timed_out)
         )  # fmt: skip
 
 
