@@ -9,13 +9,10 @@
 <meta property="og:title" content="Mii-nagement · Little lives. Real work.">
 <meta property="og:description" content="Your repo is an island. Your AI agents are the residents. Give them a task. Get a real GitHub PR.">
 <meta property="og:image" content="https://mii-nagement.work/island.jpg">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
 <style>
-  /* The look: a sky-and-island hero with the game's own trees, sea and Miis (rendered
+  /* The look (in DreamLife, the game's font): a sky-and-island hero with the game's own trees, sea and Miis (rendered
      from the Godot models), then flat colour bands: cream, green, white, light blue.
-     Chunky rounded Nunito in navy, yellow pill buttons with a hard navy shadow. */
+     Navy text, yellow pill buttons with a hard navy shadow. */
   :root {
     --navy: #153c61;
     --blue: #2f7de1;
@@ -32,11 +29,12 @@
     --bubble: #e3f1fa;
     /* Faint hand-drawn doodles (squiggles, rings, beans), tiled over every section's own colour. */
     --doodles: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='280' height='280' viewBox='0 0 280 280' fill='none' stroke='%23153c61' stroke-opacity='.07' stroke-width='7' stroke-linecap='round'%3E%3Cpath d='M22 52c14-24 30 22 46-2'/%3E%3Ccircle cx='212' cy='62' r='17'/%3E%3Cpath d='M68 196c-14-28 32-46 50-18 12 22-26 50-50 18z'/%3E%3Cpath d='M160 226l44 10'/%3E%3Ccircle cx='246' cy='182' r='8'/%3E%3Cpath d='M104 118c10-12 22 12 32 0s22 12 32 0'/%3E%3Cpath d='M230 250c-8 14 10 26 22 14'/%3E%3Cpath d='M18 258c0-14 24-14 24 0'/%3E%3Cpath d='M140 20c18-8 28 14 10 24'/%3E%3C/svg%3E");
-    --font: "Nunito", ui-rounded, "SF Pro Rounded", system-ui, -apple-system, sans-serif;
+    --font: "DreamLife", ui-rounded, "SF Pro Rounded", system-ui, -apple-system, sans-serif;
   }
   @font-face { font-family: "DreamLife"; src: url("dreamlife.ttf") format("truetype"); font-display: swap; }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
+  html { font-synthesis: none; }
   body { margin: 0; font-family: var(--font); font-weight: 600; font-size: 17px; line-height: 1.5; color: var(--ink); background: var(--white); }
   a { color: var(--navy); }
   img { max-width: 100%; height: auto; display: block; }
@@ -135,7 +133,7 @@
 
   /* White: get it. */
   .getit { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
-  .getit h2 { text-align: left; font-family: "DreamLife", var(--font); font-weight: 400; font-size: clamp(36px, 4vw, 52px); }
+  .getit h2 { text-align: left; font-size: clamp(36px, 4vw, 52px); }
   .getit .sub { color: var(--ink-soft); font-size: 15px; margin-top: 6px; }
   .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 36px; margin-top: 36px; }
   .step { display: grid; grid-template-columns: 48px 1fr; gap: 14px; align-items: start; }
@@ -150,7 +148,7 @@
   .howto { border: 4px solid var(--navy); border-radius: 22px; padding: 0; max-width: 560px; width: calc(100% - 32px); color: var(--ink); box-shadow: 0 6px 0 var(--navy), 0 20px 50px rgba(21, 60, 97, .35); }
   .howto::backdrop { background: rgba(21, 60, 97, .45); }
   .howto .inner { padding: 28px 30px 26px; }
-  .howto h2 { font-family: "DreamLife", var(--font); font-weight: 400; font-size: 34px; text-align: left; }
+  .howto h2 { font-size: 34px; text-align: left; }
   .howto .why { color: var(--ink-soft); font-size: 15px; margin-top: 6px; }
   .howto ol { list-style: none; padding: 0; margin: 20px 0 0; display: grid; gap: 14px; }
   .howto li { display: grid; grid-template-columns: 36px 1fr; gap: 12px; align-items: start; font-size: 16px; }
@@ -230,7 +228,7 @@
         <div class="bubble left">Can I run this command?<small>You answer. They get to work.</small></div>
         <div class="mii blue"><img src="hero_mii_blue.png" alt="" width="283" height="700"></div>
         <div class="mii red"><img src="hero_mii_red.png" alt="" width="313" height="700"></div>
-        <div class="frame"><img src="talk.jpg" alt="Talking with Carlos inside the Workshop: he explains, from the code he just read, the choice to make before he starts" width="1280" height="720"></div>
+        <div class="frame"><img src="island.jpg" alt="Sunny Isle at noon: Carlos, Jun, Kiki and Sydney on the path by the pond, with the Mailbox, Workshop, Lab, Courthouse and Post Office around them" width="1280" height="720"></div>
         <div class="mii green"><img src="hero_mii_green.png" alt="" width="283" height="700"></div>
         <div class="bubble right">Big personalities. Occasional naps.</div>
       </div>
@@ -265,9 +263,9 @@
           <p>Planner, Coder, Reviewer. Each with a personality, a mood, and a diary.</p>
         </div>
         <div>
-          <div class="frame"><img src="gazette.jpg" alt="The Sunny Isle Gazette with today's stories and weekly stats" width="1280" height="720" loading="lazy"></div>
-          <h3>Extra, extra! Island news.</h3>
-          <p>The island gazette keeps the day's work and little lives in one place.</p>
+          <div class="frame"><img src="talk.jpg" alt="Talking with Carlos inside the Workshop: he explains, from the code he just read, the choice to make before he starts" width="1280" height="720" loading="lazy"></div>
+          <h3>Pop in for a chat.</h3>
+          <p>Visit a resident at work and ask what they're up to. They answer from the code in front of them.</p>
         </div>
         <div>
           <div class="frame"><img src="archipelago.jpg" alt="The Archipelago: an island in a blue sea, with room for a new island" width="1280" height="720" loading="lazy"></div>
