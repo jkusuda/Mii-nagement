@@ -63,19 +63,20 @@ const GIFTS := [
 ]
 
 ## How a resident feels, as the island shows it: the backend's six moods (docs/protocol.md)
-## plus a few "vibes" the game reads off the snapshot itself (see vibe()). word, colour, symbol.
+## plus a few "vibes" the game reads off the snapshot itself (see vibe()). word, colour,
+## Lucide icon (white, tinted with the colour where it's shown).
 const VIBES := {
-	"happy": ["happy", Color("2FA37A"), "😊"],
-	"focused": ["focused", Color("3E7FCB"), "🎯"],
-	"confused": ["puzzled", Color("7553DF"), "😵‍💫"],
-	"frustrated": ["grumpy", Color("E36F1E"), "😤"],
-	"tired": ["tired", Color("C57722"), "😩"],
-	"proud": ["proud", Color("009D85"), "😎"],
-	"sleepy": ["sleepy", Color("8A8FA8"), "😴"],
-	"bored": ["bored", Color("8A8FA8"), "😑"],
-	"lonely": ["lonely", Color("7553DF"), "🥺"],
-	"excited": ["excited", Color("E39537"), "🤩"],
-	"relaxed": ["relaxed", Color("2FA37A"), "😌"],
+	"happy": ["happy", Color("2FA37A"), preload("res://assets/icons/smile.svg")],
+	"focused": ["focused", Color("3E7FCB"), preload("res://assets/icons/target.svg")],
+	"confused": ["puzzled", Color("7553DF"), preload("res://assets/icons/circle-help.svg")],
+	"frustrated": ["grumpy", Color("E36F1E"), preload("res://assets/icons/angry.svg")],
+	"tired": ["tired", Color("C57722"), preload("res://assets/icons/battery-low.svg")],
+	"proud": ["proud", Color("009D85"), preload("res://assets/icons/trophy.svg")],
+	"sleepy": ["sleepy", Color("8A8FA8"), preload("res://assets/icons/moon.svg")],
+	"bored": ["bored", Color("8A8FA8"), preload("res://assets/icons/meh.svg")],
+	"lonely": ["lonely", Color("7553DF"), preload("res://assets/icons/frown.svg")],
+	"excited": ["excited", Color("E39537"), preload("res://assets/icons/sparkles.svg")],
+	"relaxed": ["relaxed", Color("2FA37A"), preload("res://assets/icons/coffee.svg")],
 }
 const BORED_AFTER := 180.0  # seconds idle before a resident looks bored
 
@@ -153,10 +154,10 @@ static func vibe_color(resident: Dictionary, island: Dictionary = {}) -> Color:
 	return VIBES[v][1] if VIBES.has(v) else Color("8A8FA8")
 
 
-## The emoji shown beside the name on the island.
-static func vibe_symbol(resident: Dictionary, island: Dictionary = {}) -> String:
+## The icon shown beside the name on the island.
+static func vibe_icon(resident: Dictionary, island: Dictionary = {}) -> Texture2D:
 	var v := vibe(resident, island)
-	return VIBES[v][2] if VIBES.has(v) else "🙂"
+	return VIBES[v][2] if VIBES.has(v) else VIBES["happy"][2]
 
 
 ## Is this resident inside this building right now? Only while working there: everyone

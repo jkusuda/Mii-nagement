@@ -100,7 +100,9 @@ func _layout(line: String) -> void:
 	_body.queue_redraw()
 	_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 	# The tail's tip sits at the node's origin; the bubble grows upward from it.
-	_sprite.offset = Vector2(-view.x / 2.0, -(view.y - MARGIN))
+	# A Sprite3D's offset is y-up (unlike 2D), so only the shadow margin under the
+	# tip goes below the origin.
+	_sprite.offset = Vector2(-view.x / 2.0, -MARGIN)
 
 
 ## BBCode for the line, with each resident's name in orange.
