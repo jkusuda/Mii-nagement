@@ -15,8 +15,23 @@ from django.http import HttpRequest, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
-from mii import auth, events, github, islands, layout, metrics, prefs, residents, talk, tasks, usage, vocab, weather
-from mii.agents.acp import GIFTS, BrainError, available_brains, available_gifts, list_brain_models
+from mii import (
+    auth,
+    events,
+    gifts,
+    github,
+    islands,
+    layout,
+    metrics,
+    prefs,
+    residents,
+    talk,
+    tasks,
+    usage,
+    vocab,
+    weather,
+)
+from mii.agents.acp import BrainError, available_brains, list_brain_models
 from mii.agents.openrouter import list_models
 from mii.auth import island_guard
 from mii.config import config
@@ -70,10 +85,10 @@ async def _island_or_404(island_id: str) -> Island | JsonResponse:
 
 
 async def _snapshot(island_id: str) -> dict:
-    """The snapshot event's `island`, including `mock_agents`. Raises Island.DoesNotExist."""
+    """The snapshot event's `island`. Raises Island.DoesNotExist."""
     runtime = get_runtime()
     island = await island_snapshot(island_id, runtime.bubbles.for_island(island_id))
-    return events.snapshot(island, runtime.mock_agents)["island"]
+    return events.snapshot(island)["island"]
 
 
 @require_GET
@@ -82,7 +97,6 @@ async def health(request: HttpRequest) -> JsonResponse:
     return JsonResponse(
         {
             "ok": True,
-            "mock_agents": runtime.mock_agents,
             "judge": runtime.judge.name,
             "database": metrics.database(),  # sqlite | postgres | timescale
         }
@@ -118,7 +132,7 @@ async def meta(request: HttpRequest) -> JsonResponse:
             "job_buildings": vocab.JOB_BUILDINGS,
             "traits": {name: {"low": lo, "medium": mid, "high": hi} for name, (lo, mid, hi) in TRAITS.items()},
             "brains": list(vocab.BRAIN_NAMES),
-            "gifts": {gift: spec["label"] for gift, spec in GIFTS.items()},
+            "gifts": {gift: spec["label"] for gift, spec in gifts.GIFTS.items()},  # built-in; GET /gifts adds the rest
             "keys": {"names": list(DEFAULT_KEYS), "values": list(residents.KEY_VALUES), "defaults": DEFAULT_KEYS},
             "building_types": list(vocab.STEP_ORDER),
             "road_conditions": list(vocab.ROAD_CONDITIONS),
@@ -150,9 +164,71 @@ async def usage_view(request: HttpRequest) -> JsonResponse:
     return JsonResponse(await usage.today())
 
 
+@csrf_exempt
+async def gifts_view(request: HttpRequest) -> JsonResponse:
+    """GET: every gift and whether it runs here. POST {"name": registry name}: add an MCP
+    server from the MCP Registry as a gift (gifts.py); answers {"id", "gifts"}."""
+    if request.method == "POST":
+        denied = await _may_change_gifts(request)
+        if denied:
+            return denied
+        body = _json_body(request)
+        if isinstance(body, JsonResponse):
+            return body
+        try:
+            gift, _ = await gifts.add(body.get("name"))
+        except gifts.GiftError as e:
+            return _error(str(e), 400)
+        return JsonResponse({"id": gift, "gifts": await asyncio.to_thread(gifts.available_gifts)})
+    if request.method != "GET":
+        return _error("GET or POST", 405)
+    return JsonResponse(await asyncio.to_thread(gifts.available_gifts))
+
+
 @require_GET
-async def gifts(request: HttpRequest) -> JsonResponse:
-    return JsonResponse(await asyncio.to_thread(available_gifts))
+async def gift_search(request: HttpRequest) -> JsonResponse:
+    """The gift shop: MCP Registry servers matching ?q= that can run here."""
+    query = request.GET.get("q", "").strip()
+    if not query:
+        return _error("q is required", 400)
+    try:
+        return JsonResponse({"servers": await gifts.search(query)})
+    except gifts.GiftError as e:
+        return _error(str(e), 502)
+
+
+@csrf_exempt
+async def gift_view(request: HttpRequest, gift: str) -> JsonResponse:
+    """PUT {"env": {NAME: value | null}}: save what an added gift needs (keychain).
+    DELETE: take an added gift off the shelf, and back from every resident."""
+    if request.method not in ("PUT", "DELETE"):
+        return _error("PUT or DELETE", 405)
+    denied = await _may_change_gifts(request)
+    if denied:
+        return denied
+    try:
+        if request.method == "PUT":
+            body = _json_body(request)
+            if isinstance(body, JsonResponse):
+                return body
+            if not isinstance(body.get("env"), dict):
+                return _error("`env` must be an object", 400)
+            await gifts.set_env(gift, body["env"])
+        else:
+            runtime = get_runtime()
+            for island_id in await gifts.remove(gift):  # their residents lost the gift: redraw
+                await runtime.bus.emit(island_id, events.snapshot(await _snapshot(island_id)))
+    except gifts.GiftError as e:
+        return _error(str(e), 400)
+    return JsonResponse(await asyncio.to_thread(gifts.available_gifts))
+
+
+async def _may_change_gifts(request: HttpRequest) -> JsonResponse | None:
+    """Gifts are this computer's, like settings: locked on the public demo, and login first."""
+    if config.public_demo:
+        return _error("gifts are locked on the public demo", 403)
+    sub = await _caller(request, required=True)
+    return sub if isinstance(sub, JsonResponse) else None
 
 
 @require_GET
@@ -329,7 +405,7 @@ async def tasks_view(request: HttpRequest, island_id: str) -> JsonResponse:
 
     A posted task is queued and run by the engine worker: each building's resident
     does their step through their brain (Claude Code, Codex, Gemini over ACP, or
-    OpenRouter; the mock brain while `mock_agents` is on). Follow it over the
+    OpenRouter). Follow it over the
     WebSocket, or poll GET /islands/{id}/tasks/{task_id}.
     """
     island = await _island_or_404(island_id)
@@ -498,7 +574,7 @@ async def layout_view(request: HttpRequest, island_id: str) -> JsonResponse:
             return _error(str(e), 400)
         runtime = get_runtime()
         snapshot = await _snapshot(island_id)
-        await runtime.bus.emit(island_id, events.snapshot(snapshot, runtime.mock_agents))  # every client redraws
+        await runtime.bus.emit(island_id, events.snapshot(snapshot))  # every client redraws
         return JsonResponse(snapshot)
     try:
         buildings, roads = layout.clean_layout(island_id, body)

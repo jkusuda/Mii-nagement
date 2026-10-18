@@ -16,9 +16,8 @@ const JOBS := ["planner", "coder", "reviewer"]
 const JOB_HOMES := {"planner": "Mailbox", "coder": "Workshop", "reviewer": "Courthouse"}
 
 ## Brain id -> label. Must match BRAINS in backend/mii/agents/acp.py, plus
-## `mock` and `openrouter` (backend/mii/agents/openrouter.py).
+## `openrouter` (backend/mii/agents/openrouter.py).
 const BRAINS := {
-	"mock": "Mock · free",
 	"claude-code": "Claude Code",
 	"codex": "Codex",
 	"gemini": "Gemini CLI",
@@ -37,41 +36,46 @@ const TRAITS := [
 ## House keys: what the resident may do without asking. Each one covers some
 ## ACP tool kinds; when the agent asks permission for one of them, the backend
 ## answers by itself ("yes"), shows a ✋ bubble ("ask"), or refuses ("no").
-## [key, label, ACP tool kinds, default]
+## Same names and defaults as DEFAULT_KEYS in backend/mii/models.py. Each gift's tools
+## follow one key too (GET /gifts `key`, backend/mii/gifts.py): a gift whose key is "no" stays home.
+## [key, label, what it covers, default]
 const HOUSE_KEYS := [
-	["read", "Read the code", "read, search", "yes"],
-	["edit", "Edit files", "edit, delete, move", "ask"],
-	["execute", "Run commands", "execute", "ask"],
-	["fetch", "Use the internet", "fetch", "no"],
+	["read", "Read the code", "reading and searching files", "yes"],
+	["edit", "Edit files", "editing, deleting and moving files", "ask"],
+	["execute", "Run commands", "running shell commands, and the gifts that do (Terminal, Database)", "ask"],
+	["fetch", "Use the internet", "fetching web pages, and the gifts that go online (Browser, GitHub, Docs)", "no"],
+	["tools", "Other tools", "gifts from the gift shop, and any tool the keys above don't cover", "ask"],
 ]
+## The master key ("yes" | "no"): every door opens and nothing is ever asked
+## (permissions, reviews, questions). The keys above don't count while it's on.
+const MASTER_KEY_HINT := "Every door opens: nothing is asked, reviews are approved, questions are left to them."
 const KEY_CHOICES := {"yes": "Yes", "ask": "Ask me", "no": "No"}
 
-## Gifts: extra MCP servers handed to the agent in ACP `session/new`.
-## [id, label, icon]
+## Gifts: extra MCP servers handed to the agent in ACP `session/new` (backend/mii/gifts.py).
+## The built-in ones, [id, label, icon]; gifts added from the gift shop come from GET /gifts.
 const GIFTS := [
 	["browser", "Browser", preload("res://assets/icons/globe.svg")],
 	["github", "GitHub", preload("res://assets/icons/git-pull-request.svg")],
 	["docs", "Docs", preload("res://assets/icons/book-open.svg")],
 	["database", "Database", preload("res://assets/icons/database.svg")],
 	["terminal", "Terminal", preload("res://assets/icons/terminal.svg")],
-	["godot", "Godot", preload("res://assets/icons/code.svg")],
-	["video", "Video", preload("res://assets/icons/smile.svg")],
 ]
 
 ## How a resident feels, as the island shows it: the backend's six moods (docs/protocol.md)
-## plus a few "vibes" the game reads off the snapshot itself (see vibe()). word, colour, symbol.
+## plus a few "vibes" the game reads off the snapshot itself (see vibe()). word, colour,
+## Lucide icon (white, tinted with the colour where it's shown).
 const VIBES := {
-	"happy": ["happy", Color("2FA37A"), "😊"],
-	"focused": ["focused", Color("3E7FCB"), "🎯"],
-	"confused": ["puzzled", Color("7553DF"), "😵‍💫"],
-	"frustrated": ["grumpy", Color("E36F1E"), "😤"],
-	"tired": ["tired", Color("C57722"), "😩"],
-	"proud": ["proud", Color("009D85"), "😎"],
-	"sleepy": ["sleepy", Color("8A8FA8"), "😴"],
-	"bored": ["bored", Color("8A8FA8"), "😑"],
-	"lonely": ["lonely", Color("7553DF"), "🥺"],
-	"excited": ["excited", Color("E39537"), "🤩"],
-	"relaxed": ["relaxed", Color("2FA37A"), "😌"],
+	"happy": ["happy", Color("2FA37A"), preload("res://assets/icons/smile.svg")],
+	"focused": ["focused", Color("3E7FCB"), preload("res://assets/icons/target.svg")],
+	"confused": ["puzzled", Color("7553DF"), preload("res://assets/icons/circle-help.svg")],
+	"frustrated": ["grumpy", Color("E36F1E"), preload("res://assets/icons/angry.svg")],
+	"tired": ["tired", Color("C57722"), preload("res://assets/icons/battery-low.svg")],
+	"proud": ["proud", Color("009D85"), preload("res://assets/icons/trophy.svg")],
+	"sleepy": ["sleepy", Color("8A8FA8"), preload("res://assets/icons/moon.svg")],
+	"bored": ["bored", Color("8A8FA8"), preload("res://assets/icons/meh.svg")],
+	"lonely": ["lonely", Color("7553DF"), preload("res://assets/icons/frown.svg")],
+	"excited": ["excited", Color("E39537"), preload("res://assets/icons/sparkles.svg")],
+	"relaxed": ["relaxed", Color("2FA37A"), preload("res://assets/icons/coffee.svg")],
 }
 const BORED_AFTER := 180.0  # seconds idle before a resident looks bored
 
@@ -85,7 +89,7 @@ static func blank() -> Dictionary:
 		"name": "",
 		"job": "coder",
 		"color": COLORS[0],
-		"brain": "mock",
+		"brain": "",  # none until the player picks one
 		"model": null,
 		"catchphrase": "",
 		"bluntness": 0.5,
@@ -99,7 +103,7 @@ static func blank() -> Dictionary:
 
 
 static func default_keys() -> Dictionary:
-	var keys := {}
+	var keys := {"master": "no"}
 	for key in HOUSE_KEYS:
 		keys[key[0]] = key[3]
 	return keys
@@ -149,10 +153,10 @@ static func vibe_color(resident: Dictionary, island: Dictionary = {}) -> Color:
 	return VIBES[v][1] if VIBES.has(v) else Color("8A8FA8")
 
 
-## The emoji shown beside the name on the island.
-static func vibe_symbol(resident: Dictionary, island: Dictionary = {}) -> String:
+## The icon shown beside the name on the island.
+static func vibe_icon(resident: Dictionary, island: Dictionary = {}) -> Texture2D:
 	var v := vibe(resident, island)
-	return VIBES[v][2] if VIBES.has(v) else "🙂"
+	return VIBES[v][2] if VIBES.has(v) else VIBES["happy"][2]
 
 
 ## Is this resident inside this building right now? Only while working there: everyone

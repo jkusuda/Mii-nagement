@@ -45,6 +45,6 @@ SEND_BACK = "Send back"
 
 # --- Brains ---------------------------------------------------------------------------
 ACP_BRAINS = ("claude-code", "codex", "gemini")  # one entry each in agents/acp.py BRAINS
-BRAIN_NAMES = ("mock", *ACP_BRAINS, "openrouter")
+BRAIN_NAMES = (*ACP_BRAINS, "openrouter")
 DEFAULT_MODEL = "anthropic/claude-sonnet-4.5"  # the openrouter brain's default model
 DEFAULT_GIT_AUTHOR = "Mii-nagement <mii@localhost>"  # author of the commits the backend makes

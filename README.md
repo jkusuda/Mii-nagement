@@ -21,8 +21,8 @@ first: how the two halves fit, a map of every file, and a "where to look" table 
 common changes. Then [CLAUDE.md](CLAUDE.md) for the working rules.
 
 > **Status:** the backend MVP is done (Django + Channels, ACP brains, OpenRouter
-> brain, GitHub in/out, insights) and runs end to end in **mock mode**
-> (fake agents, no API cost). The game is wired to every backend endpoint. Open work is
+> brain, GitHub in/out, insights) and runs end to end with real agents.
+> The game is wired to every backend endpoint. Open work is
 > marked `TODO(mvp)` / `TODO(stretch)` in the code; the roadmap is in [TODO.md](TODO.md).
 
 ## How it fits together
@@ -50,13 +50,10 @@ make
 ```
 
 That installs everything, starts the backend, and opens the game. No
-configuration file is needed. Ctrl+C stops both. This is the real-agents setup:
-no `--reload` (editing the code would restart the server mid-task). It forces mock mode off
-(`MOCK_AGENTS=0`), whatever a `.env` or the saved settings say, so residents use
-their real brains.
+configuration file is needed. Ctrl+C stops both. The backend runs without
+`--reload` (editing the code would restart the server mid-task).
 
-For development, `make dev` runs the backend with `--reload` and every resident
-on the free mock brain. Other targets: `make server`, `make watch`, `make game`,
+Other targets: `make server`, `make watch`, `make game`,
 `make test`. If Godot isn't found, pass it: `make GODOT=/path/to/godot`.
 
 **Just want the app?** On a Mac, `make app` builds `game/builds/macos/Mii-nagement.dmg`:
@@ -81,8 +78,7 @@ cd backend && uv sync
 
 - `uv sync` downloads Python 3.12 for this project only, creates `backend/.venv`,
   and installs the dependencies.
-- No `.env` is needed. The backend starts with real agents (`make dev` switches to
-  the free mock brain); settings and API keys are
+- No `.env` is needed. Settings and API keys are
   saved at runtime (see "Settings" below). Developers can still copy
   `.env.example` to `.env` to force values.
 
@@ -139,7 +135,7 @@ The game opens on the **Archipelago** (every island in one sea, plus everything
 "Waiting on you"). From there:
 - **Settings** (bottom nav): islands folder (with a folder picker), test command,
   packages at once, the master key, API keys (saved to your OS keychain), and which
-  brains this computer can run. Mock mode follows `make` / `make dev`.
+  brains this computer can run.
 - **New island**: name, GitHub repo, branch, town plan, residents, house rules.
 - Click an island to visit it. **Send a package** (top right) drops a task in the
   Mailbox; residents walk it along the roads. Answer their bubbles in the sidebar.
@@ -151,11 +147,10 @@ New to Godot? Read [docs/godot-tour.md](docs/godot-tour.md).
 
 ## Real agents
 
-Mock mode is off by default (`make dev`, `PUT /settings {"settings": {"mock_agents": true}}`
-or `MOCK_AGENTS=1` in `.env` turn it on). Every island has its own git repository
+Every island has its own git repository
 (created when you found it, under `~/Documents/Mii-nagement`, or `~/Mii-nagement`
 without a Documents folder; change the root with `ISLANDS_ROOT`). Each task gets its own git worktree of that repo and a
-`mii/<task_id>` branch. Optional: `TEST_COMMAND` (what the Lab runs) and the
+`mii/<task_id>` branch. Optional: a test command (what the Lab runs: each island's own, set when you found it, else `TEST_COMMAND`) and the
 island's `repo` (`owner/name`, for issues in and PRs out via the logged-in `gh` CLI).
 
 New islands (the game's island creator, or `POST /islands` with
@@ -217,8 +212,8 @@ isn't a git repo) come back as a 400 with the reason, shown in the creator.
 
 ## Settings
 
-`GET /settings` shows the effective settings (`mock_agents`, `islands_root`,
-`test_command`, `openrouter_model`, `keep_worktrees`, `database_url`, `godot_path`,
+`GET /settings` shows the effective settings (`islands_root`,
+`test_command`, `openrouter_model`, `keep_worktrees`, `database_url`,
 `judge`), which ones `.env` locks, and which API keys are set. `PUT /settings` saves
 settings to the database and API keys (`openrouter_api_key`, `typesafe_api_key`,
 `anthropic_api_key`, `openai_api_key`, `gemini_api_key`) to the OS keychain: macOS Keychain, Windows Credential

@@ -400,8 +400,7 @@ func _move_residents_in(island: Dictionary) -> void:
 ## every screen redraws when its snapshot arrives.
 func _visit_island(id: String) -> void:
 	Net.visit_island(id)
-	# Daily digest: the first island visit of the day opens on the newspaper.
-	show_screen("news" if news.wants_morning_paper() else "island")
+	show_screen("island")
 
 
 ## The News button's badge: stories you haven't seen yet.

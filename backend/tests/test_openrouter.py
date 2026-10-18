@@ -110,3 +110,26 @@ async def test_openrouter_runner_reports_billing_problems_as_tired(sandbox):
 async def test_openrouter_runner_needs_a_key():
     result = await OpenRouterRunner(None, "m").run(make_job("openrouter"))
     assert result.outcome == "fail" and "OPENROUTER_API_KEY" in result.summary
+
+
+async def test_openrouter_runner_honours_house_keys_for_reading_and_writing(sandbox):
+    workdir = sandbox.create_worktree("t_test")
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return assistant(
+                tool_calls=[("read_file", {"path": "README.md"}), ("write_file", {"path": "a.txt", "content": "hi"})]
+            )
+        outputs = [m["content"] for m in json.loads(request.content)["messages"] if m["role"] == "tool"]
+        assert outputs[0].startswith("denied") and outputs[1] == "wrote a.txt"
+        return assistant(content="VERDICT: PASS")
+
+    ask = RecordingAsk(answer="Allow")
+    job = make_job("openrouter", workdir=workdir, ask=ask, sandbox=sandbox)
+    job.resident.keys = {"read": "no", "edit": "ask", "execute": "no", "fetch": "no"}
+    assert (await make_runner(handler).run(job)).outcome == "pass"
+    assert [text for _, text, _ in ask.asked] == ["May I write `a.txt`?"]
+    assert (workdir / "a.txt").read_text() == "hi"

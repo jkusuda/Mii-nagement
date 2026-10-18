@@ -19,7 +19,7 @@ log = logging.getLogger(__name__)
 async def record(brain: str, *, turns: int = 0, tokens: int = 0, cost: float = 0.0) -> None:
     """Add to today's totals for `brain`. Never fails the agent's work: a count that
     can't be saved is only logged."""
-    if brain == "mock" or not (turns or tokens or cost):
+    if not (turns or tokens or cost):
         return
     try:
         row, _ = await BrainUsage.objects.aget_or_create(brain=brain, day=date.today())  # this computer's day
@@ -38,7 +38,6 @@ async def today() -> dict:
     brains = set(rows)
     async for brain in Resident.objects.values_list("brain", flat=True).distinct():
         brains.add(brain)
-    brains.discard("mock")
     out = []
     for brain in sorted(brains):
         row = rows.get(brain)

@@ -23,8 +23,8 @@ CLONE_TIMEOUT = 15 * 60  # seconds; big repos take a while
 GITHUB_URL = re.compile(r"github\.com[:/]+([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?)(?:\.git)?/?$")
 
 
-def init_repo(folder: Path, island_id: str, name: str) -> Path:
-    """Create <folder>/<island_id> as a git repo with one commit (or adopt it if it already is one)."""
+def init_repo(folder: Path, island_id: str, name: str, branch: str = "main") -> Path:
+    """Create <folder>/<island_id> as a git repo with one commit on `branch` (or adopt it if it already is one)."""
     path = folder / island_id
     if (path / ".git").is_dir():
         return path
@@ -35,6 +35,7 @@ def init_repo(folder: Path, island_id: str, name: str) -> Path:
     except OSError as e:
         raise IslandError(f"cannot create {path}: {e.strerror}")
     _git(path, "init", "-q")
+    _git(path, "symbolic-ref", "HEAD", f"refs/heads/{branch}")  # not git's own default (often master)
     _first_commit(path, name)
     return path
 

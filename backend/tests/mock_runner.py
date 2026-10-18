@@ -1,9 +1,10 @@
-"""MockRunner: fakes agent work for free, so the whole app runs without any agents."""
+"""MockRunner: a test fake that does pretend agent work (activity, bubbles, random outcomes)."""
 
 import asyncio
 import random
 
-from mii.agents import AgentJob, StepResult
+from mii.agents import AgentJob, StepResult, permission_for
+from mii.gifts import GIFTS, key_for
 from mii.vocab import ATTACHMENTS_DIR, SEND_BACK
 
 
@@ -32,11 +33,16 @@ class MockRunner:
         "tired": ["I've used a lot of my budget on this one. Keep going?"],
         "ready": ["All clear! I checked it and it looks good to me. Want a look?"],
     }
-    # What each permission line asks for, shown in the popup's dark box.
+    # What each permission line asks for (shown in the popup's dark box), and the house key it needs.
     PERMISSION_DETAILS = {
         "May I borrow the toolbox key? I'd like to install a package.": "npm install zod@3.23.8",
         "Okay to delete the old helper file?": "rm src/old_helpers.js",
     }
+    PERMISSION_KEYS = {
+        "May I borrow the toolbox key? I'd like to install a package.": "execute",
+        "Okay to delete the old helper file?": "edit",
+    }
+    GIFT_CHANCE = 0.5  # how often a resident with gifts uses one during a step
     # Options per bubble kind. A "ready" answer may carry a note: "Send back: also test IPv6".
     OPTIONS = {"permission": ["Just this once", "Always", "Not now"], "ready": ["Approve", SEND_BACK]}
 
@@ -113,21 +119,28 @@ class MockRunner:
             fallback = [(self.ACTIVITY.get(job.building.type, "Working"), "other", "")]
             for title, sort, detail in self.TOOLS.get(job.building.type, fallback):
                 await job.think("tool", title, tool=sort, detail=detail)
+        note = await self._use_a_gift(job)
         await asyncio.sleep(self.rng.uniform(*self.work_seconds))
         if job.think:
             await job.think("reply", "(mock) All done here. ")
 
-        note = ""
         if self.rng.random() < self.bubble_chance:
             if job.building.type in ("courthouse", "post_office"):
                 kind = "ready"
             else:
                 kind = self.rng.choice(["confused", "struggling", "permission", "tired"])
             text = self.rng.choice(self.BUBBLE_LINES[kind])
-            answer = await job.ask(kind, text, self.OPTIONS.get(kind), self.PERMISSION_DETAILS.get(text))
-            note = f" You said: {answer!r}." if answer else " Nobody answered, so I guessed."
-            if kind == "ready" and answer and answer.startswith(SEND_BACK):
-                return StepResult("fail", f"(mock) Sent back from the {job.building.name}.{note}")
+            detail = self.PERMISSION_DETAILS.get(text)
+            key = permission_for(job, self.PERMISSION_KEYS[text], detail or "") if kind == "permission" else "ask"
+            if key == "yes":
+                note += f" My house key let me `{detail}`."
+            elif key == "no":
+                note += f" My house key said no to `{detail}`, so I left it."
+            else:
+                answer = await job.ask(kind, text, self.OPTIONS.get(kind), detail)
+                note += f" You said: {answer!r}." if answer else " Nobody answered, so I guessed."
+                if kind == "ready" and answer and answer.startswith(SEND_BACK):
+                    return StepResult("fail", f"(mock) Sent back from the {job.building.name}.{note}")
 
         fail_chance = self.FAIL_CHANCE.get(job.building.type, 0.0) / job.attempt
         if self.rng.random() < fail_chance:
@@ -135,6 +148,23 @@ class MockRunner:
         else:
             result = StepResult("pass", f"(mock) Done at the {job.building.name}.{note}")
         return self._chatter(job, result)
+
+    async def _use_a_gift(self, job: AgentJob) -> str:
+        """Sometimes use one of the resident's gifts, as its house key allows (gifts.key_for). Returns a note."""
+        gifts = list(getattr(job.resident, "gifts", None) or [])
+        if not gifts or job.chat is not None or self.rng.random() >= self.GIFT_CHANCE:
+            return ""
+        gift = self.rng.choice(gifts)
+        label = GIFTS.get(gift, {}).get("label", gift)
+        key = permission_for(job, key_for(gift), gift)  # the Browser follows "Use the internet", ...
+        if key == "ask":
+            answer = await job.ask("permission", f"May I use my {label} gift?", self.OPTIONS["permission"], gift)
+            key = "yes" if answer in ("Just this once", "Always") else "no"
+        if key == "no":
+            return f" Left my {label} gift alone."
+        if job.think:
+            await job.think("tool", f"{label}: look something up", tool="other", detail=f"(mock) the {gift} MCP server")
+        return f" Used my {label} gift."
 
     async def _talk(self, job: AgentJob) -> StepResult:
         """A chat: a short pause, one tool line, an in-character answer streamed a few words

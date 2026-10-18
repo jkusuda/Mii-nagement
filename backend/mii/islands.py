@@ -71,7 +71,8 @@ def create_island(data: dict, owner: str | None = None) -> Island:
 
     Fields: name (required), repo ("owner/name" on GitHub), branch (default: the repo's
     own, else main), shape (a SHAPES key), steps (see STEP_ORDER) or plan (a PLANS key),
-    season, rules ({rule: bool}), folder (where the repo goes; default: default_folder()),
+    season, rules ({rule: bool}), test_command (what the Lab runs; "" = the setting),
+    folder (where the repo goes; default: default_folder()),
     existing_repo (adopt this git folder instead of creating or cloning one).
     `owner`: the logged-in founder's id (auth.py); None makes a public island.
     """
@@ -94,6 +95,7 @@ def create_island(data: dict, owner: str | None = None) -> Island:
     if season not in SEASONS:
         raise IslandError(f"season must be one of {', '.join(SEASONS)}")
     rules = _clean_rules(data.get("rules", {}))
+    test_command = _clean_test_command(data.get("test_command"))
 
     island_id = unique_island_id(name)
     folder = Path(str(data["folder"])).expanduser().resolve() if data.get("folder") else default_folder()
@@ -102,7 +104,8 @@ def create_island(data: dict, owner: str | None = None) -> Island:
     elif repo:
         path, branch = repos.clone_repo(repo, folder / island_id, branch, name)  # slow: off the event loop
     else:
-        path, branch = repos.init_repo(folder, island_id, name), branch or "main"
+        path = repos.init_repo(folder, island_id, name, branch or "main")
+        branch = repos.current_branch(path) or "main"  # that, or the branch of a repo already there
 
     with transaction.atomic():
         island = Island.objects.create(
@@ -113,6 +116,7 @@ def create_island(data: dict, owner: str | None = None) -> Island:
             branch=branch,
             plan=plan_name(steps),
             rules={rule: bool(rules.get(rule, False)) for rule in RULES},
+            test_command=test_command,
             map=default_map(shape, season),
             owner=owner,
         )
@@ -215,7 +219,7 @@ def _rehome_residents(island_id: str) -> None:
 
 
 def update_island(island_id: str, data: dict, sub: str | None = None) -> Island:
-    """Rename an island, or link / change its GitHub repo, branch, house rules or members. Sync (git).
+    """Rename an island, or link / change its GitHub repo, branch, house rules, test command or members. Sync (git).
 
     Only the fields sent change. Linking a repo also points the repository's `origin` at
     it, so the post office can push. `members` (a list of user ids) is the owner's to change:
@@ -234,6 +238,8 @@ def update_island(island_id: str, data: dict, sub: str | None = None) -> Island:
         island.branch, changes = branch, [*changes, "branch"]
     if "rules" in data:
         island.rules, changes = {**island.rules, **_clean_rules(data.get("rules"))}, [*changes, "rules"]
+    if "test_command" in data:
+        island.test_command, changes = _clean_test_command(data.get("test_command")), [*changes, "test_command"]
     if "members" in data:
         if not island.owner:
             raise IslandError("a public island has no members")
@@ -244,7 +250,7 @@ def update_island(island_id: str, data: dict, sub: str | None = None) -> Island:
             raise IslandError("members must be a list of user ids")
         island.members, changes = sorted({m.strip() for m in members}), [*changes, "members"]
     if not changes:
-        raise IslandError("nothing to change: send name, repo, branch, rules, or members")
+        raise IslandError("nothing to change: send name, repo, branch, rules, test_command, or members")
     if island.repo and "repo" in changes and repos.is_git_repo(island.repo_path):
         repos.link_remote(Path(island.repo_path), island.repo)
     island.save(update_fields=changes)
@@ -287,6 +293,13 @@ def _clean_repo(value: object) -> str | None:
     if repo and not REPO.match(repo):
         raise IslandError(f"repo must look like owner/name, got {repo}")
     return repo
+
+
+def _clean_test_command(value: object) -> str:
+    command = str(value or "").strip()
+    if len(command) > 500 or "\n" in command:
+        raise IslandError("test_command must be one line of at most 500 characters")
+    return command
 
 
 def _clean_rules(value: object) -> dict:

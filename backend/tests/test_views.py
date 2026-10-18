@@ -20,8 +20,8 @@ async def test_health(fake_runtime):
 
 async def test_brains_lists_every_brain():
     data = (await AsyncClient().get("/brains")).json()
-    assert {"mock", "claude-code", "codex", "gemini", "openrouter"} <= set(data)
-    assert data["mock"] is True and all(isinstance(v, bool) for v in data.values())
+    assert {"claude-code", "codex", "gemini", "openrouter"} <= set(data) and "mock" not in data
+    assert all(isinstance(v, bool) for v in data.values())
     detail = (await AsyncClient().get("/brains/detail")).json()
     assert detail["codex"]["hint"]
 
@@ -99,7 +99,7 @@ async def test_cancel_and_delete_endpoints(island, fake_runtime):
     assert (await client.post("/islands/sunny/tasks/t_nope/merge")).status_code == 404
 
     assert (await client.delete("/islands/sunny/residents/carlos")).status_code == 409  # works at the workshop
-    mo = await residents.create_resident("sunny", {"name": "Mo", "job": "coder"})
+    mo = await residents.create_resident("sunny", {"name": "Mo", "job": "coder", "brain": "claude-code"})
     assert (await client.delete(f"/islands/sunny/residents/{mo.id}")).json() == {"deleted": mo.id}
     assert (await client.delete(f"/islands/sunny/residents/{mo.id}")).status_code == 404
 
@@ -138,7 +138,7 @@ async def test_events_history_endpoint(island, fake_runtime):
 
 async def test_gifts_endpoint():
     data = (await AsyncClient().get("/gifts")).json()
-    assert set(data) == {"browser", "github", "docs", "database", "terminal", "godot", "video"}
+    assert set(data) == {"browser", "github", "docs", "database", "terminal"}
     assert {"ok", "label", "hint"} <= set(data["docs"]) and isinstance(data["docs"]["ok"], bool)
 
 
@@ -222,7 +222,7 @@ async def test_settings_endpoint_saves_and_hides_secrets(fake_runtime, monkeypat
     assert "sk-or-1" not in json.dumps(after)
 
     bad = await client.put(
-        "/settings", data=json.dumps({"settings": {"mock_agents": "no"}}), content_type="application/json"
+        "/settings", data=json.dumps({"settings": {"keep_worktrees": "no"}}), content_type="application/json"
     )
     assert bad.status_code == 400
     assert (await client.post("/settings")).status_code == 405
@@ -235,8 +235,8 @@ async def test_meta_lists_the_vocabulary():
         set(data["traits"]) == {"bluntness", "caution", "chattiness", "creativity"}
         and data["traits"]["caution"]["high"]
     )
-    assert "openrouter" in data["brains"] and "mock" in data["brains"]
-    assert set(data["gifts"]) == {"browser", "github", "docs", "database", "terminal", "godot", "video"}
+    assert "openrouter" in data["brains"] and "mock" not in data["brains"]
+    assert set(data["gifts"]) == {"browser", "github", "docs", "database", "terminal"}
     assert data["keys"]["values"] == ["yes", "ask", "no"] and data["keys"]["defaults"]["read"] == "yes"
     assert len(data["plans"]["classic"]["steps"]) == 5 and data["building_types"] == [
         "mailbox",
@@ -249,9 +249,9 @@ async def test_meta_lists_the_vocabulary():
     assert data["weather"] == ["sunny", "cloudy", "rainy", "night"]
 
 
-async def test_snapshot_has_server_time_weather_and_mode(island, fake_runtime):
+async def test_snapshot_has_server_time_and_weather(island, fake_runtime):
     data = (await AsyncClient().get("/islands/sunny")).json()
-    assert data["server_time"].endswith("+00:00") and data["weather"] == "sunny" and data["mock_agents"] is True
+    assert data["server_time"].endswith("+00:00") and data["weather"] == "sunny" and "mock_agents" not in data
     assert data["residents"][0]["activity"] == "" and data["residents"][0]["appearance"] == {}
 
 
@@ -347,7 +347,6 @@ async def test_brain_models(fake_runtime, monkeypatch):
     ok = await client.get("/brains/claude-code/models")
     assert ok.status_code == 200 and ok.json()["models"][0]["id"] == "opus" and ok.json()["current"] == "default"
     assert (await client.get("/brains/gemini/models")).status_code == 503
-    assert (await client.get("/brains/mock/models")).status_code == 404
     assert (await client.get("/brains/nope/models")).status_code == 404
 
 

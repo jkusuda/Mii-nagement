@@ -13,7 +13,7 @@ import uuid
 from asgiref.sync import sync_to_async
 from django.db.models import Q
 
-from mii.agents.acp import GIFTS
+from mii.gifts import GIFTS, all_gifts
 from mii.layout import LayoutError, assign_buildings
 from mii.models import DEFAULT_KEYS, Building, Friendship, Resident
 from mii.personality import JOBS
@@ -30,10 +30,11 @@ class ResidentError(ValueError):
     """The client sent something we can't use. The message goes back as an `error` event."""
 
 
-def clean_fields(data: dict, partial: bool) -> dict:
+def clean_fields(data: dict, partial: bool, gift_ids: set[str] | None = None) -> dict:
     """Check the editable fields and return only those that were sent.
 
-    partial=False (create) requires a name. Sliders are clamped to 0-1.
+    partial=False (create) requires a name and a brain. Sliders are clamped to 0-1.
+    `gift_ids`: the gifts that exist (gifts.all_gifts); None = the built-in ones.
     """
     out: dict = {}
     if "name" in data or not partial:
@@ -45,7 +46,9 @@ def clean_fields(data: dict, partial: bool) -> dict:
         if str(data["job"]) not in JOBS:
             raise ResidentError(f"unknown job: {data['job']}")
         out["job"] = data["job"]
-    if "brain" in data:
+    if "brain" in data or not partial:
+        if not data.get("brain"):
+            raise ResidentError(f"pick a brain: one of {list(BRAIN_NAMES)}")
         if str(data["brain"]) not in BRAIN_NAMES:
             raise ResidentError(f"unknown brain: {data['brain']}")
         out["brain"] = data["brain"]
@@ -73,8 +76,9 @@ def clean_fields(data: dict, partial: bool) -> dict:
         out["keys"] = {**DEFAULT_KEYS, **keys}
     if "gifts" in data:
         gifts = data["gifts"]
-        if not isinstance(gifts, list) or any(g not in GIFTS for g in gifts):
-            raise ResidentError(f"gifts must be a list of {list(GIFTS)}")
+        known = GIFTS.keys() if gift_ids is None else gift_ids
+        if not isinstance(gifts, list) or any(g not in known for g in gifts):
+            raise ResidentError(f"gifts must be a list of {sorted(known)}")
         out["gifts"] = list(dict.fromkeys(gifts))  # drop duplicates, keep order
     if "appearance" in data:
         out["appearance"] = clean_appearance(data["appearance"])
@@ -93,6 +97,11 @@ def clean_appearance(look) -> dict:
     return dict(look)
 
 
+async def _gift_ids(data: dict) -> set[str] | None:
+    """Built-in and added gifts, only looked up when gifts were sent."""
+    return set(await sync_to_async(all_gifts)()) if "gifts" in data else None
+
+
 async def _work_at(island_id: str, resident: Resident, data: dict) -> None:
     if "buildings" not in data:
         return
@@ -103,7 +112,7 @@ async def _work_at(island_id: str, resident: Resident, data: dict) -> None:
 
 
 async def create_resident(island_id: str, data: dict) -> Resident:
-    fields = clean_fields(data, partial=False)
+    fields = clean_fields(data, partial=False, gift_ids=await _gift_ids(data))
     job = fields.setdefault("job", "coder")
     slug = re.sub(r"[^a-z0-9]+", "_", fields["name"].lower()).strip("_") or "resident"
     buildings = [b async for b in Building.objects.filter(island_id=island_id).order_by("id")]
@@ -124,7 +133,7 @@ async def update_resident(island_id: str, data: dict) -> Resident:
     resident = await Resident.objects.filter(pk=str(data.get("id", "")), island_id=island_id).afirst()
     if resident is None:
         raise ResidentError(f"unknown resident id: {data.get('id')}")
-    changes = clean_fields(data, partial=True)
+    changes = clean_fields(data, partial=True, gift_ids=await _gift_ids(data))
     for field, value in changes.items():
         setattr(resident, field, value)
     if changes:

@@ -14,16 +14,20 @@ The WebSocket messages are in [protocol.md](protocol.md); how the pieces fit is 
 | `GET /meta` | the vocabulary the game shows pickers for: jobs, traits, brains, gifts, keys, building types, job buildings, road conditions, town plans, island shapes, house rules, bubble kinds, moods, states, task statuses, weather kinds (all from `backend/mii/vocab.py`) |
 | `GET /brains` | `{brain: true/false}`: which brains can run here (the creator greys out the rest) |
 | `GET /brains/detail` | per brain: `ok`, `installed`, `logged_in` (best effort), `api_key`, `hint` |
-| `GET /brains/{brain}/models?refresh=1` | the models a brain offers here: `{"models": [{"id", "name", "description"}], "current": its default}`. `claude-code`, `codex`, `gemini`: the backend starts the CLI in a throwaway git worktree, opens a session (no prompt, nothing spent), reads its `model` config option and closes it; can take a few seconds, cached 10 minutes (`refresh=1` asks again); 503 `{"error"}` when the CLI is missing, not logged in or too slow. `openrouter`: the catalogue (as `GET /models`). `mock` or unknown: 404. With login on: 401 without a token |
+| `GET /brains/{brain}/models?refresh=1` | the models a brain offers here: `{"models": [{"id", "name", "description"}], "current": its default}`. `claude-code`, `codex`, `gemini`: the backend starts the CLI in a throwaway git worktree, opens a session (no prompt, nothing spent), reads its `model` config option and closes it; can take a few seconds, cached 10 minutes (`refresh=1` asks again); 503 `{"error"}` when the CLI is missing, not logged in or too slow. `openrouter`: the catalogue (as `GET /models`). Unknown: 404. With login on: 401 without a token |
 | `GET /usage` | today's use per brain by this computer's residents: `{"day", "brains": [{"brain", "turns", "tokens", "cost"}]}`; every real brain a resident uses, zeros included (`usage.py`; tokens and USD cost only when the agent reports them) |
-| `GET /gifts` | per gift (MCP server): `ok`, `label`, `hint` (the creator greys out the rest) |
+| `GET /gifts` | per gift (MCP server, built-in or added): `ok`, `label`, `hint` (the creator greys out the rest), `key` (the house key its tools follow); added ones also `custom`, `source` (registry name), `env` (`name`, `description`, `required`, `secret`, `set`) |
+| `GET /gifts/search?q=` | the gift shop: MCP Registry servers matching `q` that can run here (an npm or PyPI stdio package): `{"servers": [{name, label, description, package, runner, env, website, added}]}`; 502 if the registry is unreachable |
+| `POST /gifts` | `{"name": registry name}`: add that server as a gift (the backend builds its command from the registry); answers `{"id", "gifts"}`. 403 on the public demo; 401 without a token when login is on |
+| `PUT /gifts/{id}` | `{"env": {"NAME": "value" \| null}}`: save (or forget) what an added gift's server needs, in the OS keychain; answers the gifts |
+| `DELETE /gifts/{id}` | take an added gift off the shelf and back from every resident; answers the gifts |
 | `GET /models` | the OpenRouter catalogue `{"models": [{id, name, context_length}]}` (needs `OPENROUTER_API_KEY`; 503 without): the resident creator's model picker and Settings' default-model dropdown |
 | `GET /islands` | every island the caller may see (id, name, repo, created_at, owner, members, ...: the Archipelago screen), plus `default_folder` for new repositories. With login on: the public islands, plus yours and those you are a member of |
-| `POST /islands` | found an island: `{"name", "repo"?, "branch"?, "shape"?, "steps"? \| "plan"?: "classic" \| "quick_fixes", "season"?, "rules"?, "folder"?, "existing_repo"?}` → its snapshot (400 `{"error"}` with a readable reason). The repository comes one of three ways: no `repo` → a new repo with a README in `<folder>/<id>`; `repo` → `gh repo clone owner/name <folder>/<id>` (needs `gh` installed and logged in; the folder must be empty or missing; checks out `branch`, default the repo's default branch; an empty GitHub repo gets a first README commit); `existing_repo` → that git folder as is (needs a commit; `repo` is read from its GitHub `origin` when not given, `branch` defaults to its checked-out branch). Then it lays out the shape's lots and the roads for the steps. Cloning runs in a worker thread and can take a while. With login on: 401 without a token, and the island's `owner` is you. On the public demo (`PUBLIC_DEMO=1`): `folder` and `existing_repo` are refused (400) |
+| `POST /islands` | found an island: `{"name", "repo"?, "branch"?, "shape"?, "steps"? \| "plan"?: "classic" \| "quick_fixes", "season"?, "rules"?, "test_command"?, "folder"?, "existing_repo"?}` → its snapshot (400 `{"error"}` with a readable reason). The repository comes one of three ways: no `repo` → a new repo with a README in `<folder>/<id>`; `repo` → `gh repo clone owner/name <folder>/<id>` (needs `gh` installed and logged in; the folder must be empty or missing; checks out `branch`, default the repo's default branch; an empty GitHub repo gets a first README commit); `existing_repo` → that git folder as is (needs a commit; `repo` is read from its GitHub `origin` when not given, `branch` defaults to its checked-out branch). Then it lays out the shape's lots and the roads for the steps. Cloning runs in a worker thread and can take a while. With login on: 401 without a token, and the island's `owner` is you. On the public demo (`PUBLIC_DEMO=1`): `folder` and `existing_repo` are refused (400) |
 | `GET /github/repos?q=` | the user's repos, through their logged-in `gh` (island creator). With login on: 401 without a token |
 | `GET /github/branches?repo=` | a repo's branches, through `gh`. With login on: 401 without a token |
-| `GET /islands/{id}` | the island snapshot (plus `mock_agents`), the same object the `snapshot` event carries |
-| `PATCH /islands/{id}` | `{"name"?, "repo"?, "branch"?, "rules"?, "members"?}`: rename, link a repo (also sets the repository's `origin`), change the branch or house rules, or (the owner only, login on) the member list → the island header, and an `island` event to every client |
+| `GET /islands/{id}` | the island snapshot, the same object the `snapshot` event carries |
+| `PATCH /islands/{id}` | `{"name"?, "repo"?, "branch"?, "rules"?, "test_command"?, "members"?}`: rename, link a repo (also sets the repository's `origin`), change the branch, house rules or test command, or (the owner only, login on) the member list → the island header, and an `island` event to every client |
 | `GET /islands/{id}/issues?limit=50` | the linked repo's open GitHub issues through `gh` (400 without a repo), to start a task from one |
 | `DELETE /islands/{id}` | abandon the island (rows go, the git repository stays on disk). 409 while a task runs there (the last island may go too: the game is then back to open sea). With login on or on the public demo, only the owner may (401 without a token, 403 for members and for public islands) |
 | `DELETE /islands/{id}/residents/{resident_id}` | the resident moves away (409 if a building still counts on them) |
@@ -31,12 +35,12 @@ The WebSocket messages are in [protocol.md](protocol.md); how the pieces fit is 
 | `POST /islands/{id}/tasks` | `{"title": ..., "description": ...}` or `{"issue": 42}`, optionally with `"attachments": [{"name": "spec.md", "content": "<base64>"}]` → the queued task. The engine runs it through the island's residents' brains. See "Attachments" below |
 | `GET /islands/{id}/tasks/{task_id}` | one task: `description`, `attachments` (file names), `steps` (building, resident, brain, outcome, `summary` = what the resident reported) + `events` (the stored events while it ran) |
 | `POST /islands/{id}/tasks/{task_id}/cancel` | cancel a queued task or stop the running one (409 if it already finished) |
-| `POST /islands/{id}/tasks/{task_id}/merge` | merge a delivered package's branch (`mii/<task_id>`) into the branch checked out in the island's own folder → `{"merged", "branch", "conflicts": [files], "task"}`. On a conflict the folder is left as it was and `task` is a new queued package, "Fix merge conflicts: ...", whose branch already holds the merge with conflict markers. 409 when the package isn't done, has no branch (mock mode), or git refuses (uncommitted changes, no branch checked out) |
+| `POST /islands/{id}/tasks/{task_id}/merge` | merge a delivered package's branch (`mii/<task_id>`) into the branch checked out in the island's own folder → `{"merged", "branch", "conflicts": [files], "task"}`. On a conflict the folder is left as it was and `task` is a new queued package, "Fix merge conflicts: ...", whose branch already holds the merge with conflict markers. 409 when the package isn't done, has no branch, or git refuses (uncommitted changes, no branch checked out) |
 | `GET /islands/{id}/insights?range=week` | stats for the Insights screen and News' "This week" (`today` / `week` / `month`) |
 | `GET /islands/{id}/events?limit=200` | stored events, oldest first, for the News tab (see "Events history"); talk lines are left out |
 | `GET /islands/{id}/talks?building=<id>&limit=200` | `{"turns": [{"building", "agent", "task", "from": "you" \| "resident", "text", "ts"}]}` (`task`: the package it was about, or null): what was said in talks at that building, oldest first (the talk scene's history; protocol.md `talk`) |
 | `PUT /islands/{id}/layout` | build mode over HTTP: `{"buildings", "roads"}` → the saved layout (same rules as `set_layout` in protocol.md); or the game's form `{"map", "buildings": [{type, x, y, facing}]}` → the new snapshot (also sent to every client as a stored `snapshot` event), 400 / 409 (steps changing during a task), see protocol.md "Island map" |
-| `GET /settings` | effective settings (incl. `judge` = `auto` / `off` / `jev` / `gemini`, `judge_model`, `spectator_url`, `godot_path`, `parallel_packages` 1-8, `master_key`: residents never ask, every bubble answers itself), what `.env` locks, which API keys are set (incl. `typesafe_api_key`, `spectator_secret`) |
+| `GET /settings` | effective settings (incl. `judge` = `auto` / `off` / `jev` / `gemini`, `judge_model`, `spectator_url`, `parallel_packages` 1-8, `master_key`: residents never ask, every bubble answers itself), what `.env` locks, which API keys are set (incl. `typesafe_api_key`, `spectator_secret`) |
 | `PUT /settings` | `{"settings": {...}, "secrets": {"openrouter_api_key": "sk-..." \| null}}`; keys go to the keychain and are never echoed. 403 on the public demo; 401 without a token when login is on |
 | `GET /auth/config` | `{"enabled": bool}`: whether the game shows "Log in" (on when `AUTH0_DOMAIN`, `AUTH0_AUDIENCE` and `AUTH0_CLIENT_ID` are all set) |
 | `POST /auth/device` | start a device login (proxied to Auth0): `{user_code, verification_uri_complete, device_code, interval, expires_in}`. 404 when login is off, 502 when Auth0 can't be reached |
@@ -54,17 +58,16 @@ A task can carry files (the Mailbox form's "Attach files…"): up to 10, at most
 2 MB each and 8 MB together, sent base64-encoded. Names are cut to a plain file
 name (`../../x/notes.md` → `notes.md`, odd characters → `_`, repeats → `notes-2.md`);
 a bad list, bad base64 or too much data is a 400 (a body over 12 MB is a 413).
-They're stored with the task (`Attachment` table). When the task starts, real mode
+They're stored with the task (`Attachment` table). When the task starts, the engine
 writes them to `.mii-attachments/` in its worktree, with a `.gitignore` of `*` so
-they're never committed, and every resident's prompt lists them. Mock mode keeps
-them and lists them too; the mock planner "reads" each one in the thinking dropdown.
+they're never committed, and every resident's prompt lists them.
 
 ## Tasks over HTTP
 
 `POST /islands/{id}/tasks` is how work reaches the island without the game: a
 curl, a script, or a GitHub issue number. The reply is the queued task; the
 engine worker picks it up and each building's resident does their step through
-their brain (an ACP agent such as Claude Code when `mock_agents` is off). The
+their brain (an ACP agent such as Claude Code, or OpenRouter). The
 `steps` of `GET /islands/{id}/tasks/{task_id}` show the result of every visit,
 with `summary` holding what the resident said: the planner's plan, the coder's
 commit note, the test output, the review, the PR text.

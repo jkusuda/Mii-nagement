@@ -83,7 +83,7 @@ async def test_task_and_resident_messages_over_the_socket(island):
         in (await handle_message(runtime, "sunny", {"type": "cancel_task", "id": task_id}))["message"]
     )
 
-    mo = await residents.create_resident("sunny", {"name": "Mo", "job": "coder"})
+    mo = await residents.create_resident("sunny", {"name": "Mo", "job": "coder", "brain": "claude-code"})
     busy = await handle_message(runtime, "sunny", {"type": "delete_resident", "id": "carlos"})
     assert busy["type"] == "error" and "runs the Workshop" in busy["message"]
     assert await handle_message(runtime, "sunny", {"type": "delete_resident", "id": mo.id}) is None

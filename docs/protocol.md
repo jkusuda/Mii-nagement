@@ -49,6 +49,7 @@ The client should rebuild its view from scratch when it gets one.
     "branch": "main",
     "plan": "classic",
     "rules": {"merge_pr": true, "install_packages": true, "shell": false},
+    "test_command": "",
     "created_at": "2026-10-04T09:12:00+00:00",
     "owner": null,
     "members": [],
@@ -61,7 +62,6 @@ The client should rebuild its view from scratch when it gets one.
     },
     "server_time": "2026-10-16T09:41:03+00:00",
     "weather": "sunny",
-    "mock_agents": true,
     "buildings": [
       {"id": "mailbox", "type": "mailbox", "name": "Mailbox", "x": 3, "y": 2, "facing": 0, "resident": "jun"}
     ],
@@ -74,7 +74,7 @@ The client should rebuild its view from scratch when it gets one.
         "brain": "gemini", "model": null, "color": "#F4A261",
         "catchphrase": "Let's map it out!",
         "bluntness": 0.3, "caution": 0.7, "chattiness": 0.6, "creativity": 0.5,
-        "keys": {"read": "yes", "edit": "ask", "execute": "ask", "fetch": "no"},
+        "keys": {"master": "no", "read": "yes", "edit": "ask", "execute": "ask", "fetch": "no", "tools": "ask"},
         "gifts": [],
         "state": "idle", "building": "mailbox", "mood": "happy", "notebook": null,
         "activity": "Reading auth.py",
@@ -108,18 +108,19 @@ The client should rebuild its view from scratch when it gets one.
   makes the Courthouse ask you (a `ready` bubble, "Approve & merge" / "Send
   back") before the Post Office merges the PR it opens; off, it merges without
   asking.
+  `test_command`: what the Lab runs in this island's repo (e.g. `uv run pytest`);
+  `""` means the `test_command` setting (`PUT /settings`) is used.
 - `created_at`: when the island was founded (ISO-8601 UTC). The game counts
   days from it ("Day 1" is the founding day, in the player's local time).
   `server_time`: the server's clock when the snapshot was made, for the same sum.
 - `weather`: `sunny | cloudy | rainy | night`, the island's mood read off its
-  recent work (see the `weather` event). `mock_agents`: `true` while every
-  resident runs on the free mock brain (worth a small badge).
+  recent work (see the `weather` event).
 - `map`: how the island looks: land, pond, plants, season (see "Island map" below).
 - `buildings[].x / y`: the top-left tile of the building's 3×3-tile lot.
   `facing`: where its door looks: `0` south (toward the camera), `1` east,
   `2` north, `3` west.
 - `buildings[].resident`: the resident who works there.
-- `residents[].brain`: which coding agent runs the resident: `mock`,
+- `residents[].brain`: which coding agent runs the resident:
   `claude-code`, `codex`, `gemini`, or `openrouter`. `model` is an optional model
   override (`null` = the brain's default; for `openrouter` it is an OpenRouter
   model id such as `anthropic/claude-sonnet-4.5`). Use it for a small brain badge.
@@ -127,17 +128,23 @@ The client should rebuild its view from scratch when it gets one.
 - `residents[].bluntness / caution / chattiness / creativity`: personality
   sliders, 0.0-1.0 (see `backend/mii/personality.py`).
 - `residents[].keys`: house keys, what the resident may do without asking.
-  Keys `read`, `edit`, `execute`, `fetch` (ACP tool kinds), each `yes`, `ask`,
-  or `no`. The ACP runner honours them: `yes` answers the agent's own
+  Keys `read`, `edit`, `execute`, `fetch` (ACP tool kinds) and `tools` (the
+  gifts' MCP tools, which agents report as kind `other`), each `yes`, `ask`,
+  or `no` (defaults: `DEFAULT_KEYS` in `models.py`; the snapshot always sends
+  every key). The ACP runner honours them; OpenRouter honours `read`, `edit`
+  and `execute` for its own tools. `yes` answers the agent's own
   "allow once" option, `ask` shows a ✋ bubble, `no` rejects. `master` (`yes`
   or `no`, default `no`) is the resident's own master key: `yes` opens every
   door, whatever the other keys, the island's house rules or the tool kind say,
   and every bubble of theirs answers itself (✋ granted, ✅ approved, ❓ "carry
   on"), like the `master_key` setting but for this one resident.
 - `residents[].gifts`: ids of extra MCP servers (`browser`, `github`, `docs`,
-  `database`, `terminal`, `godot`, `video`) the resident brings to every ACP session (the `GIFTS`
-  table in `backend/mii/agents/acp.py`). `GET /gifts` says which ones work on
-  this machine. The `openrouter` brain has no MCP client, so it ignores them.
+  `database`, `terminal`, plus any added from the gift shop) the resident brings
+  to every ACP session (`backend/mii/gifts.py`). `GET /gifts` lists them all and
+  says which ones work on this machine. Each gift's tools follow one house key
+  (`key`): `browser`, `github` and `docs` follow `fetch`, `database` and
+  `terminal` follow `execute`, gift-shop gifts follow `tools`. A gift whose key
+  is `no` stays home (the agent never sees it); with `ask` each call is a ✋ bubble. The `openrouter` brain has no MCP client, so it ignores them.
 - `residents[].appearance`: how the resident's Mii looks. Only the game reads it
   (`MiiParts` in `game/scenes/mii/mii_parts.gd`): `skin` and `hair_color` are
   `#RRGGBB`; `hair` (`-1` = bald, the last few are hats), `eyes`, `brows`,
@@ -326,7 +333,7 @@ shapes are the snapshot's.
 The island's header changed (renamed, a repo linked, branch or house rules
 edited, by any client). Same fields as the top of the snapshot: replace them.
 ```json
-{"type": "island", "island": {"id": "sunny", "name": "Sunnier Isle", "repo": "me/sunny", "path": "/home/you/Documents/Mii-nagement/sunny", "branch": "main", "plan": "classic", "rules": {"merge_pr": true, "install_packages": true, "shell": false}, "created_at": "2026-10-04T09:12:00+00:00", "owner": null, "members": []}}
+{"type": "island", "island": {"id": "sunny", "name": "Sunnier Isle", "repo": "me/sunny", "path": "/home/you/Documents/Mii-nagement/sunny", "branch": "main", "plan": "classic", "rules": {"merge_pr": true, "install_packages": true, "shell": false}, "test_command": "", "created_at": "2026-10-04T09:12:00+00:00", "owner": null, "members": []}}
 ```
 `owner` is the Auth0 user id that founded the island (`null`: a public island, the
 default without login); `members` are the other user ids who may see it.
@@ -401,7 +408,7 @@ Where bubbles come from: ✋ `permission` when an agent wants a house key set to
 `ask`; ❓ `confused` when an agent ends its turn with a `QUESTION:` line (ACP
 brains) or calls `ask_user` (OpenRouter); ✅ `ready` from the Courthouse once
 the reviewer passes work that will become a PR; 💤 `tired` when a brain isn't
-logged in. Mock residents raise any kind at random.
+logged in.
 
 ### `create_resident`
 Move a new resident onto the island (the resident creator's "Move in"). The
@@ -422,10 +429,11 @@ every client.
   }
 }
 ```
-`name` is required (1-20 characters). Every other field is optional and gets a
-default. `brain` is one of `mock`, `claude-code`, `codex`, `gemini`, `openrouter`.
-Unknown `job`, `brain`, key values, or gifts, and an `appearance` that isn't a
-small flat object, are rejected with `error`.
+`name` (1-20 characters) and `brain` (one of `claude-code`, `codex`,
+`gemini`, `openrouter`) are required: a resident is never created without a brain.
+Every other field is optional and gets a default. A missing or unknown `brain`, an
+unknown `job`, key value or gift, and an `appearance` that isn't a small flat object
+are rejected with `error`.
 
 A new resident takes over the buildings of their job that nobody works at yet.
 To put them to work outright, add `"buildings": ["workshop", "lab"]` (building
@@ -494,8 +502,8 @@ Build mode: replace the island's buildings and roads. Send the whole layout.
   Same thing over HTTP: `PUT /islands/{id}/layout` with `{"buildings", "roads"}`.
 
 ### `update_island`
-Rename the island, link (or change) its GitHub repo, or edit its branch or house
-rules after founding. Only the fields sent change. Linking a repo also points
+Rename the island, link (or change) its GitHub repo, or edit its branch, house
+rules or `test_command` after founding. Only the fields sent change. Linking a repo also points
 the island repository's `origin` at it, so the post office can push.
 ```json
 {"type": "update_island", "island": {"name": "Sunnier Isle", "repo": "me/sunny", "rules": {"shell": true}}}
@@ -517,7 +525,7 @@ A resident inside a building is working on a package, so the talk is about it:
   Claude Code's `/btw`: each message goes to a fork of its live session, which knows
   everything it has read and done so far (not a tool call still running). The work
   carries on untouched and never sees the chat;
-- otherwise (mock, OpenRouter, Gemini, or the fork fails) a fresh agent answers: it is
+- otherwise (OpenRouter, Gemini, or the fork fails) a fresh agent answers: it is
   told the package (title, request, the steps so far, the latest failure, what the
   resident was just thinking) and, in real mode, reads its working copy (`mii/<task_id>`,
   with the work in progress);

@@ -96,7 +96,7 @@ actually do. The look stayed the same.
 |---|---|---|
 | Name, job, catchphrase, 4 sliders | already exist | `personality.build_system_prompt()`, the first ACP prompt |
 | Colour | `color` (exists) | the game only |
-| Brain | `brain` (exists): `mock`, `claude-code`, `codex`, `gemini` | which `BRAINS` command `AcpRunner` starts. The creator greys out brains `GET /brains` says aren't installed. |
+| Brain | `brain` (exists): `claude-code`, `codex`, `gemini`, `openrouter` | which `BRAINS` command `AcpRunner` starts. The creator greys out brains `GET /brains` says aren't installed. |
 | Model | `model` (exists, `null` = default) | ACP session config, where the agent supports picking a model |
 | **House keys** | new `keys` JSON: `{"read": "yes", "edit": "ask", "execute": "ask", "fetch": "no"}` | `AcpRunner`'s `session/request_permission` handler. Look up the tool call's `kind`: **yes** answers with the agent's "allow once" option by itself, **ask** shows a ✋ bubble (today's behaviour), **no** answers "reject". |
 | **Gifts** | new `gifts` JSON list, e.g. `["browser", "docs"]` | `mcpServers` in ACP `session/new`. Add a `GIFTS` table next to `BRAINS` (gift id → MCP server command), so the game only ever sends ids. |
@@ -124,8 +124,8 @@ broadcasts a `resident` event. Offline, the game adds the resident locally so
 the screens still work.
 
 The backend half is done: `AcpRunner` honours `keys` (auto-answers permission
-requests) and `gifts` (handed to `session/new` as MCP servers from the `GIFTS`
-table; `GET /gifts` says which run on this machine), and `buildings` on
+requests) and `gifts` (handed to `session/new` as MCP servers, `gifts.py`;
+`GET /gifts` says which run on this machine; the gift shop adds more from the MCP Registry), and `buildings` on
 `create_resident` / `update_resident` makes a resident the worker at those
 buildings (protocol.md). Still to do in the game: a "works at" picker and
 greying out unavailable gifts.

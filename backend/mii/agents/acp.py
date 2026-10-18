@@ -35,11 +35,9 @@ from acp.schema import (
     AllowedOutcome,
     ClientCapabilities,
     DeniedOutcome,
-    EnvVariable,
     FileEditToolCallContent,
     FileSystemCapabilities,
     Implementation,
-    McpServerStdio,
     PermissionOption,
     ReadTextFileResponse,
     RequestPermissionResponse,
@@ -62,6 +60,7 @@ from mii.agents import (
     parse_verdict,
     permission_for,
 )
+from mii.gifts import GIFTS, gift_in, gift_servers, key_for
 from mii.personality import build_system_prompt
 from mii.sandbox import Sandbox, SandboxError, inside, require_worktree
 from mii.vocab import THINKING_DETAIL_MAX
@@ -120,55 +119,6 @@ BRAINS = {
     },
 }
 
-# Gifts: extra MCP servers a resident brings to every ACP session (Resident.gifts holds the ids).
-# Each is a stdio MCP server started by the agent; `npx -y` fetches it on first use.
-#   command    how to start it (the first word must be on PATH)
-#   needs_env  an environment variable / setting the server can't run without ({NAME} in command/env is filled in)
-#   gh_token   put the user's `gh auth token` in this environment variable
-GIFTS = {
-    "browser": {
-        "label": "Browser",
-        "command": ["npx", "-y", "@playwright/mcp@latest"],
-        "hint": "a web browser the resident can drive (Playwright MCP)",
-    },
-    "github": {
-        "label": "GitHub",
-        "command": ["npx", "-y", "@modelcontextprotocol/server-github"],
-        "gh_token": "GITHUB_PERSONAL_ACCESS_TOKEN",
-        "needs": "gh",
-        "hint": "issues, PRs and repos through your `gh` login",
-    },
-    "docs": {
-        "label": "Docs",
-        "command": ["npx", "-y", "@upstash/context7-mcp"],
-        "hint": "up-to-date library documentation (Context7)",
-    },
-    "database": {
-        "label": "Database",
-        "command": ["npx", "-y", "@bytebase/dbhub", "--dsn", "{DATABASE_URL}"],
-        "needs_env": "DATABASE_URL",
-        "hint": "query the database at DATABASE_URL (save it in settings)",
-    },
-    "terminal": {
-        "label": "Terminal",
-        "command": ["npx", "-y", "mcp-server-commands"],
-        "hint": "an extra shell tool (the ACP agents have their own too)",
-    },
-    # Animation and video work (the island's own game lives in game/, a Godot 4 project).
-    "godot": {
-        "label": "Godot",
-        "command": ["npx", "-y", "godot-mcp-runtime"],
-        "needs_env": "GODOT_PATH",
-        "hint": "run, script and screenshot a Godot 4 project (set GODOT_PATH, the Godot executable, in settings)",
-    },
-    "video": {
-        "label": "Video",
-        "command": ["npx", "-y", "ffmpeg-mcp"],
-        "needs": "ffmpeg",
-        "hint": "convert, trim and thumbnail media with ffmpeg",
-    },
-}
-
 # ACP tool kind -> house key (Resident.keys: "yes" = allow by itself, "ask" = ✋ bubble, "no" = reject).
 KEY_FOR_KIND = {
     "read": "read",
@@ -179,6 +129,7 @@ KEY_FOR_KIND = {
     "move": "edit",
     "execute": "execute",
     "fetch": "fetch",
+    "other": "tools",  # gifts' MCP tools (agents report them as "other"), and anything else
 }
 REPORT_EVERY = 1.0  # seconds between `activity` events, so the game isn't flooded
 
@@ -220,7 +171,7 @@ def available_brains(
     `saved_keys`: API keys saved in Settings, by environment variable (prefs.secrets_env()).
     """
     saved_keys = saved_keys or {}
-    result: dict[str, dict] = {"mock": {"ok": True, "hint": "free fake work"}}
+    result: dict[str, dict] = {}
     for brain, spec in BRAINS.items():
         installed = shutil.which(spec["needs"]) is not None
         marker = spec["login_marker"]
@@ -240,50 +191,6 @@ def available_brains(
         else "save an OpenRouter API key in Settings",
     }
     return result
-
-
-def available_gifts() -> dict[str, dict]:
-    """Which gifts can be handed over on this machine (the resident creator greys out the rest)."""
-    result = {}
-    for gift, spec in GIFTS.items():
-        missing = _gift_missing(spec)
-        result[gift] = {"ok": missing is None, "label": spec["label"], "hint": missing or spec["hint"]}
-    return result
-
-
-def _gift_missing(spec: dict) -> str | None:
-    """Why a gift can't be used right now, or None when it can."""
-    for tool in (spec["command"][0], spec.get("needs")):
-        if tool and shutil.which(tool) is None:
-            return f"install `{tool}` first"
-    if spec.get("needs_env") and not prefs.extra_env(spec["needs_env"]):
-        return f"set {spec['needs_env']} in settings first"
-    return None
-
-
-def gift_servers(gifts: list[str]) -> tuple[list[McpServerStdio], list[str]]:
-    """MCP servers for a resident's gifts, plus a note for each gift we had to skip. Sync (may run `gh`)."""
-    servers, skipped = [], []
-    for gift in gifts:
-        spec = GIFTS.get(gift)
-        if spec is None:
-            skipped.append(f"Unknown gift {gift!r}")
-            continue
-        missing = _gift_missing(spec)
-        if missing:
-            skipped.append(f"Left the {spec['label']} gift at home: {missing}")
-            continue
-        fill = {spec["needs_env"]: prefs.extra_env(spec["needs_env"])} if spec.get("needs_env") else {}
-        command = [word.format(**fill) for word in spec["command"]]
-        env = []
-        if spec.get("gh_token"):
-            token = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True).stdout.strip()
-            if not token:
-                skipped.append(f"Left the {spec['label']} gift at home: `gh auth login` first")
-                continue
-            env.append(EnvVariable(name=spec["gh_token"], value=token))
-        servers.append(McpServerStdio(name=gift, command=shutil.which(command[0]), args=command[1:], env=env))
-    return servers, skipped
 
 
 def tool_detail(update: ToolCallStart | ToolCallProgress) -> str:
@@ -391,7 +298,10 @@ class MiiClient(Client):
         def pick(kind: str) -> str | None:
             return next((o.option_id for o in options if o.kind == kind), None)
 
-        key_name = KEY_FOR_KIND.get(tool_call.kind or "", "other")
+        key_name = KEY_FOR_KIND.get(tool_call.kind or "", "tools")
+        gift = gift_in(tool_call.title or "", list(_gifts(self.job))) if key_name == "tools" else None
+        if gift:
+            key_name = key_for(gift)  # a gift's tools follow its own key: the Browser asks the internet key
         key = permission_for(self.job, key_name, tool_call.title or "")
         if self.job.read_only and key_name == "edit":
             key = "no"  # planning and reviewing never change files, whatever the house key says
@@ -730,7 +640,19 @@ class LiveAgent:
 
 
 def _gifts(job: AgentJob) -> tuple[str, ...]:
-    return tuple(job.resident.gifts or [])
+    """The gifts this resident brings: those whose house key isn't "no" (so a Browser gift with
+    "Use the internet" on No stays home, and the agent never sees its tools)."""
+    return tuple(g for g in job.resident.gifts or [] if permission_for(job, key_for(g), g) != "no")
+
+
+def _gifts_left_home(job: AgentJob) -> list[str]:
+    """A note per gift its house key kept at home."""
+    kept = _gifts(job)
+    return [
+        f"Left the {GIFTS.get(g, {}).get('label', g)} gift at home: its house key ({key_for(g)}) says no"
+        for g in job.resident.gifts or []
+        if g not in kept
+    ]
 
 
 class AcpRunner:
@@ -885,6 +807,7 @@ class AcpRunner:
             sessions = getattr(init.agent_capabilities, "session_capabilities", None)
             can_fork = getattr(sessions, "fork", None) is not None  # Claude Code and Codex: yes; Gemini: no
             servers, skipped = await asyncio.to_thread(gift_servers, list(_gifts(job)))
+            skipped += _gifts_left_home(job)
             for note in skipped:
                 await job.report(note)
             session = await conn.new_session(cwd=str(job.workdir), mcp_servers=servers)

@@ -11,8 +11,8 @@ extends Control
 ##
 ## API keys go to the OS keychain and are never sent back, only "saved" or not.
 ## Anything set in the backend's .env wins over what's saved here, so those
-## fields are read-only. Developer settings (mock agents, kept worktrees, the
-## judge) are left out: `make` / `make dev` and the .env handle those.
+## fields are read-only. Developer settings (kept worktrees, the judge) are
+## left out: the .env handles those.
 ##
 ## Built in code, like IslandDropdown. Esc, Cancel or a click on the dimmed
 ## backdrop closes it without saving.
@@ -40,10 +40,14 @@ const FOOTER_HINT := "Changes start with each island's next package."
 ## SETTINGS in backend/mii/prefs.py.
 const TEXTS := {
 	"islands_root": ["Where new islands go", "Documents/Mii-nagement", "Each new island gets its own git repo here."],
-	"test_command": ["Lab test command", "e.g. uv run pytest", "What the Lab runs. Empty: the reviewer decides."],
+	"test_command":
+	[
+		"Default Lab test command",
+		"e.g. uv run pytest",
+		"For islands without their own. Empty: the reviewer decides.",
+	],
 	"openrouter_model":
 	["Default OpenRouter model", "e.g. anthropic/claude-sonnet-4.5", "For OpenRouter residents without their own."],
-	"godot_path": ["Godot for the Godot gift", "the Godot 4 app or binary", "Residents with the Godot gift run this."],
 }
 ## [secret, label]. Must match SECRETS in backend/mii/prefs.py.
 const SECRETS := [
@@ -55,7 +59,7 @@ const SECRETS := [
 ]
 
 var _texts := {}  # setting -> LineEdit
-var _browse := {}  # setting -> its Browse button (islands_root, godot_path)
+var _browse := {}  # setting -> its Browse button (islands_root)
 var _packages := 3
 var _packages_label := Label.new()
 var _packages_buttons: Array[Button] = []  # [-, +]
@@ -359,7 +363,6 @@ func _brains_card() -> Control:
 	gap.custom_minimum_size.y = 4
 	box.add_child(gap)
 	box.add_child(_text_field("openrouter_model"))
-	box.add_child(_text_field("godot_path", true))
 	return parts[0]
 
 
@@ -553,8 +556,6 @@ func _load_brains() -> void:
 				_brains.add_child(UI.label("Couldn't ask the backend: %s" % brains["error"], 13, false))
 				return
 			for id in ResidentData.BRAINS:
-				if id == "mock":
-					continue  # the fake brain is for development, not a choice here
 				var info: Dictionary = brains.get(id, {})
 				var can_run := bool(info.get("ok"))
 				var row := HBoxContainer.new()
@@ -615,12 +616,11 @@ func _show_packages() -> void:
 # --- Browse --------------------------------------------------------------------
 
 
-## Pick a folder (where new islands go) or the Godot app with the system's file picker.
+## Pick a folder (where new islands go) with the system's file picker.
 func _browse_for(key: String) -> void:
 	_dialog_for = key
-	var folder := key == "islands_root"
-	_dialog.file_mode = FileDialog.FILE_MODE_OPEN_DIR if folder else FileDialog.FILE_MODE_OPEN_FILE
-	_dialog.title = "Where should new islands go?" if folder else "Find Godot 4"
+	_dialog.file_mode = FileDialog.FILE_MODE_OPEN_DIR
+	_dialog.title = "Where should new islands go?"
 	var current: String = _texts[key].text.strip_edges()
 	if current and DirAccess.dir_exists_absolute(current):
 		_dialog.current_dir = current
@@ -630,9 +630,6 @@ func _browse_for(key: String) -> void:
 
 
 func _on_picked(path: String) -> void:
-	# On macOS the file picker hands back an app bundle (Godot.app); the program is inside it.
-	if _dialog_for == "godot_path" and path.ends_with(".app"):
-		path = path.path_join("Contents/MacOS").path_join(path.get_file().get_basename())
 	_texts[_dialog_for].text = path
 
 

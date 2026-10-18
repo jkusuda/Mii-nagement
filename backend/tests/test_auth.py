@@ -155,10 +155,10 @@ async def test_server_side_lookups_need_a_login(fake_runtime, login_on, monkeypa
     # They use this machine's gh login and agent CLIs, so a visitor can't call them.
     monkeypatch.setattr(views.github, "list_repos", lambda q: [{"repo": "me/app"}])
     client = AsyncClient()
-    for path in ("/github/repos", "/github/branches?repo=me/app", "/brains/mock/models"):
+    for path in ("/github/repos", "/github/branches?repo=me/app", "/brains/nope/models"):
         assert (await client.get(path)).status_code == 401, path
     assert (await client.get("/github/repos", headers=bearer())).json() == {"repos": [{"repo": "me/app"}]}
-    assert (await client.get("/brains/mock/models", headers=bearer())).status_code == 404  # mock has none
+    assert (await client.get("/brains/nope/models", headers=bearer())).status_code == 404  # no such brain
 
 
 # --- WebSocket ---------------------------------------------------------------------------

@@ -1,0 +1,22 @@
+{
+  "name": "mii-nagement-video",
+  "private": true,
+  "description": "The hackathon demo video, made with Remotion from the game's own assets.",
+  "scripts": {
+    "assets": "node sync-assets.mjs",
+    "studio": "npm run assets && remotion studio src/index.ts",
+    "render": "npm run assets && remotion render src/index.ts Demo out/mii-nagement-demo.mp4",
+    "still": "npm run assets && remotion still src/index.ts"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.536",
+    "@remotion/google-fonts": "4.0.536",
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "remotion": "4.0.536"
+  },
+  "devDependencies": {
+    "@types/react": "19.1.12",
+    "typescript": "5.9.2"
+  }
+}

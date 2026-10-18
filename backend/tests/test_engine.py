@@ -4,10 +4,10 @@ import subprocess
 
 import pytest
 from conftest import FakeClient, RecordingAsk, ScriptedRunner, db_test, make_job, make_workflow
+from mock_runner import MockRunner
 
 from mii import events, vocab
 from mii.agents import StepResult, build_prompt
-from mii.agents.mock import MockRunner
 from mii.engine import IslandGraph, split_pr_text
 from mii.models import Event, Island, Resident, Step, Task, utcnow
 from mii.sandbox import Sandbox, SandboxError, Sandboxes, is_inside
@@ -293,6 +293,14 @@ async def test_lab_fails_on_a_failing_test_command_and_worktree_is_removed(islan
     lab = await Step.objects.filter(task_id=task.id, building_type="lab").afirst()
     assert lab.outcome == "fail"
     assert not sandbox.worktree_path(task.id).exists()
+
+
+async def test_an_islands_own_test_command_wins_over_the_setting(island, sandbox, sandboxes):
+    await Island.objects.filter(pk="sunny").aupdate(test_command="true")
+    workflow, client = make_workflow(WritingRunner(), sandboxes=sandboxes, test_command="exit 3")
+    task = await workflow.run_task((await workflow.submit("sunny", "Own tests")).id)
+    assert task.status == "done"
+    assert "Running: true" in [e["text"] for e in client.of_type("activity")]
 
 
 class FixOnSecondTryRunner:
@@ -767,6 +775,35 @@ async def test_cancel_during_a_help_visit_sets_the_helper_idle(island):
     await asyncio.wait([run])
     assert (await Task.objects.aget(pk=task.id)).status == "cancelled"
     assert {(await Resident.objects.aget(pk=r)).state for r in ("jun", "carlos")} == {"idle"}
+
+
+class SideAskRunner:
+    """Asks from a task of its own (as ACP permission requests do) and never stops it."""
+
+    def __init__(self):
+        self.side: list[asyncio.Task] = []
+
+    async def run(self, job) -> StepResult:
+        self.side.append(asyncio.create_task(job.ask("confused", "Which file?")))
+        await asyncio.sleep(60)
+        return StepResult("pass", "never")
+
+
+async def test_taking_a_package_back_closes_its_questions(island):
+    runner = SideAskRunner()
+    workflow, client = make_workflow(runner, bubble_timeout=60)
+    task = await workflow.submit("sunny", "Ask me")
+    run = asyncio.create_task(workflow.run_task(task.id))
+    while not workflow.bubbles.open:
+        await asyncio.sleep(0.01)
+    workflow._cancelling.add(task.id)
+    run.cancel()
+    await asyncio.wait([run])
+    assert workflow.bubbles.for_island("sunny") == []
+    assert [e["answered"] for e in client.of_type("bubble_resolved")] == [False]
+    runner.side[0].cancel()  # the late asker finishes without a second bubble_resolved
+    await asyncio.wait(runner.side)
+    assert len(client.of_type("bubble_resolved")) == 1
 
 
 class FlakyJudge:

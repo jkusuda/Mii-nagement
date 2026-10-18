@@ -149,7 +149,7 @@ class IslandConsumer(AsyncJsonWebsocketConsumer):
             await self.close()
             return
         self.island_id = island_id
-        await self.send_json(events.snapshot(snapshot, runtime.mock_agents))
+        await self.send_json(events.snapshot(snapshot))
         runtime.bus.add_client(self, island_id)  # only this island's events
 
     async def disconnect(self, code: int) -> None:

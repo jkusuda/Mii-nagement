@@ -24,10 +24,11 @@ def utcnow() -> datetime:
 
 # --- Tables -----------------------------------------------------------------
 
-# House keys: ACP tool kind group -> "yes" | "ask" | "no" (docs/protocol.md). Used by agents/acp.py.
-# `master` ("yes" | "no") is the resident's own master key: every door opens and nothing is ever
-# asked (permissions, reviews, questions); the other keys are ignored while it is "yes".
-DEFAULT_KEYS = {"master": "no", "read": "yes", "edit": "ask", "execute": "ask", "fetch": "no"}
+# House keys: ACP tool kind group -> "yes" | "ask" | "no" (docs/protocol.md; KEY_FOR_KIND in
+# agents/acp.py). `tools` covers the gifts' MCP tools. `master` ("yes" | "no") is the resident's
+# own master key: every door opens and nothing is ever asked (permissions, reviews, questions);
+# the other keys are ignored while it is "yes". The game's copy: HOUSE_KEYS in resident_data.gd.
+DEFAULT_KEYS = {"master": "no", "read": "yes", "edit": "ask", "execute": "ask", "fetch": "no", "tools": "ask"}
 
 
 def default_keys() -> dict:
@@ -44,6 +45,8 @@ class Island(models.Model):
     # House rules (vocab.RULES), True = ask me first: merge_pr (Courthouse approval),
     # install_packages and shell (tighten the residents' house keys).
     rules = models.JSONField(default=dict)
+    # What the Lab runs in this island's repo (e.g. `uv run pytest`). "" = the TEST_COMMAND setting.
+    test_command = models.CharField(max_length=500, blank=True, default="")
     created_at = models.DateTimeField(default=utcnow)  # "Day 1" in the game
     # Land tiles, pond, plants, season: see island_map.py. {} = the classic island.
     map = models.JSONField(default=dict)
@@ -65,7 +68,7 @@ class Resident(models.Model):
     chattiness = models.FloatField(default=0.5)
     creativity = models.FloatField(default=0.5)
 
-    brain = models.CharField(max_length=50, default="mock")  # mock | claude-code | codex | gemini | openrouter
+    brain = models.CharField(max_length=50)  # claude-code | codex | gemini | openrouter; no default
     model = models.CharField(max_length=200, null=True, blank=True)  # model override; None = the brain's default
     catchphrase = models.CharField(max_length=200, blank=True, default="")
     color = models.CharField(max_length=20, default="#FFFFFF")
@@ -230,7 +233,7 @@ def resident_to_dict(r: Resident) -> dict:
         "caution": r.caution,
         "chattiness": r.chattiness,
         "creativity": r.creativity,
-        "keys": r.keys,
+        "keys": {**DEFAULT_KEYS, **(r.keys or {})},  # residents saved before a key existed get its default
         "gifts": r.gifts,
         "appearance": r.appearance,
         "state": r.state,
@@ -251,6 +254,7 @@ def island_to_dict(i: Island) -> dict:
         "branch": i.branch,
         "plan": i.plan,
         "rules": i.rules,
+        "test_command": i.test_command,
         "created_at": i.created_at.isoformat(),
         "owner": i.owner,
         "members": i.members,

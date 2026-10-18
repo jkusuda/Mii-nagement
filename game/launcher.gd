@@ -29,6 +29,7 @@ func _init() -> void:
 	# Godot concept: OS.set_environment() changes this process's environment, which
 	# processes started from it (uv, the backend) inherit.
 	OS.set_environment("MII_SERVER", "127.0.0.1:" + PORT)
+	OS.set_environment("DJANGO_DEBUG", "0")  # a shipped app: no debug pages or debug logging
 	OS.set_environment("DATABASE_PATH", data.path_join("mii.db"))
 	OS.set_environment("WORKTREE_ROOT", data.path_join("worktrees"))
 	OS.set_environment("UV_PROJECT_ENVIRONMENT", data.path_join("venv"))

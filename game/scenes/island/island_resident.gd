@@ -19,9 +19,11 @@ const MII_SCALE := 1.6
 const WALK_SPEED := 3.5  # units per second
 const RUN_SPEED := 7.0
 const LONGEST_WALK := 5.0  # seconds: a hurried walk (off to work) longer than this runs
-const FONT := preload("res://assets/font/DreamLife-V1.0.0_by_MaxiGamer.ttf")
-const INK := Color("292E50")  # the theme's dark text colour
 const SPEECH_MAX := 80  # characters over a head (see short_line)
+const MOOD_DISC := preload("res://assets/ui/mood_disc.svg")
+const MOOD_GAP := 0.45  # world units between the end of the name and the mood icon
+const SPEECH_Y := 4.3  # the speech bubble's tail tip, over the name tag
+const SPEECH_Y_OVER_BUBBLE := 5.4  # ...or over the request bubble when one shows
 
 var resident_id := ""
 var state := "idle"
@@ -41,7 +43,8 @@ var _work_tween: Tween
 var _walk_tween: Tween
 var _emote_tween: Tween
 var _door_tween: Tween
-var _mood_tag: Label3D
+var _mood_tag: Sprite3D  # a white disc with the mood icon on it
+var _mood_icon: Sprite3D
 var _speech: SpeechBubble
 var _steps := AudioStreamPlayer3D.new()  # footsteps on sand while walking
 
@@ -54,14 +57,16 @@ var _steps := AudioStreamPlayer3D.new()  # footsteps on sand while walking
 
 func _ready() -> void:
 	mii.scale = Vector3.ONE * MII_SCALE
-	# Built in code, not in the .tscn: two more Label3Ds like NameTag.
-	# The mood tag is an emoji beside the name (drawn by the system emoji font).
-	_mood_tag = _make_label(Vector3(0, 3.0, 0), 28, 0.016)
-	_mood_tag.modulate = Color.WHITE  # keep the emoji's own colours
-	_mood_tag.outline_size = 0
-	# The speech bubble's tail tip sits just above the name tag (see say).
+	# Built in code, not in the .tscn: the mood tag beside the name, a Lucide icon
+	# tinted with the mood's colour on a small white disc (like the request bubble).
+	_mood_tag = _make_sprite(MOOD_DISC, 0.008, 1)
+	_mood_tag.position.y = 3.0
+	add_child(_mood_tag)
+	_mood_icon = _make_sprite(null, 0.0075, 2)
+	_mood_tag.add_child(_mood_icon)
+	# The speech bubble's tail tip sits above the name tag (see say).
 	_speech = SpeechBubble.new()
-	_speech.position = Vector3(0, 3.75, 0)
+	_speech.position = Vector3(0, SPEECH_Y, 0)
 	add_child(_speech)
 	# Godot concept: an AudioStreamPlayer3D sounds louder the closer it is to the
 	# camera. unit_size is the distance at which it plays at volume_db.
@@ -72,21 +77,15 @@ func _ready() -> void:
 	add_child(_steps)
 
 
-## A billboard label in the island's font with a white outline, like NameTag.
-func _make_label(at: Vector3, size: int, pixel: float) -> Label3D:
-	var label := Label3D.new()
-	label.position = at
-	label.pixel_size = pixel
-	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	label.no_depth_test = true
-	label.render_priority = 1
-	label.font = FONT
-	label.font_size = size
-	label.outline_size = 12
-	label.modulate = INK
-	label.outline_modulate = Color.WHITE
-	add_child(label)
-	return label
+## A billboard picture drawn over everything, like the request bubble's sprites.
+func _make_sprite(texture: Texture2D, pixel: float, priority: int) -> Sprite3D:
+	var sprite := Sprite3D.new()
+	sprite.texture = texture
+	sprite.pixel_size = pixel
+	sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	sprite.no_depth_test = true
+	sprite.render_priority = priority
+	return sprite
 
 
 ## Show the resident's details (a dictionary from Net.island). `open_bubble` is
@@ -97,9 +96,10 @@ func show_resident(resident: Dictionary, open_bubble: Dictionary) -> void:
 	if look != mii.appearance:
 		mii.appearance = look
 	name_tag.text = str(resident.get("name", "?"))
-	_mood_tag.text = ResidentData.vibe_symbol(resident)
-	# Sit just right of the name; get_aabb() is the name's size in world units.
-	_mood_tag.position.x = name_tag.get_aabb().size.x / 2.0 + 0.2
+	_mood_icon.texture = ResidentData.vibe_icon(resident)
+	_mood_icon.modulate = ResidentData.vibe_color(resident)
+	# Sit right of the name with a little gap; get_aabb() is the name's size in world units.
+	_mood_tag.position.x = name_tag.get_aabb().size.x / 2.0 + MOOD_GAP
 	bubble.visible = not open_bubble.is_empty()
 	if bubble.visible:
 		var kind := str(open_bubble["kind"])
@@ -245,8 +245,8 @@ func settle(route: Array[Vector3], new_state: String, look_at_point: Vector3) ->
 ## Say something out loud for a few seconds (a chat line, a help request, a thought),
 ## in a speech bubble over their head.
 func say(text: String, seconds := 4.0) -> void:
-	# Just above the name tag, or above the request bubble when one is showing.
-	_speech.position.y = 4.9 if bubble.visible else 3.75
+	# Above the name tag, or above the request bubble when one is showing.
+	_speech.position.y = SPEECH_Y_OVER_BUBBLE if bubble.visible else SPEECH_Y
 	_speech.say(short_line(text), seconds)
 
 

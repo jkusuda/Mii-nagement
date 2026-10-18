@@ -9,7 +9,7 @@ those lines on top of its later steps (engine.py `_owner_direction`).
 Who answers, like Claude Code's /btw: the agent doing the work itself, through a fork of
 its live session (agents.side_chat; Claude Code and Codex can fork). The fork knows
 everything done so far, the work carries on untouched and never sees the chat. Otherwise
-(mock, OpenRouter, Gemini, nothing running) a fresh agent answers, told the package
+(OpenRouter, Gemini, nothing running) a fresh agent answers, told the package
 (package_context) and reading its working copy.
 Always read-only, and it never raises bubbles.
 
@@ -26,7 +26,6 @@ A conversation (`talk_open` ... `talk_close`):
 Every turn is stored per building (Event rows of type `talk_turn`, never broadcast, kept
 out of News) for the talk scene's history: GET /islands/{id}/talks?building=<id>.
 A `talk` without a conversation is answered one-off (its own worktree and agent).
-Mock mode answers with a canned line (agents/mock.py).
 """
 
 import asyncio
@@ -158,11 +157,11 @@ async def open_conversation(runtime, island_id: str, message: dict, send: SendFn
 
 
 async def _open_workdir(runtime, conv: Conversation, island: Island, resident: Resident, package: Task | None) -> bool:
-    """Give the conversation a worktree for a fresh agent of its own (real mode only): the
-    package's, else a throwaway one. True when it has one. Raises TalkError (and closes it)."""
+    """Give the conversation a worktree for a fresh agent of its own: the package's, else a
+    throwaway one. True when it has one. Raises TalkError (and closes it)."""
     if conv.sandbox is not None:
         return True
-    if runtime.sandboxes is None or resident.brain == "mock":
+    if runtime.sandboxes is None:
         return False
     try:
         conv.sandbox = runtime.sandboxes.for_island(island)
@@ -411,8 +410,8 @@ async def _answer(runtime, island_id: str, message: dict, talk_id: str, agent: s
 
 async def _btw(runtime, conv, resident, island, building, package, talk_id, history, text, send) -> str | None:
     """Ask the agent working on the package itself, like Claude Code's /btw (agents.side_chat:
-    a fork of its session, which knows everything done so far). None when it can't (mock,
-    OpenRouter or Gemini brains, no agent running, a failed fork): ask a fresh agent instead."""
+    a fork of its session, which knows everything done so far). None when it can't (OpenRouter
+    or Gemini brains, no agent running, a failed fork): ask a fresh agent instead."""
     job = _job(resident, island, building, f"talk_{talk_id}", talk_id, text, send, history, None, None)
     job.instructions = btw_instructions(building, history, text)
     if conv is not None:
@@ -443,7 +442,7 @@ async def _one_off(runtime, resident, island, building, package, context, talk_i
     runner = runtime.workflow.runner
     sandbox, workdir, own = None, None, False
     worktree_id = f"talk-{uuid.uuid4().hex[:8]}"
-    if runtime.sandboxes is not None and resident.brain != "mock":
+    if runtime.sandboxes is not None:
         try:
             sandbox = runtime.sandboxes.for_island(island)
             workdir, own = await asyncio.to_thread(_working_copy, sandbox, package, worktree_id, island.branch)

@@ -23,9 +23,8 @@ def test_brains_moods_and_bubble_kinds_agree():
     assert set(BUBBLE_MOODS.values()) <= set(vocab.MOODS)
 
 
-def test_snapshot_event_carries_mock_agents():
-    event = events.snapshot({"id": "sunny"}, mock_agents=True)
-    assert event == {"type": "snapshot", "island": {"id": "sunny", "mock_agents": True}}
+def test_snapshot_event_carries_the_island():
+    assert events.snapshot({"id": "sunny"}) == {"type": "snapshot", "island": {"id": "sunny"}}
 
 
 @db_test

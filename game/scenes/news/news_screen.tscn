@@ -1,9 +1,7 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scenes/news/news_screen.gd" id="1_screen"]
 [ext_resource type="Texture2D" path="res://assets/ui/news.png" id="2_news"]
-[ext_resource type="Texture2D" path="res://assets/ui/toggle_on.svg" id="3_on"]
-[ext_resource type="Texture2D" path="res://assets/ui/toggle_off.svg" id="4_off"]
 
 [node name="NewsScreen" type="PanelContainer"]
 size_flags_vertical = 3
@@ -159,42 +157,3 @@ columns = 2
 layout_mode = 2
 size_flags_vertical = 3
 mouse_filter = 2
-
-[node name="Morning" type="PanelContainer" parent="Rows/Columns/Side"]
-layout_mode = 2
-theme_type_variation = &"ChartPanel"
-
-[node name="Rows" type="VBoxContainer" parent="Rows/Columns/Side/Morning"]
-layout_mode = 2
-theme_override_constants/separation = 6
-
-[node name="Title" type="Label" parent="Rows/Columns/Side/Morning/Rows"]
-layout_mode = 2
-theme_type_variation = &"SectionTitle"
-text = "Morning paper"
-
-[node name="Hint" type="Label" parent="Rows/Columns/Side/Morning/Rows"]
-custom_minimum_size = Vector2(1, 0)
-layout_mode = 2
-theme_type_variation = &"LabelMuted"
-theme_override_font_sizes/font_size = 12
-text = "Start each day's first game on the News tab, to catch up on the island."
-autowrap_mode = 3
-
-[node name="ToggleRow" type="PanelContainer" parent="Rows/Columns/Side/Morning/Rows"]
-layout_mode = 2
-theme_type_variation = &"StatCard"
-
-[node name="Digest" type="CheckButton" parent="Rows/Columns/Side/Morning/Rows/ToggleRow"]
-unique_name_in_owner = true
-layout_mode = 2
-focus_mode = 0
-theme_type_variation = &"FlatIconButton"
-theme_override_colors/font_color = Color(0.161, 0.18, 0.314, 1)
-theme_override_colors/font_hover_color = Color(0.161, 0.18, 0.314, 1)
-theme_override_colors/font_pressed_color = Color(0.161, 0.18, 0.314, 1)
-theme_override_colors/font_hover_pressed_color = Color(0.161, 0.18, 0.314, 1)
-theme_override_constants/icon_max_width = 44
-theme_override_icons/checked = ExtResource("3_on")
-theme_override_icons/unchecked = ExtResource("4_off")
-text = "Daily digest"

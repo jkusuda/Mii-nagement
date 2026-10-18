@@ -173,6 +173,12 @@ class OpenRouterRunner:
     async def _tool(self, name: str, args: dict, job: AgentJob) -> str:
         workdir: Path = job.workdir
         try:
+            if name in TOOL_KEYS:
+                if name == "write_file" and job.read_only:
+                    return "error: this step is read-only"
+                denied = await _check_key(job, name, args)
+                if denied:
+                    return denied
             if name == "list_files":
                 pattern = args.get("glob") or "**/*"
                 paths = [p for p in workdir.glob(pattern) if is_inside(p, workdir) and ".git" not in p.parts]
@@ -180,23 +186,12 @@ class OpenRouterRunner:
             if name == "read_file":
                 return inside(workdir, args.get("path", "")).read_text(errors="replace")
             if name == "write_file":
-                if job.read_only:
-                    return "error: this step is read-only"
                 path = inside(workdir, args.get("path", ""))
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(args.get("content", ""))
                 return f"wrote {path.relative_to(workdir)}"
             if name == "run_command":
-                command = args.get("command", "")
-                key = permission_for(job, "execute", command)  # house keys + house rules
-                if key == "no":
-                    return "denied: this resident's house key says no to running commands"
-                if (
-                    key == "ask"
-                    and await job.ask("permission", f"May I run `{command}`?", ["Allow", "Deny"], command) != "Allow"
-                ):
-                    return "denied: the user did not allow this command"
-                code, output = await run_shell(command, workdir, COMMAND_TIMEOUT, limit=MAX_OUTPUT)
+                code, output = await run_shell(args.get("command", ""), workdir, COMMAND_TIMEOUT, limit=MAX_OUTPUT)
                 return f"exit code {code}\n{output}"
             if name == "ask_user":
                 answer = await job.ask("confused", args.get("question", "?"))
@@ -204,6 +199,30 @@ class OpenRouterRunner:
             return f"error: unknown tool {name}"
         except (SandboxError, OSError) as e:
             return f"error: {e}"
+
+
+# Our tools -> the house key that guards them (models.DEFAULT_KEYS), and how a ✋ bubble asks.
+TOOL_KEYS = {
+    "list_files": ("read", "May I look through the files?"),
+    "read_file": ("read", "May I read `{path}`?"),
+    "write_file": ("edit", "May I write `{path}`?"),
+    "run_command": ("execute", "May I run `{command}`?"),
+}
+
+
+async def _check_key(job: AgentJob, name: str, args: dict) -> str | None:
+    """Ask the resident's house key (and the house rules) about a tool call: None = go ahead,
+    else why it was refused. An "ask" key shows a ✋ bubble."""
+    key_name, question = TOOL_KEYS[name]
+    target = str(args.get("command") or args.get("path") or args.get("glob") or "")
+    key = permission_for(job, key_name, target)
+    if key == "no":
+        return f"denied: this resident's house key says no to {key_name}"
+    if key == "ask":
+        text = question.format(path=args.get("path", ""), command=args.get("command", ""))
+        if await job.ask("permission", text, ["Allow", "Deny"], target or None) != "Allow":
+            return "denied: the user did not allow this"
+    return None
 
 
 # Our tools -> the tool sorts of `thinking` events (vocab.TOOL_SORTS).
