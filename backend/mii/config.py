@@ -20,6 +20,10 @@ REPO_ROOT = BACKEND_DIR.parent
 load_dotenv(REPO_ROOT / ".env")
 
 DEV_SECRET_KEY = "mii-nagement-local-dev-key"
+# Outside any project on purpose: agent CLIs also read the instruction files (CLAUDE.md,
+# AGENTS.md...) of the folders above where they start, so worktrees inside this repo would
+# make every island's agents think they work on Mii-nagement.
+DEFAULT_WORKTREE_ROOT = Path.home() / ".mii-nagement" / "worktrees"
 
 
 def _optional_path(name: str) -> Path | None:
@@ -71,7 +75,7 @@ def load_config() -> Config:
     permission = _optional_str("PERMISSION_TIMEOUT")
     return Config(
         mock_agents=_flag("MOCK_AGENTS", "0"),
-        worktree_root=_optional_path("WORKTREE_ROOT") or BACKEND_DIR / ".worktrees",
+        worktree_root=_optional_path("WORKTREE_ROOT") or DEFAULT_WORKTREE_ROOT,
         database_path=_optional_path("DATABASE_PATH") or BACKEND_DIR / "mii.db",
         git_author=_optional_str("GIT_AUTHOR") or DEFAULT_GIT_AUTHOR,
         walk_seconds=float(os.getenv("WALK_SECONDS", "2.0")),

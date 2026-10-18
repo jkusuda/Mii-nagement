@@ -14,12 +14,15 @@ What is checked, and what isn't:
 """
 
 import asyncio
+import logging
 import os
 import re
 import subprocess
 from pathlib import Path
 
 from mii.vocab import ATTACHMENTS_DIR, DEFAULT_GIT_AUTHOR
+
+log = logging.getLogger(__name__)
 
 OUTPUT_LIMIT = 4000  # characters of command output we keep
 
@@ -71,11 +74,26 @@ class Sandbox:
         if not path.exists():
             self.worktree_root.mkdir(parents=True, exist_ok=True)
             self._git(self.repo_path, "worktree", "prune")  # forget a folder deleted by hand
-            if resumed:
+            elsewhere = self._checked_out_at(task_branch) if resumed else None
+            if elsewhere is not None:
+                # Made under another WORKTREE_ROOT (the old default was inside this repo's backend/):
+                # move it here, uncommitted work and all. git won't check a branch out twice.
+                self._git(self.repo_path, "worktree", "move", str(elsewhere), str(path))
+            elif resumed:
                 self._git(self.repo_path, "worktree", "add", str(path), task_branch)
             else:
                 self._git(self.repo_path, "worktree", "add", "-b", task_branch, str(path), base)
         return path
+
+    def _checked_out_at(self, branch: str) -> Path | None:
+        """The worktree (not the island's own folder) that has `branch` checked out, or None."""
+        folder = None
+        for line in self._git(self.repo_path, "worktree", "list", "--porcelain").splitlines():
+            if line.startswith("worktree "):
+                folder = Path(line.removeprefix("worktree "))
+            elif line == f"branch refs/heads/{branch}" and folder is not None and folder.resolve() != self.repo_path:
+                return folder
+        return None
 
     def resolve_branch(self, branch: str | None) -> str:
         """The ref to branch tasks from: `branch`, `origin/<branch>`, or HEAD when neither exists."""
@@ -249,6 +267,9 @@ class Sandboxes:
     def __init__(self, worktree_root: Path):
         self.worktree_root = worktree_root
         self._by_path: dict[str, Sandbox] = {}
+        project = next((p for p in Path(worktree_root).resolve().parents if (p / ".git").exists()), None)
+        if project is not None:  # agents would also read that project's CLAUDE.md / AGENTS.md (config.py)
+            log.warning("WORKTREE_ROOT %s is inside the git repository %s: move it out", worktree_root, project)
 
     def for_island(self, island: object) -> Sandbox:
         """`island` is an Island row (or anything with `repo_path`)."""

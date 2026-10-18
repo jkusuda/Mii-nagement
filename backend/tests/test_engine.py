@@ -10,7 +10,7 @@ from mii.agents import StepResult, build_prompt
 from mii.agents.mock import MockRunner
 from mii.engine import IslandGraph, split_pr_text
 from mii.models import Event, Island, Resident, Step, Task, utcnow
-from mii.sandbox import SandboxError, is_inside
+from mii.sandbox import Sandbox, SandboxError, Sandboxes, is_inside
 
 pytestmark = db_test
 
@@ -577,6 +577,26 @@ def test_worktrees_are_created_under_the_worktree_root(tmp_path, sandbox):
         sandbox.create_worktree("../../evil")
     with pytest.raises(SandboxError):
         sandbox.check_workdir(sandbox.repo_path)
+
+
+def test_the_default_worktree_root_is_outside_this_repo():
+    from mii.config import DEFAULT_WORKTREE_ROOT, REPO_ROOT
+
+    assert not is_inside(DEFAULT_WORKTREE_ROOT, REPO_ROOT)  # else agents read Mii-nagement's CLAUDE.md
+
+
+def test_a_worktree_under_an_old_root_moves_with_its_work(tmp_path, sandbox):
+    old = Sandbox(sandbox.repo_path, tmp_path / "old_root")
+    before = old.create_worktree("t_moved")
+    (before / "half_done.py").write_text("print('wip')\n")  # uncommitted work
+    path = sandbox.create_worktree("t_moved")  # resumed after WORKTREE_ROOT changed
+    assert is_inside(path, tmp_path / "worktrees") and not before.exists()
+    assert (path / "half_done.py").read_text() == "print('wip')\n"
+
+
+def test_a_worktree_root_inside_a_repo_is_warned_about(tmp_path, sandbox, caplog):
+    Sandboxes(sandbox.repo_path / "nested" / "worktrees")
+    assert "is inside the git repository" in caplog.text
 
 
 def test_commit_all_and_diff_stat(sandbox):
