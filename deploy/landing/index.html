@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mii-nagement · Welcome to your working island</title>
 <meta name="description" content="Your repo is an island. Your AI agents are the residents. Give them a task. Get a real GitHub PR.">
-<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="icon" href="logo.png" type="image/png">
 <meta property="og:title" content="Mii-nagement · Little lives. Real work.">
 <meta property="og:description" content="Your repo is an island. Your AI agents are the residents. Give them a task. Get a real GitHub PR.">
 <meta property="og:image" content="https://mii-nagement.work/island.jpg">
@@ -52,6 +52,7 @@
   }
   .btn:hover { transform: translateY(-1px); }
   .btn:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--navy); }
+  .btn img { width: 20px; height: 20px; margin-top: -2px; }
   .btn-yellow { background: var(--yellow); }
   .btn-yellow:hover { background: var(--yellow-deep); }
   .btn-small { padding: 8px 20px; font-size: 15px; box-shadow: 0 3px 0 var(--navy); }
@@ -92,7 +93,6 @@
   .peek { position: relative; max-width: 1240px; margin: 0 auto; padding: 0 0 70px; }
   .frame { position: relative; z-index: 2; max-width: 720px; margin: 0 auto; border: 6px solid var(--navy); border-radius: 22px; overflow: hidden; background: var(--navy); box-shadow: 0 16px 40px rgba(21, 60, 97, .28); }
   .frame img { width: 100%; }
-  .peek .caption { position: relative; z-index: 2; display: inline-block; margin-top: 16px; background: var(--bubble); color: var(--navy); font-weight: 800; font-size: 14px; padding: 6px 16px; border-radius: 999px; }
   .mii { position: absolute; z-index: 3; pointer-events: none; filter: drop-shadow(0 10px 8px rgba(0, 0, 0, .25)); }
   .mii img { width: 100%; height: auto; }
   .mii.blue { left: 20px; width: 140px; bottom: 80px; }
@@ -117,10 +117,10 @@
   .town { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr auto 1fr; gap: 6px; align-items: end; margin-top: 30px; }
   .stop { text-align: center; }
   .stop .house { height: 150px; display: grid; place-items: end center; margin-bottom: 10px; }
-  .stop .house img { max-height: 150px; width: auto; filter: drop-shadow(0 8px 0 rgba(21, 60, 97, .12)); transition: transform .15s ease; }
+  .stop .house img { max-height: 150px; width: auto; filter: drop-shadow(0 8px 0 color-mix(in srgb, var(--c) 35%, transparent)); transition: transform .15s ease; }
   .stop:hover .house img { transform: translateY(-6px); }
-  .stop .pill { display: block; background: var(--white); border: 2px solid var(--navy); border-radius: 999px; padding: 9px 10px; font: 900 18px var(--font); color: var(--navy); }
-  .stop.last .pill { background: var(--yellow); }
+  .stop .pill { display: flex; align-items: center; justify-content: center; gap: 8px; background: var(--c); border: 2px solid var(--navy); border-radius: 999px; padding: 9px 10px; font: 900 18px var(--font); color: var(--white); box-shadow: 0 3px 0 var(--navy); }
+  .stop .pill img { width: 20px; height: 20px; }
   .stop span { display: block; font-size: 14px; color: var(--ink-soft); margin-top: 8px; }
   .town .go { align-self: center; margin-bottom: 36px; color: var(--navy); font-size: 26px; font-weight: 900; }
 
@@ -141,17 +141,13 @@
   .step h3 { font-size: 21px; margin-bottom: 4px; }
   .step p { color: var(--ink-soft); font-size: 15px; }
   .brains { margin-top: 36px; background: var(--cream); border-radius: 12px; padding: 16px 20px; display: flex; flex-wrap: wrap; gap: 10px 28px; align-items: center; font-weight: 800; color: var(--navy); font-size: 16px; }
-  .brains .claude { display: inline-flex; align-items: center; gap: 8px; }
-  .brains .claude i { width: 18px; height: 18px; background: #d97757; border-radius: 50%; display: inline-block; }
+  .brains .brain { display: inline-flex; align-items: center; gap: 8px; }
+  .brains .brain img { width: 22px; height: 22px; }
   .firstlaunch { text-align: center; color: var(--ink-soft); font-size: 13px; margin-top: 24px; }
 
   /* Light blue: the team. */
   .band-sky { background: var(--sky); }
-  .team { display: grid; grid-template-columns: 1fr 2fr; gap: 40px; align-items: center; }
-  .team h2 { text-align: left; font-size: clamp(30px, 3.4vw, 42px); }
-  .team .built { margin-top: 12px; font-weight: 900; color: var(--blue); font-size: 17px; }
-  .team .see { display: inline-block; margin-top: 8px; font-weight: 900; color: var(--blue); font-size: 15px; }
-  .people { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  .people { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; max-width: 760px; margin: 30px auto 0; }
   .person .photo { aspect-ratio: 1 / 1; border-radius: 16px; overflow: hidden; background: var(--white); border: 4px solid var(--white); box-shadow: 0 6px 16px rgba(21, 60, 97, .15); display: grid; place-items: center; }
   .person .photo img { width: 100%; height: 100%; object-fit: cover; }
   .person .photo .initials { font-weight: 900; font-size: 56px; color: var(--navy); }
@@ -172,7 +168,6 @@
     .wrap { padding: 0 20px; }
     .site-nav a:not(.btn) { display: none; }
     .trio, .steps, .people { grid-template-columns: 1fr; }
-    .team { grid-template-columns: 1fr; }
     .town { grid-template-columns: 1fr; gap: 14px; }
     .town .go { transform: rotate(90deg); margin: 0; justify-self: center; }
     .mii, .bubble { display: none; }
@@ -191,7 +186,7 @@
 
 <header class="site-header">
   <div class="wrap">
-    <a class="brand" href="/"><img src="icon.svg" alt="">Mii-nagement</a>
+    <a class="brand" href="/"><img src="logo.png" alt="">Mii-nagement</a>
     <nav class="site-nav" aria-label="Main">
       <a href="#life">Island life</a>
       <a href="#movein">Move in</a>
@@ -210,10 +205,10 @@
       <h1>Little lives. <em>Real work.</em></h1>
       <p class="lede">Your repo is an island. Your AI agents are the residents. Give them a task. Get a real GitHub PR.</p>
       <div class="ctas">
-        <a class="btn btn-yellow" href="/download/Mii-nagement.dmg">Download for Mac ↓</a>
-        <a class="btn" href="/download/Mii-nagement-windows.zip">Download for Windows ↓</a>
+        <a class="btn btn-yellow" href="/download/Mii-nagement.dmg"><img src="brands/apple.svg" alt="" width="20" height="20">Download for Mac</a>
+        <a class="btn" href="/download/Mii-nagement-windows.zip"><img src="brands/windows.svg" alt="" width="18" height="18">Download for Windows</a>
       </div>
-      <p class="free">Free · Mac &amp; Windows</p>
+      <p class="free">Don't pay extra: use your own AI subscription or API key.</p>
       <div class="tag">1 git repository = 1 little island</div>
 
       <div class="peek">
@@ -223,7 +218,6 @@
         <div class="frame"><img src="island.jpg" alt="The island screen: Sunny Isle with five buildings, a pond, trees and the Bubbles panel" width="1280" height="720"></div>
         <div class="mii green"><img src="hero_mii_green.png" alt="" width="283" height="700"></div>
         <div class="bubble right">Big personalities. Occasional naps.</div>
-        <span class="caption">A peek inside the actual app. Yes, they live here.</span>
       </div>
     </div>
   </section>
@@ -233,15 +227,15 @@
       <h2>A small-town route to a real pull request.</h2>
       <p class="lede">Your Planner, Coder and Reviewer carry the task across town. You approve the commands along the way.</p>
       <div class="town">
-        <div class="stop"><div class="house"><img src="town_mailbox.png" alt="The Mailbox: a small white house with a red roof and a red letterbox" loading="lazy"></div><b class="pill">Mailbox</b><span>Tasks arrive &amp; get planned</span></div>
+        <div class="stop" style="--c: #F5708F"><div class="house"><img src="town_mailbox.png" alt="The Mailbox: a small white house with a red roof and a red letterbox" loading="lazy"></div><b class="pill"><img src="buildings/mail.svg" alt="" width="20" height="20">Mailbox</b><span>Tasks arrive &amp; get planned</span></div>
         <span class="go" aria-hidden="true">→</span>
-        <div class="stop"><div class="house"><img src="town_workshop.png" alt="The Workshop: an orange-roofed house with tools and a workbench outside" loading="lazy"></div><b class="pill">Workshop</b><span>Write the code</span></div>
+        <div class="stop" style="--c: #E39537"><div class="house"><img src="town_workshop.png" alt="The Workshop: an orange-roofed house with tools and a workbench outside" loading="lazy"></div><b class="pill"><img src="buildings/code.svg" alt="" width="20" height="20">Workshop</b><span>Write the code</span></div>
         <span class="go" aria-hidden="true">→</span>
-        <div class="stop"><div class="house"><img src="town_lab.png" alt="The Lab: an observatory with a glass dome and a telescope" loading="lazy"></div><b class="pill">Lab</b><span>Run the tests</span></div>
+        <div class="stop" style="--c: #00B8A0"><div class="house"><img src="town_lab.png" alt="The Lab: an observatory with a glass dome and a telescope" loading="lazy"></div><b class="pill"><img src="buildings/flask-conical.svg" alt="" width="20" height="20">Lab</b><span>Run the tests</span></div>
         <span class="go" aria-hidden="true">→</span>
-        <div class="stop"><div class="house"><img src="town_courthouse.png" alt="The Courthouse: a white building with columns and a purple roof" loading="lazy"></div><b class="pill">Courthouse</b><span>Review the changes</span></div>
+        <div class="stop" style="--c: #7553DF"><div class="house"><img src="town_courthouse.png" alt="The Courthouse: a white building with columns and a purple roof" loading="lazy"></div><b class="pill"><img src="buildings/scale.svg" alt="" width="20" height="20">Courthouse</b><span>Review the changes</span></div>
         <span class="go" aria-hidden="true">→</span>
-        <div class="stop last"><div class="house"><img src="town_post_office.png" alt="The Post Office: a yellow-roofed house with parcels stacked outside" loading="lazy"></div><b class="pill">Post Office</b><span>Ship a GitHub PR</span></div>
+        <div class="stop" style="--c: #D9A321"><div class="house"><img src="town_post_office.png" alt="The Post Office: a yellow-roofed house with parcels stacked outside" loading="lazy"></div><b class="pill"><img src="buildings/git-pull-request.svg" alt="" width="20" height="20">Post Office</b><span>Ship a GitHub PR</span></div>
       </div>
     </div>
   </section>
@@ -274,38 +268,33 @@
       <div class="getit">
         <div>
           <h2>Your island is waiting.</h2>
-          <p class="sub">Free to explore · Apple Silicon &amp; Intel · Linux from source</p>
+          <p class="sub">Your own AI subscription or API key · Apple Silicon &amp; Intel · Linux from source</p>
         </div>
         <div class="ctas">
-          <a class="btn btn-yellow" href="/download/Mii-nagement.dmg">Download for Mac ↓</a>
-          <a class="btn" href="/download/Mii-nagement-windows.zip">Download for Windows ↓</a>
+          <a class="btn btn-yellow" href="/download/Mii-nagement.dmg"><img src="brands/apple.svg" alt="" width="20" height="20">Download for Mac</a>
+          <a class="btn" href="/download/Mii-nagement-windows.zip"><img src="brands/windows.svg" alt="" width="18" height="18">Download for Windows</a>
         </div>
       </div>
       <div class="steps">
         <div class="step"><span class="n">1</span><div><h3>Download &amp; move in.</h3><p>Get the app for Mac or Windows. Bring a git repository to create your island.</p></div></div>
-        <div class="step"><span class="n">2</span><div><h3>Choose a brain.</h3><p>Connect an agent provider, or let free mock agents show you around.</p></div></div>
+        <div class="step"><span class="n">2</span><div><h3>Choose a brain.</h3><p>Use the AI you already pay for: your Claude, ChatGPT or Gemini subscription, or an OpenRouter API key. No extra cost.</p></div></div>
         <div class="step"><span class="n">3</span><div><h3>Send your first task.</h3><p>Answer permission bubbles and approve commands. Your residents take it from there.</p></div></div>
       </div>
       <div class="brains">
         <span>Tiny residents. Real brains.</span>
-        <span class="claude"><i aria-hidden="true"></i>Claude Code</span>
-        <span>OpenAI Codex</span>
-        <span>Gemini CLI</span>
-        <span>OpenRouter</span>
+        <span class="brain"><img src="brands/claude.svg" alt="" width="22" height="22">Claude Code</span>
+        <span class="brain"><img src="brands/openai.svg" alt="" width="22" height="22">OpenAI Codex</span>
+        <span class="brain"><img src="brands/gemini.svg" alt="" width="22" height="22">Gemini CLI</span>
+        <span class="brain"><img src="brands/openrouter.svg" alt="" width="22" height="22">OpenRouter</span>
       </div>
       <p class="firstlaunch">Mac first launch: Privacy &amp; Security → Open Anyway.</p>
     </div>
   </section>
 
   <section class="band-sky section">
-    <div class="wrap team">
-      <div>
-        <h2>Made by humans. With a little island fever.</h2>
-        <p class="built">Built at SwampHacks XII.</p>
-        <a class="see ext" href="https://github.com/jkusuda/Mii-nagement">Come see what we're building</a>
-      </div>
+    <div class="wrap">
+      <h2>Meet the team</h2>
       <div class="people">
-        <!-- Drop team photos in as team_jordan.jpg, team_kenzo.jpg, team_lucas.jpg; until then the initials show. -->
         <div class="person"><div class="photo"><img src="team_jordan.jpg" alt="Jordan Kusuda" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'initials',textContent:'JK'}))"></div><b>Jordan Kusuda</b></div>
         <div class="person"><div class="photo"><img src="team_kenzo.jpg" alt="Kenzo Fukuda" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'initials',textContent:'KF'}))"></div><b>Kenzo Fukuda</b></div>
         <div class="person"><div class="photo"><img src="team_lucas.jpg" alt="Lucas Kilday" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'initials',textContent:'LK'}))"></div><b>Lucas Kilday</b></div>
