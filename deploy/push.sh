@@ -25,6 +25,7 @@ ssh "$host" 'mkdir -p /opt/mii/downloads'
 if [ -f game/builds/macos/Mii-nagement.dmg ]; then
   rsync -az game/builds/macos/Mii-nagement.dmg "$host:/opt/mii/downloads/"
 fi
-# --remove-orphans: stops containers no longer in docker-compose.yml.
-ssh "$host" 'cd /opt/mii/deploy && docker compose --env-file server.env up -d --remove-orphans && docker compose --env-file server.env ps'
+# --force-recreate: rsync swaps in a new Caddyfile, and a running container keeps reading
+# the old one. --remove-orphans: stops containers no longer in docker-compose.yml.
+ssh "$host" 'cd /opt/mii/deploy && docker compose --env-file server.env up -d --force-recreate --remove-orphans && docker compose --env-file server.env ps'
 echo "Deployed: https://$(setting MII_DOMAIN)"
