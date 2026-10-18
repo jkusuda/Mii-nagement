@@ -163,6 +163,10 @@
   .people { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; max-width: 760px; margin: 30px auto 0; }
   .person .photo { aspect-ratio: 1 / 1; border-radius: 16px; overflow: hidden; background: var(--white); border: 4px solid var(--white); box-shadow: 0 6px 16px rgba(21, 60, 97, .15); display: grid; place-items: center; }
   .person .photo img { width: 100%; height: 100%; object-fit: cover; }
+  /* The Mii waits just above the photo and slides down over it on hover (transition = animate the change over time). */
+  .person .photo { position: relative; }
+  .person .photo img.mii-photo { position: absolute; inset: 0; transform: translateY(-100%); transition: transform .45s cubic-bezier(.3, 1.3, .5, 1); }
+  .person .photo:hover img.mii-photo { transform: translateY(0); }
   .person .photo .initials { font-weight: 900; font-size: 56px; color: var(--navy); }
   .person b { display: block; text-align: center; margin-top: 12px; font-weight: 900; color: var(--navy); font-size: 17px; }
   .person .linkedin { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 6px; color: var(--blue); text-decoration: none; font-size: 15px; }
@@ -310,9 +314,9 @@
     <div class="wrap">
       <h2>Meet the team</h2>
       <div class="people">
-        <div class="person"><div class="photo"><img src="team_jordan.jpg" alt="Jordan Kusuda" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'initials',textContent:'JK'}))"></div><b>Jordan Kusuda</b><a class="linkedin" href="https://www.linkedin.com/in/jordankusuda/" target="_blank" rel="noopener"><img src="brands/linkedin.svg" alt="" width="18" height="18">LinkedIn</a></div>
-        <div class="person"><div class="photo"><img src="team_kenzo.jpg" alt="Kenzo Fukuda" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'initials',textContent:'KF'}))"></div><b>Kenzo Fukuda</b><a class="linkedin" href="https://www.linkedin.com/in/kenzo-fukuda/" target="_blank" rel="noopener"><img src="brands/linkedin.svg" alt="" width="18" height="18">LinkedIn</a></div>
-        <div class="person"><div class="photo"><img src="team_lucas.jpg" alt="Lucas Kilday" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'initials',textContent:'LK'}))"></div><b>Lucas Kilday</b><a class="linkedin" href="https://www.linkedin.com/in/lucas-kilday/" target="_blank" rel="noopener"><img src="brands/linkedin.svg" alt="" width="18" height="18">LinkedIn</a></div>
+        <div class="person"><div class="photo"><img src="team_jordan.jpg" alt="Jordan Kusuda" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'initials',textContent:'JK'}))"><img class="mii-photo" src="team_jordan_mii.jpg" alt=""></div><b>Jordan Kusuda</b><a class="linkedin" href="https://www.linkedin.com/in/jordankusuda/" target="_blank" rel="noopener"><img src="brands/linkedin.svg" alt="" width="18" height="18">LinkedIn</a></div>
+        <div class="person"><div class="photo"><img src="team_kenzo.jpg" alt="Kenzo Fukuda" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'initials',textContent:'KF'}))"><img class="mii-photo" src="team_kenzo_mii.jpg" alt=""></div><b>Kenzo Fukuda</b><a class="linkedin" href="https://www.linkedin.com/in/kenzo-fukuda/" target="_blank" rel="noopener"><img src="brands/linkedin.svg" alt="" width="18" height="18">LinkedIn</a></div>
+        <div class="person"><div class="photo"><img src="team_lucas.jpg" alt="Lucas Kilday" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'initials',textContent:'LK'}))"><img class="mii-photo" src="team_lucas_mii.jpg" alt=""></div><b>Lucas Kilday</b><a class="linkedin" href="https://www.linkedin.com/in/lucas-kilday/" target="_blank" rel="noopener"><img src="brands/linkedin.svg" alt="" width="18" height="18">LinkedIn</a></div>
       </div>
     </div>
   </section>
