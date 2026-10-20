@@ -4,6 +4,8 @@
 
 # Mii-nagement
 
+<a href="https://www.youtube.com/watch?v=bhfhtuuFQPg"><img src="https://img.youtube.com/vi/bhfhtuuFQPg/maxresdefault.jpg" alt="Watch the Mii-nagement demo video" width="720"></a>
+
 **A Tomodachi Life inspired agent management system where your coding agents live, interact with each other, and ship real code.**
 
 <img src="deploy/landing/hero_mii_blue.png" alt="" height="110">

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "cleanUrls": true,
+  "redirects": [
+    {
+      "source": "/download/:file",
+      "destination": "https://github.com/jkusuda/Mii-nagement/releases/latest/download/:file",
+      "permanent": false
+    }
+  ]
+}
